@@ -25,7 +25,7 @@ const VENT_LABEL = { away: 'Borte', low: 'Lav', normal: 'Normal', high: 'Høy' }
 const VENT_LEVEL = { away: 0, low: 1, normal: 2, high: 3 };
 
 const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
-const deg = (t) => (t == null ? '–' : String(t).replace('.', ',') + '°');
+const deg = (t) => (t == null || !Number.isFinite(Number(t)) ? '–' : String(Math.round(Number(t) * 10) / 10).replace('.', ',') + '°');
 const svg = (d, size = 22, sw = 1.8) => `<svg width="${size}" height="${size}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="${sw}" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="${d}"/></svg>`;
 const clock = (ms) => new Date(ms).toLocaleTimeString('nb-NO', { hour: '2-digit', minute: '2-digit' });
 
@@ -152,7 +152,7 @@ function topHTML() {
   return `<header class="top">
     <div>
       <span class="kicker ${cls}"><span class="dot ${cls}"></span>${text}</span>
-      <h1>${esc(S.m.active_scene || 'Hybelen')}</h1>
+      <h1>${esc(S.m.active_scene && S.m.matches ? S.m.active_scene : 'Hybelen')}</h1>
     </div>
     <button class="icon-btn" data-act="settings" data-fid="settings" aria-label="Innstillinger">${svg('M4 7h10M18 7h2M4 17h4M12 17h8M16 5v4M10 15v4')}</button>
   </header>`;
@@ -246,15 +246,9 @@ function mainHTML() {
   const m = S.m;
   let html = topHTML();
   html += `<div class="scenes">${m.scene_names.map((n) => `
-    <button class="scene" aria-pressed="${m.active_scene === n}" data-act="scene" data-name="${n}" data-fid="s-${n}">
-      <span class="ic">${svg(ICON[n])}</span>
-      <span><span class="name">${n}</span><span class="sum">${esc(summary(m.scenes[n]))}</span></span>
+    <button class="scene" aria-pressed="${m.active_scene === n && m.matches}" data-act="scene" data-name="${n}" data-fid="s-${n}" title="${esc(summary(m.scenes[n]))}">
+      ${svg(ICON[n], 20)}<span class="name">${n}</span>
     </button>`).join('')}</div>`;
-  if (m.active_scene && !m.matches) {
-    html += `<div class="notice"><p>Midlertidig endret. ${esc(m.active_scene)} er uendret og brukes neste gang.</p>
-      <div class="row"><button class="btn" data-act="revert" data-fid="revert">Tilbake til ${esc(m.active_scene)}</button>
-      ${m.can_edit ? `<button class="btn primary" data-act="save-current" data-fid="savecur">Lagre som standard</button>` : ''}</div></div>`;
-  }
   html += toastHTML();
   html += controlsHTML('live');
   return html;
@@ -399,7 +393,8 @@ function act(a, ds) {
       const e = entity(ds.key);
       if (!e) return;
       const cur = (draft ? S.draft[e.key] : valueOf(e)) ?? m.limits.heat_min;
-      const next = Math.min(m.limits.heat_max, Math.max(m.limits.heat_min, Math.round((cur + 0.5 * Number(ds.dir)) * 2) / 2));
+      const base = Math.round(Math.min(m.limits.heat_max, Math.max(m.limits.heat_min, Number(cur) || m.limits.heat_min)));
+      const next = Math.min(m.limits.heat_max, Math.max(m.limits.heat_min, base + Number(ds.dir)));
       if (draft) S.draft[e.key] = next;
       else {
         setPending(e.key, next);

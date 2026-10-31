@@ -272,7 +272,7 @@ document.addEventListener('click', async (ev) => {
       const e = ents.find((x) => x.entity_id === d.id);
       const L = A.cfg.limits;
       const cur = Math.min(L.heat_max, Math.max(L.heat_min, sceneValue(e, A.tab)));
-      setScene(d.id, Math.min(L.heat_max, Math.max(L.heat_min, cur + 0.5 * Number(d.dir))));
+      setScene(d.id, Math.min(L.heat_max, Math.max(L.heat_min, Math.round(cur) + Number(d.dir))));
       break;
     }
     case 'toggle-tenant-edit': A.cfg.tenant_can_edit_scenes = !A.cfg.tenant_can_edit_scenes; setDirty(); break;

@@ -29,6 +29,7 @@ export class Engine extends EventEmitter {
     this.ha = ha;
     this.store = store;
     this.updateTimer = null;
+    this.lastHeat = new Map();
     ha.on('state', (id, n, o) => this.onState(id, n, o));
     ha.on('status', () => this.changed());
     setInterval(() => this.tick().catch((e) => log.warn('Tidsstyrt sjekk feilet:', e.message)), 20000);
@@ -54,7 +55,7 @@ export class Engine extends EventEmitter {
 
   clampHeat(v) {
     const { heat_min, heat_max } = this.data.limits;
-    const n = Math.round(Number(v) * 2) / 2;
+    const n = Math.round(Number(v)); // hele grader – termostaten tåler ikke halve
     if (!Number.isFinite(n)) return heat_min;
     return Math.min(heat_max, Math.max(heat_min, n));
   }
@@ -124,7 +125,13 @@ export class Engine extends EventEmitter {
       return a.brightness == null ? 100 : Math.max(1, Math.round(a.brightness / 2.55));
     }
     if (e.kind === 'heat') {
-      return typeof a.temperature === 'number' ? a.temperature : null;
+      // Noen Zigbee-termostater rapporterer kortvarig søppelverdier (f.eks. 3840 eller -2713).
+      const t = a.temperature;
+      if (typeof t === 'number' && t >= 0 && t <= 50) {
+        this.lastHeat.set(e.entity_id, t);
+        return t;
+      }
+      return this.lastHeat.get(e.entity_id) ?? null;
     }
     if (e.kind === 'vent') {
       if (String(a.preset_mode || '').toLowerCase() === 'away') return 'away';
@@ -147,7 +154,7 @@ export class Engine extends EventEmitter {
         if ((cur > 0) !== (want > 0)) return false;
         if (cur > 0 && Math.abs(cur - want) > 3) return false;
       } else if (e.kind === 'heat') {
-        if (Math.abs(cur - want) > 0.25) return false;
+        if (Math.abs(cur - want) > 0.5) return false;
       } else if (cur !== want) {
         return false;
       }
@@ -189,7 +196,7 @@ export class Engine extends EventEmitter {
       return this.ha.callService('light', 'turn_on', dimmable ? { entity_id: id, brightness_pct: v } : { entity_id: id });
     }
     if (e.kind === 'heat') {
-      const data = { entity_id: id, temperature: v };
+      const data = { entity_id: id, temperature: Math.round(v) };
       if (st?.state === 'off' && (a.hvac_modes || []).includes('heat')) data.hvac_mode = 'heat';
       return this.ha.callService('climate', 'set_temperature', data);
     }
@@ -342,7 +349,7 @@ export class Engine extends EventEmitter {
           const modes = a.supported_color_modes || [];
           base.dimmable = !(modes.length === 1 && modes[0] === 'onoff');
         } else if (e.kind === 'heat') {
-          base.current = typeof a.current_temperature === 'number' ? a.current_temperature : null;
+          base.current = typeof a.current_temperature === 'number' && a.current_temperature > -30 && a.current_temperature < 60 ? a.current_temperature : null;
           base.heating = a.hvac_action === 'heating';
         } else if (e.kind === 'vent') {
           base.modes = this.ventModes();

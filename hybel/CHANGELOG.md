@@ -1,5 +1,11 @@
 # Endringslogg
 
+## 0.1.3
+
+- Temperatur stilles i hele grader. Termostaten svarte med søppelverdier (f.eks. -2713) på halve grader; slike verdier filtreres nå bort.
+- Fjernet «Midlertidig endret»-boksen på forsiden.
+- Mer kompakte scenevalg.
+
 ## 0.1.2
 
 - Gamle bokmerker og ukjente adresser sendes til forsiden i stedet for «Ikke funnet».
