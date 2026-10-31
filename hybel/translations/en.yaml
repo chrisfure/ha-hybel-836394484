@@ -1,0 +1,15 @@
+configuration:
+  require_cloudflare_access:
+    name: Krev Cloudflare Access
+    description: Leietakersiden godtar bare forespørsler som er logget inn via Cloudflare Access. Slå av kun ved testing på hjemmenettet.
+  cloudflare_team_domain:
+    name: Cloudflare team-domene
+    description: For eksempel «mittteam» eller «mittteam.cloudflareaccess.com» (Zero Trust → Settings → Custom pages / Team domain).
+  cloudflare_aud:
+    name: Application Audience (AUD) tag
+    description: Finnes i Zero Trust → Access → Applications → din app → Overview.
+  log_level:
+    name: Loggnivå
+    description: Hvor mye som skrives i loggen.
+network:
+  8100/tcp: Leietakerside (kun testing på hjemmenettet)

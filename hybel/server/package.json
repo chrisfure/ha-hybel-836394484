@@ -1,0 +1,7 @@
+{
+  "name": "hybelstyring",
+  "private": true,
+  "type": "module",
+  "description": "Hybelstyring for Home Assistant – ingen eksterne avhengigheter",
+  "engines": { "node": ">=22" }
+}
