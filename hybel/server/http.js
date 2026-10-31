@@ -8,11 +8,12 @@ const TYPES = {
   '.css': 'text/css; charset=utf-8',
   '.svg': 'image/svg+xml',
   '.png': 'image/png',
+  '.ico': 'image/x-icon',
   '.json': 'application/json; charset=utf-8',
   '.webmanifest': 'application/manifest+json; charset=utf-8'
 };
 
-export async function serveStatic(req, res, roots, headers = {}) {
+export async function serveStatic(req, res, roots, headers = {}, onMissing = null) {
   let path = decodeURIComponent(new URL(req.url, 'http://x').pathname);
   if (path.endsWith('/')) path += 'index.html';
   const rel = normalize(path).replace(/^(\.\.[/\\])+/, '').replace(/^[/\\]+/, '');
@@ -30,6 +31,7 @@ export async function serveStatic(req, res, roots, headers = {}) {
       return res.end(body);
     } catch {}
   }
+  if (onMissing) return onMissing(path);
   res.writeHead(404, { 'Content-Type': 'text/plain; charset=utf-8' });
   res.end('Ikke funnet');
 }

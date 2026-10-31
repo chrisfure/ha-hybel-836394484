@@ -71,7 +71,15 @@ export function startTenantServer({ engine, options, webRoot, port }) {
       }
       if (url.pathname.startsWith('/api/')) return sendJson(res, 404, { ok: false, error: 'Ikke funnet' });
       if (req.method !== 'GET' && req.method !== 'HEAD') return sendJson(res, 405, { ok: false });
-      return serveStatic(req, res, [join(webRoot, 'tenant'), join(webRoot, 'shared')], SECURITY);
+      return serveStatic(req, res, [join(webRoot, 'tenant'), join(webRoot, 'shared')], SECURITY, (path) => {
+        // Gamle bokmerker og ukjente sider sendes til forsiden.
+        if (/\.[a-z0-9]+$/i.test(path)) {
+          res.writeHead(404, { 'Content-Type': 'text/plain; charset=utf-8', ...SECURITY });
+          return res.end('Ikke funnet');
+        }
+        res.writeHead(302, { Location: '/', 'Cache-Control': 'no-store', ...SECURITY });
+        res.end();
+      });
     } catch (err) {
       log.error('Feil i leietakerserver:', err);
       if (!res.headersSent) sendJson(res, 500, { ok: false, error: 'Intern feil' });

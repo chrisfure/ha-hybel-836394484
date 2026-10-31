@@ -1,5 +1,10 @@
 # Endringslogg
 
+## 0.1.2
+
+- Gamle bokmerker og ukjente adresser sendes til forsiden i stedet for «Ikke funnet».
+- Ikoner for hjemskjerm (iPhone/Android) og favicon.
+
 ## 0.1.1
 
 - Retting: appen startet ikke fordi tilgangsnøkkelen til Home Assistant ikke ble sendt videre av s6-overlay.
