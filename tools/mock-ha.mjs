@@ -7,8 +7,7 @@ const PORT = Number(process.env.MOCK_PORT || 8123);
 const now = () => new Date().toISOString();
 const st = (entity_id, state, attributes) => ({ entity_id, state, attributes, last_changed: now(), last_updated: now(), context: { id: 'x' } });
 
-const states = new Map(
-  [
+const HYBEL = [
     st('light.demo_stue', 'on', { friendly_name: 'Demo stue', brightness: 178, supported_color_modes: ['brightness'] }),
     st('light.demo_gang', 'off', { friendly_name: 'Demo gang', supported_color_modes: ['brightness'] }),
     st('light.demo_bad', 'off', { friendly_name: 'Demo bad', supported_color_modes: ['brightness'] }),
@@ -17,8 +16,20 @@ const states = new Map(
     st('climate.demo_ventilasjon', 'fan_only', { friendly_name: 'Demo ventilasjon', hvac_modes: ['auto', 'fan_only'], fan_modes: ['low', 'medium', 'high'], fan_mode: 'medium', preset_modes: ['none', 'away', 'boost'], preset_mode: 'none', current_temperature: 19.5, current_humidity: 45 }),
     st('binary_sensor.demo_filter_alarm', 'off', { friendly_name: 'Demo filteralarm' }),
     st('light.demo_kjokken_hovedhus', 'on', { friendly_name: 'Demo kjøkken (hovedhus)', brightness: 255, supported_color_modes: ['brightness'] })
-  ].map((s) => [s.entity_id, s])
-);
+];
+// Demo for Gjestesiden (MOCK_SET=gjest): fargelys, hvittoner, termostat, føler og høyttaler.
+const GJEST = [
+    st('light.demo_benk', 'on', { friendly_name: 'Demo benk', brightness: 178, supported_color_modes: ['rgbw'], color_mode: 'rgbw', rgbw_color: [0, 0, 0, 255], rgb_color: [255, 255, 255] }),
+    st('light.demo_vindu', 'on', { friendly_name: 'Demo vindu', brightness: 115, supported_color_modes: ['color_temp', 'xy'], color_mode: 'color_temp', color_temp_kelvin: 2700, rgb_color: [255, 167, 87], min_color_temp_kelvin: 1801, max_color_temp_kelvin: 6535 }),
+    st('light.demo_spot', 'off', { friendly_name: 'Demo spot', supported_color_modes: ['brightness'] }),
+    st('light.demo_lampe', 'off', { friendly_name: 'Demo lampe', supported_color_modes: ['color_temp'], min_color_temp_kelvin: 2202, max_color_temp_kelvin: 4000 }),
+    st('light.demo_stripe', 'off', { friendly_name: 'Demo stripe', supported_color_modes: ['color_temp', 'xy'], min_color_temp_kelvin: 2000, max_color_temp_kelvin: 6535 }),
+    st('climate.demo_varmepumpe', 'heat', { friendly_name: 'Demo varmepumpe', hvac_modes: ['off', 'heat', 'cool'], min_temp: 16, max_temp: 30, target_temp_step: 1, temperature: 22, current_temperature: 21.5, hvac_action: 'idle' }),
+    st('climate.demo_panelovn', 'heat', { friendly_name: 'Demo panelovn', hvac_modes: ['off', 'heat'], min_temp: 5, max_temp: 30, temperature: 20, current_temperature: 19.8, hvac_action: 'heating' }),
+    st('sensor.demo_temperatur', '20.4', { friendly_name: 'Demo temperatur', device_class: 'temperature', unit_of_measurement: '°C' }),
+    st('media_player.demo_hoyttaler', 'idle', { friendly_name: 'Demo høyttaler', volume_level: 0.2 })
+];
+const states = new Map((process.env.MOCK_SET === 'gjest' ? GJEST : HYBEL).map((s) => [s.entity_id, s]));
 export const calls = [];
 
 const clients = new Set();
@@ -46,11 +57,20 @@ function callService(domain, service, data) {
   calls.push({ domain, service, data, at: Date.now() });
   console.log('[mock] call', `${domain}.${service}`, JSON.stringify(data));
   const id = data.entity_id;
-  const cur = states.get(id);
+  const cur = states.get([].concat(id)[0]);
   const delay = 40;
   setTimeout(() => {
-    if (domain === 'light' && service === 'turn_on') setState(id, 'on', { brightness: data.brightness_pct != null ? Math.round(data.brightness_pct * 2.55) : cur?.attributes.brightness ?? 255 });
-    else if (domain === 'light' && service === 'turn_off') setState(id, 'off', { brightness: null });
+    if (domain === 'light' && service === 'turn_on') {
+      const extra = {};
+      if (data.color_temp_kelvin) Object.assign(extra, { color_mode: 'color_temp', color_temp_kelvin: data.color_temp_kelvin, rgb_color: [255, 200, 150] });
+      if (data.rgb_color) Object.assign(extra, { color_mode: 'xy', rgb_color: data.rgb_color });
+      if (data.rgbw_color) Object.assign(extra, { color_mode: 'rgbw', rgbw_color: data.rgbw_color, rgb_color: [255, 255, 255] });
+      setState(id, 'on', { brightness: data.brightness_pct != null ? Math.round(data.brightness_pct * 2.55) : cur?.attributes.brightness ?? 255, ...extra });
+    }
+    else if (domain === 'light' && service === 'turn_off') for (const one of [].concat(id)) setState(one, 'off', { brightness: null });
+    else if (domain === 'music_assistant' && service === 'play_media') setState(id, 'playing', { media_title: data.media_id });
+    else if (domain === 'media_player' && service === 'media_stop') setState(id, 'idle', { media_title: null });
+    else if (domain === 'media_player' && service === 'volume_set') setState(id, states.get(id).state, { volume_level: data.volume_level });
     else if (domain === 'climate' && service === 'set_temperature') setState(id, data.hvac_mode || cur.state, { temperature: data.temperature });
     else if (domain === 'climate' && service === 'set_fan_mode') setState(id, cur.state, { fan_mode: data.fan_mode });
     else if (domain === 'climate' && service === 'set_preset_mode') setState(id, cur.state, { preset_mode: data.preset_mode });
@@ -69,7 +89,7 @@ function handle(c, msg) {
     case 'call_service': callService(msg.domain, msg.service, msg.service_data || {}); return ok({ context: {} });
     case 'config/area_registry/list': return ok([{ area_id: 'hybel', name: 'Hybel' }, { area_id: 'kjokken', name: 'Kjøkken' }]);
     case 'config/device_registry/list': return ok([]);
-    case 'config/entity_registry/list': return ok([...states.keys()].map((id) => ({ entity_id: id, area_id: id.includes('hovedhus') ? 'kjokken' : 'hybel' })));
+    case 'config/entity_registry/list': return ok([...states.keys()].map((id) => ({ entity_id: id, area_id: id.includes('hovedhus') || id.includes('benk') ? 'kjokken' : 'hybel' })));
     case 'get_services': return ok({ notify: { mobile_app_demo: {}, notify: {} } });
     default: return c.send({ id: msg.id, type: 'result', success: false, error: { message: 'unknown' } });
   }

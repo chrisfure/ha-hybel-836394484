@@ -1,17 +1,19 @@
-# Hybelstyring for Home Assistant
+# Husapper for Home Assistant
 
-En Home Assistant-app som gir en hybel sin egen, enkle og raske styringsside på eget domene, mens all administrasjon skjer i Home Assistant.
+To Home Assistant-apper uten eksterne avhengigheter (kun Node.js 22+ fra Alpine):
 
-- **Leietakersiden** – scener, lys, gulvvarme og ventilasjon. Nås via Cloudflare Tunnel og Cloudflare Access.
-- **Utleiersiden** – i sidemenyen i Home Assistant. Velg enheter, sett grenser, rediger scener og varsler.
+| App | Hva | Nås via |
+|---|---|---|
+| [**Hybelstyring**](hybel/DOCS.md) | Scener, lys, gulvvarme og ventilasjon for en hybel | Eget domene via Cloudflare Tunnel og Access |
+| [**Gjestesiden**](gjest/DOCS.md) | Lys, farger, varme og radio for gjester | Kun hjemmenettet (port 8200) |
 
-Ingen eksterne avhengigheter: kun Node.js 22+ fra Alpine.
-
-Se [hybel/DOCS.md](hybel/DOCS.md) for installasjon og oppsett av Cloudflare.
+All administrasjon skjer i sidemenyen i Home Assistant. Personlige verdier lagres i appenes `/data`, aldri i koden.
 
 ## Utvikling
 
 ```bash
-./tools/dev.sh   # starter en falsk Home Assistant og appen
-# Leietaker: http://localhost:8100   Utleier: http://localhost:8099
+./tools/dev.sh        # Hybelstyring  – leietaker :8100, utleier :8099
+./tools/dev-gjest.sh  # Gjestesiden   – gjest :8200, oppsett :8099
 ```
+
+Begge starter en falsk Home Assistant (`tools/mock-ha.mjs`).

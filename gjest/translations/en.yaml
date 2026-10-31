@@ -1,0 +1,9 @@
+configuration:
+  log_level:
+    name: Loggnivå
+    description: Hvor mye som skrives i loggen.
+  import_config:
+    name: Importer oppsett (valgfritt)
+    description: Lim inn et oppsett i JSON-format for å fylle rom, lys og radio på én gang. Importeres ved oppstart, og bare når innholdet er endret. La stå tomt til vanlig – resten gjøres på «Gjest» i sidemenyen.
+network:
+  8200/tcp: Gjestesiden på hjemmenettet

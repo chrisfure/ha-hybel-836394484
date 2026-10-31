@@ -1,0 +1,7 @@
+{
+  "name": "gjestesiden",
+  "private": true,
+  "type": "module",
+  "description": "Gjestesiden for Home Assistant – ingen eksterne avhengigheter",
+  "engines": { "node": ">=22" }
+}
