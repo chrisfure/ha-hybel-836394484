@@ -100,17 +100,19 @@ export class Engine extends EventEmitter {
     return { min, max: Math.max(min, max), step };
   }
 
-  heatView(cfg) {
+  heatView(cfg, sensorId) {
     const id = cfg.entity_id;
     const st = this.ha.states.get(id);
     const a = st?.attributes || {};
     if (validTemp(a.temperature)) this.lastTarget.set(id, a.temperature);
     const { min, max, step } = this.heatRange(st);
+    // En egen romføler måler ofte bedre enn føleren i selve ovnen.
+    const room = sensorId ? this.tempView(sensorId).now : null;
     return {
       key: keyOf(id),
       name: cfg.name,
       available: !unavailable(st),
-      now: validTemp(a.current_temperature) ? a.current_temperature : null,
+      now: room ?? (validTemp(a.current_temperature) ? a.current_temperature : null),
       target: this.lastTarget.get(id) ?? null,
       heating: a.hvac_action === 'heating',
       min,
@@ -161,8 +163,8 @@ export class Engine extends EventEmitter {
         name: r.name,
         short: r.short || r.name,
         lights: r.lights.map((l) => this.lightView(l)),
-        heat: r.heat ? this.heatView(r.heat) : null,
-        temp: r.temp_sensor ? this.tempView(r.temp_sensor) : null
+        heat: r.heat ? this.heatView(r.heat, r.temp_sensor) : null,
+        temp: !r.heat && r.temp_sensor ? this.tempView(r.temp_sensor) : null
       })),
       radio: this.radioView()
     };
@@ -323,7 +325,7 @@ export class Engine extends EventEmitter {
         short: str(r?.short, 12) || name.slice(0, 12),
         lights,
         heat: heatId ? { entity_id: heatId, name: str(r.heat.name, 40) || 'Varme' } : null,
-        temp_sensor: heatId ? '' : ent(r?.temp_sensor, ['sensor'], `${name} – temperatur`)
+        temp_sensor: ent(r?.temp_sensor, ['sensor'], `${name} – temperatur`)
       });
     }
     const rb = body.radio || {};

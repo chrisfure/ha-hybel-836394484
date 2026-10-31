@@ -19,7 +19,7 @@ Siden er laget for å være lokal. Ikke legg den i Cloudflare Tunnel eller åpne
 Åpne **Gjest** i sidemenyen:
 
 - **Rom**: hvert rom blir en fane. Legg til lys og gi dem navnene gjestene skal se. Lys som støtter farge eller hvittoner får automatisk et fargevalg.
-- **Varme**: velg en termostat per rom, eller vis bare temperaturen fra en føler.
+- **Varme**: velg en termostat per rom, eller vis bare temperaturen fra en føler. Har rommet begge, brukes romføleren for «Nå»-temperaturen (ovnens egen føler måler ofte feil).
 - **Radio**: velg høyttaler, høyeste tillatte volum og kanalene. «Kanal i Music Assistant» er det du ville brukt som `media_id` i `music_assistant.play_media`.
 - **Grenser**: laveste og høyeste temperatur gjestene kan velge.
 

@@ -106,8 +106,8 @@ function roomHTML(r, ri) {
     <div class="sub-h">Varme</div>
     <div class="two">
       <label class="f">Termostat<select data-path="rooms.${ri}.heat.entity_id" data-fill="rooms.${ri}.heat.name">${options(A.cand.climate, r.heat?.entity_id || '')}</select></label>
-      ${r.heat ? `<label class="f">Navn gjestene ser<input type="text" data-path="rooms.${ri}.heat.name" value="${esc(r.heat.name)}" maxlength="40"></label>`
-        : `<label class="f">Eller bare vis temperatur fra føler<select data-path="rooms.${ri}.temp_sensor">${options(A.cand.sensor, r.temp_sensor || '')}</select></label>`}
+      ${r.heat ? `<label class="f">Navn gjestene ser<input type="text" data-path="rooms.${ri}.heat.name" value="${esc(r.heat.name)}" maxlength="40"></label>` : ''}
+      <label class="f">${r.heat ? 'Romføler for «Nå»-temperaturen (valgfritt)' : 'Eller bare vis temperatur fra føler'}<select data-path="rooms.${ri}.temp_sensor">${options(A.cand.sensor, r.temp_sensor || '')}</select></label>
     </div>
   </div>`;
 }
@@ -195,7 +195,6 @@ $('main').addEventListener('change', (ev) => {
   if (m) {
     const r = A.cfg.rooms[Number(m[1])];
     r.heat = el.value ? { entity_id: el.value, name: r.heat?.name || nameOf(el.value) || 'Varme' } : null;
-    if (r.heat) r.temp_sensor = '';
   } else {
     setPath(path, el.value);
     const fill = el.dataset.fill;
