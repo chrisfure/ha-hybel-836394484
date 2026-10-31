@@ -1,5 +1,9 @@
 # Endringslogg
 
+## 0.1.1
+
+- Retting: appen startet ikke fordi tilgangsnøkkelen til Home Assistant ikke ble sendt videre av s6-overlay.
+
 ## 0.1.0
 
 - Første versjon.

@@ -19,7 +19,16 @@ try {
 }
 setLevel(options.log_level || 'info');
 
-const token = process.env.SUPERVISOR_TOKEN || process.env.HA_TOKEN;
+function readToken() {
+  if (process.env.SUPERVISOR_TOKEN) return process.env.SUPERVISOR_TOKEN;
+  if (process.env.HA_TOKEN) return process.env.HA_TOKEN;
+  // Reserve: s6-overlay lagrer miljøet her når det ikke sendes videre.
+  for (const f of ['/run/s6/container_environment/SUPERVISOR_TOKEN', '/var/run/s6/container_environment/SUPERVISOR_TOKEN']) {
+    try { return readFileSync(f, 'utf8').trim(); } catch {}
+  }
+  return null;
+}
+const token = readToken();
 if (!token) {
   log.error('Mangler tilgang til Home Assistant (SUPERVISOR_TOKEN). Er "homeassistant_api: true" satt?');
   process.exit(1);

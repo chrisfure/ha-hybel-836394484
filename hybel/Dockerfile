@@ -9,4 +9,6 @@ COPY server/ /app/server/
 COPY web/ /app/web/
 
 ENV NODE_ENV=production
+# Kjør Node direkte (ikke via s6-overlay), slik at SUPERVISOR_TOKEN fra miljøet er tilgjengelig.
+ENTRYPOINT []
 CMD ["node", "/app/server/main.js"]
