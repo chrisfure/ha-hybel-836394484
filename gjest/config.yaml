@@ -1,5 +1,5 @@
 name: Gjestesiden
-version: "0.1.0"
+version: "0.1.1"
 slug: gjest
 description: Lys, varme og radio for gjester – kun på hjemmenettet, uten innlogging i Home Assistant.
 url: https://github.com/chrisfure/ha-hybel-836394484

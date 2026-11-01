@@ -19,7 +19,11 @@
 
 *, *::before, *::after { box-sizing: border-box; }
 html, body { height: 100%; }
-html { -webkit-text-size-adjust: 100%; }
+html { -webkit-text-size-adjust: 100%; touch-action: pan-y; }
+/* Ingen zoom: dobbelttrykk zoomer ikke, og trykk reagerer med en gang. */
+button, input, a { touch-action: manipulation; }
+.sl { touch-action: pan-y; }
+body { -webkit-user-select: none; user-select: none; -webkit-touch-callout: none; }
 body { margin: 0; background: var(--bg); color: var(--ink); font-family: var(--sans); -webkit-font-smoothing: antialiased; overscroll-behavior: none; }
 button, input { font: inherit; color: inherit; }
 button { cursor: pointer; -webkit-tap-highlight-color: transparent; }

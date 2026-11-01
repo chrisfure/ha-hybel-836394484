@@ -499,4 +499,24 @@ document.addEventListener('visibilitychange', () => {
 });
 setInterval(() => { if (S.m && !S.dragging) render(); }, 60000); // hilsenen følger klokken
 
+// Ingen zoom. iPhone overser «user-scalable=no», så knipebevegelser stoppes her.
+for (const ev of ['gesturestart', 'gesturechange', 'gestureend']) {
+  document.addEventListener(ev, (e) => e.preventDefault(), { passive: false });
+}
+document.addEventListener('touchmove', (e) => {
+  if (e.touches.length > 1 || (e.scale !== undefined && e.scale !== 1)) e.preventDefault();
+}, { passive: false });
+let lastTouchEnd = 0;
+document.addEventListener('touchend', (e) => {
+  const now = Date.now();
+  // Knapper og slidere håndteres av CSS (touch-action), så raske dobbelttrykk på «+» fortsatt teller.
+  if (now - lastTouchEnd < 300 && !e.target.closest('button, input, a')) e.preventDefault();
+  lastTouchEnd = now;
+}, { passive: false });
+// Ctrl/Cmd + hjul eller +/- på tastatur (nettbrett med tastatur, PC).
+document.addEventListener('wheel', (e) => { if (e.ctrlKey) e.preventDefault(); }, { passive: false });
+document.addEventListener('keydown', (e) => {
+  if ((e.ctrlKey || e.metaKey) && ['+', '-', '=', '0'].includes(e.key)) e.preventDefault();
+});
+
 connect();
