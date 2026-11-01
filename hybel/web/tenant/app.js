@@ -1,6 +1,18 @@
 // Leietakersiden – ren JavaScript, ingen rammeverk.
 const $app = document.getElementById('app');
 
+// Sperr zoom (iOS Safari ignorerer user-scalable=no).
+for (const ev of ['gesturestart', 'gesturechange', 'gestureend']) {
+  document.addEventListener(ev, (e) => e.preventDefault(), { passive: false });
+}
+document.addEventListener('touchmove', (e) => { if (e.touches.length > 1 || (e.scale && e.scale !== 1)) e.preventDefault(); }, { passive: false });
+let lastTouchEnd = 0;
+document.addEventListener('touchend', (e) => {
+  const now = Date.now();
+  if (now - lastTouchEnd < 350 && !e.target.closest('input')) e.preventDefault();
+  lastTouchEnd = now;
+}, { passive: false });
+
 const S = {
   m: null,            // siste tilstand fra serveren
   view: 'main',       // main | settings | edit

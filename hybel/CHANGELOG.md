@@ -1,5 +1,9 @@
 # Endringslogg
 
+## 0.1.4
+
+- Zoom er sperret på leietakersiden (kniping og dobbelttrykk), så den oppfører seg som en app.
+
 ## 0.1.3
 
 - Temperatur stilles i hele grader. Termostaten svarte med søppelverdier (f.eks. -2713) på halve grader; slike verdier filtreres nå bort.

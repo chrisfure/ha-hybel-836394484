@@ -1,3 +1,8 @@
+/* Ingen zoom: hindrer dobbelttrykk-zoom og kniping */
+html, body { touch-action: pan-y; overscroll-behavior: none; }
+button, .range, .switch { touch-action: manipulation; }
+.range { touch-action: none; }
+
 .app {
   max-width: 520px; margin: 0 auto; min-height: 100vh;
   padding: max(24px, env(safe-area-inset-top)) 18px max(32px, env(safe-area-inset-bottom));
