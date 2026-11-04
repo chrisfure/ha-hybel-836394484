@@ -4,7 +4,7 @@ import { createHash, randomBytes } from 'node:crypto';
 import { defaultData } from './store.js';
 import { log } from './log.js';
 
-export const KINDS = ['light', 'heat', 'vent', 'climate'];
+export const KINDS = ['light', 'heat', 'vent', 'climate', 'button'];
 export const VENT_MODES = ['away', 'low', 'normal', 'high'];
 export const ICONS = ['home', 'pot', 'drop', 'sofa', 'book', 'moon', 'door', 'sun', 'tv', 'bed', 'star', 'leaf'];
 export const CLIMATE_MODES = ['off', 'heat', 'cool', 'heat_cool', 'auto', 'dry', 'fan_only'];
@@ -28,6 +28,8 @@ const dateKey = (d) => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getD
 const isoDay = (d) => ((d.getDay() + 6) % 7) + 1; // man=1 … søn=7
 const validTemp = (t) => typeof t === 'number' && t >= 0 && t <= 50;
 const minutesOf = (hhmm) => { const [h, m] = String(hhmm).split(':').map(Number); return h * 60 + m; };
+// Trådløse knapper: bruk trykk og hold (slipp er sjelden nyttig).
+const buttonEvents = (st) => (st?.attributes?.event_types || []).filter((t) => !/release/i.test(t));
 const isTime = (v) => /^([01]\d|2[0-3]):[0-5]\d$/.test(String(v));
 
 // Lysområde: leietakeren ser 1–100 %, men lyset bruker bare utleiers område (f.eks. 21–50 % ekte).
@@ -153,7 +155,7 @@ export class Engine extends EventEmitter {
       if (fan != null && fans.includes(fan)) out.fan = fan;
       return out;
     }
-    throw new Error('Ukjent enhetstype');
+    throw new Error('Kan ikke styres');
   }
 
   readTemp(e, t) {
@@ -165,6 +167,7 @@ export class Engine extends EventEmitter {
   }
 
   currentValue(e) {
+    if (e.kind === 'button') return null;
     const st = this.state(e);
     if (unavailable(st)) return null;
     const a = st.attributes || {};
@@ -422,10 +425,15 @@ export class Engine extends EventEmitter {
       const above = Math.round(Number(t.above));
       if (!(above >= 30 && above <= 95)) throw new Error('Luftfuktigheten må være mellom 30 og 95 %');
       trigger = { type: 'humidity', entity_id: e.entity_id, above };
+    } else if (t.type === 'button') {
+      const e = this.byKey(t.entity);
+      if (!e || e.kind !== 'button') throw new Error('Velg en knapp');
+      if (!buttonEvents(this.state(e)).includes(t.event)) throw new Error('Velg hvilket trykk');
+      trigger = { type: 'button', entity_id: e.entity_id, event: t.event };
     } else throw new Error('Velg når automasjonen skal kjøre');
 
     let window = null;
-    if (input.window && (trigger.type === 'light' || trigger.type === 'humidity')) {
+    if (input.window && ['light', 'humidity', 'button'].includes(trigger.type)) {
       if (!isTime(input.window.from) || !isTime(input.window.to)) throw new Error('Ugyldig tidsrom');
       window = { from: input.window.from, to: input.window.to };
     }
@@ -547,6 +555,7 @@ export class Engine extends EventEmitter {
     if (t.type === 'time') when = `kl. ${t.at}`;
     else if (t.type === 'sunset' || t.type === 'sunrise') when = `${t.type === 'sunset' ? 'solnedgang' : 'soloppgang'}${t.offset ? ` ${t.offset > 0 ? '+' : ''}${t.offset} min` : ''}`;
     else if (t.type === 'light') when = `${label(t.entity_id)} slås ${t.to === 'on' ? 'på' : 'av'}`;
+    else if (t.type === 'button') when = `${label(t.entity_id)}: ${t.event}`;
     else when = `luftfuktighet over ${t.above} %`;
     const a = auto.action;
     const what = a.type === 'scene' ? `scene ${this.ensureScenes().find((s) => s.id === a.scene_id)?.name || '(slettet)'}`
@@ -589,8 +598,13 @@ export class Engine extends EventEmitter {
       const t = auto.trigger;
       if (!auto.enabled || t.entity_id !== entityId) continue;
       if (!auto.days.includes(isoDay(now)) || !this.inWindow(auto, now)) continue;
-      if (Date.now() - (d.auto_last[auto.id] || 0) < (t.type === 'light' ? 3000 : STATE_COOLDOWN_MS)) continue;
+      const cooldown = t.type === 'button' ? 800 : t.type === 'light' ? 3000 : STATE_COOLDOWN_MS;
+      if (Date.now() - (d.auto_last[auto.id] || 0) < cooldown) continue;
       let hit = false;
+      if (t.type === 'button') {
+        // En hendelse gir ny tidsstempel-tilstand. Ikke reager når HA starter (forrige tilstand mangler/utilgjengelig).
+        hit = Boolean(newState && oldState && !unavailable(oldState) && !unavailable(newState) && newState.state !== oldState.state && newState.attributes?.event_type === t.event);
+      }
       if (t.type === 'light') {
         const was = oldState?.state;
         const is = newState?.state;
@@ -746,6 +760,9 @@ export class Engine extends EventEmitter {
           base.modes = this.ventModes();
           base.humidity = typeof a.current_humidity === 'number' ? a.current_humidity : null;
           base.temperature = typeof a.current_temperature === 'number' ? a.current_temperature : null;
+        } else if (e.kind === 'button') {
+          base.value = null;
+          base.events = buttonEvents(st);
         } else if (e.kind === 'climate') {
           [base.min, base.max] = this.tempRange(e);
           base.current = cur;
@@ -791,8 +808,8 @@ export class Engine extends EventEmitter {
       const ents = [];
       for (const e of body.entities) {
         const id = String(e.entity_id || '');
-        if (!/^(light|climate)\.[a-z0-9_]+$/.test(id) || seen.has(id)) { errors.push(`Ugyldig enhet: ${id}`); continue; }
-        const kind = id.startsWith('light.') ? 'light' : ['vent', 'climate'].includes(e.kind) ? e.kind : 'heat';
+        if (!/^(light|climate|event)\.[a-z0-9_]+$/.test(id) || seen.has(id)) { errors.push(`Ugyldig enhet: ${id}`); continue; }
+        const kind = id.startsWith('light.') ? 'light' : id.startsWith('event.') ? 'button' : ['vent', 'climate'].includes(e.kind) ? e.kind : 'heat';
         seen.add(id);
         const ent = { entity_id: id, label: String(e.label || '').trim().slice(0, 40) || id, kind, enabled: e.enabled !== false };
         if (kind === 'light') {

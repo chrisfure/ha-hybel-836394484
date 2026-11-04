@@ -176,3 +176,6 @@ button, .range, .switch { touch-action: manipulation; }
 .actions .btn.ghost { flex: 1; }
 
 .window .input.time { flex: 1; min-width: 0; padding: 0 8px; }
+
+.btn-events { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 6px; }
+.btn-events .chip { min-height: 44px; font-size: 13.5px; }

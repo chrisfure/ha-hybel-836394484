@@ -1,5 +1,9 @@
 # Endringslogg
 
+## 0.3.2
+
+- **Trådløse knapper** (event-entiteter, f.eks. Namron-fjernkontroll) kan legges til på utleiersiden og brukes som utløser i leietakerens automasjoner: velg knapp og trykk/hold, eventuelt bare i et tidsrom.
+
 ## 0.3.1
 
 - Nettleseren henter alltid nyeste versjon av siden etter en oppdatering (unngår at siden blir stående på «Kobler til huset»).

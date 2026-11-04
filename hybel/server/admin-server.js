@@ -41,10 +41,12 @@ export function startAdminServer({ engine, ha, webRoot, port, tenantHub, devOpen
     const list = [];
     for (const [id, st] of ha.states) {
       const domain = id.split('.')[0];
-      if (!['light', 'climate', 'binary_sensor'].includes(domain)) continue;
+      if (!['light', 'climate', 'binary_sensor', 'event'].includes(domain)) continue;
+      if (domain === 'event' && !(st.attributes?.event_types || []).some((t) => /press|click|single|double/i.test(t))) continue;
       const a = st.attributes || {};
       let kind = null;
       if (domain === 'light') kind = 'light';
+      else if (domain === 'event') kind = 'button';
       else if (domain === 'climate') {
         const hv = a.hvac_modes || [];
         // Varmepumpe/aircondition: kan kjøle. Ventilasjon: viftenivåer uten egen varmemodus. Ellers: varme (termostat).

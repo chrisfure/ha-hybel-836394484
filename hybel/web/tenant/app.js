@@ -224,6 +224,7 @@ function autoWhen(t, w) {
     }
   } else if (t.type === 'light') s = `Når ${(entity(t.entity)?.label || 'lyset').toLowerCase()} slås ${t.to === 'on' ? 'på' : 'av'}`;
   else if (t.type === 'humidity') s = `Når luftfuktigheten er over ${t.above} %`;
+  else if (t.type === 'button') s = `${entity(t.entity)?.label || 'Knapp'}: ${eventLabel(t.event).toLowerCase()}`;
   else s = '';
   if (w) s += ` (${w.from}–${w.to})`;
   return s;
@@ -240,6 +241,17 @@ function autoWhat(a) {
   if (a.type === 'set') return valuesSummary(a.values) || 'Styr enheter';
   return '';
 }
+// «button_2_up_press» → «Knapp 2 opp – trykk»
+function eventLabel(ev) {
+  const m = String(ev).match(/button_(\d+)_(up|down|on|off)_(press|hold|release|short_release|long_press)/i);
+  if (m) {
+    const dir = { up: '▲', on: '▲', down: '▼', off: '▼' }[m[2].toLowerCase()];
+    const how = /hold|long/i.test(m[3]) ? 'hold' : 'trykk';
+    return `Knapp ${m[1]} ${dir} ${how}`;
+  }
+  const map = { single: 'Ett trykk', double: 'Dobbeltrykk', long: 'Langt trykk', press: 'Trykk', hold: 'Hold' };
+  return map[String(ev).toLowerCase()] || String(ev).replace(/_/g, ' ');
+}
 const revertLabel = (m) => (m === 0 ? 'Aldri' : m < 60 ? `${m} min` : `${m / 60} t`);
 
 // ---------- byggeklosser ----------
@@ -254,7 +266,7 @@ function tabs() {
   const m = S.m;
   return TABS.filter((t) => {
     if (t.id === 'lys') return m.entities.some((e) => e.kind === 'light');
-    if (t.id === 'klima') return m.entities.some((e) => e.kind !== 'light');
+    if (t.id === 'klima') return m.entities.some((e) => ['heat', 'vent', 'climate'].includes(e.kind));
     if (t.id === 'auto') return m.can_edit || m.automations.length;
     return true;
   });
@@ -386,7 +398,7 @@ function lightsTab() {
 function climateTab() {
   const m = S.m;
   let h = '';
-  for (const e of m.entities.filter((x) => x.kind !== 'light')) {
+  for (const e of m.entities.filter((x) => ['heat', 'vent', 'climate'].includes(x.kind))) {
     const v = valueOf(e);
     if (e.kind === 'heat') {
       const now = e.current != null ? `Nå ${deg(e.current)}${e.heating ? ' · varmer' : ''}` : '';
@@ -451,11 +463,11 @@ function settingsHTML() {
   let html = subHTML('Hybelen', 'Innstillinger') + toastHTML();
 
   html += `<section><h2 class="group-title">Rekkefølge – enheter</h2><div class="list">`;
-  m.entities.forEach((e, i) => {
+  m.entities.filter((e) => e.kind !== 'button').forEach((e, i, arr) => {
     const kind = e.kind === 'light' ? 'Lys' : e.kind === 'heat' ? 'Varme' : e.kind === 'vent' ? 'Ventilasjon' : 'Varmepumpe';
     html += `<div class="list-row order-row"><span class="grow"><span class="t">${esc(e.label)}</span><span class="s">${kind}</span></span>
       <button class="tool-btn" data-act="ent-move" data-key="${e.key}" data-dir="-1" aria-label="Flytt ${esc(e.label)} opp" ${i === 0 ? 'disabled' : ''}>${svg(UI.up, 18, 2)}</button>
-      <button class="tool-btn" data-act="ent-move" data-key="${e.key}" data-dir="1" aria-label="Flytt ${esc(e.label)} ned" ${i === m.entities.length - 1 ? 'disabled' : ''}>${svg(UI.down, 18, 2)}</button></div>`;
+      <button class="tool-btn" data-act="ent-move" data-key="${e.key}" data-dir="1" aria-label="Flytt ${esc(e.label)} ned" ${i === arr.length - 1 ? 'disabled' : ''}>${svg(UI.down, 18, 2)}</button></div>`;
   });
   html += `</div></section>`;
 
@@ -493,7 +505,7 @@ function settingsHTML() {
 // Velg enheter og verdier – brukes både av scener og automasjoner.
 function pickerHTML(t) {
   let html = '';
-  for (const e of S.m.entities) {
+  for (const e of S.m.entities.filter((x) => x.kind !== 'button')) {
     const inc = t.include[e.key];
     const v = t.values[e.key];
     let ctl = '';
@@ -544,6 +556,8 @@ function autoEditorHTML() {
   const types = [['time', 'Klokke'], ['sunset', 'Sol ned'], ['sunrise', 'Sol opp']];
   if (lights.length) types.push(['light', 'Lys']);
   if (vents.length) types.push(['humidity', 'Fukt']);
+  const buttons = m.entities.filter((e) => e.kind === 'button' && e.events.length);
+  if (buttons.length) types.push(['button', 'Knapp']);
   let html = subHTML(a.id ? 'Rediger automasjon' : 'Ny automasjon', 'Automasjon') + toastHTML();
 
   html += `<section class="card form"><span class="field-label">Når</span>
@@ -568,7 +582,12 @@ function autoEditorHTML() {
         <button data-act="hum" data-dir="5" aria-label="Øk" ${t.above >= 95 ? 'disabled' : ''}>+</button></span></div>
       ${vents[0]?.humidity != null ? `<span class="note">Nå: ${Math.round(vents[0].humidity)} %</span>` : ''}`;
   }
-  if (t.type === 'light' || t.type === 'humidity') {
+  if (t.type === 'button') {
+    const be = entity(t.entity) || buttons[0];
+    if (buttons.length > 1) html += `<div class="chips">${buttons.map((e) => `<button class="chip" aria-pressed="${t.entity === e.key}" data-act="trig-entity" data-key="${e.key}">${esc(e.label)}</button>`).join('')}</div>`;
+    html += `<span class="note">Velg trykket som skal starte automasjonen:</span><div class="btn-events">${be.events.map((ev) => `<button class="chip" aria-pressed="${t.event === ev}" data-act="trig-event" data-v="${esc(ev)}">${esc(eventLabel(ev))}</button>`).join('')}</div>`;
+  }
+  if (t.type === 'light' || t.type === 'humidity' || t.type === 'button') {
     html += `<div class="row between"><span class="status">Bare i et tidsrom</span>
         <button class="switch teal" role="switch" aria-checked="${!!a.window}" aria-label="Bare i et tidsrom" data-act="window"></button></div>
       ${a.window ? `<div class="window"><input class="input time sm" type="time" value="${esc(a.window.from)}" data-field="win-from" aria-label="Fra"><span>til</span><input class="input time sm" type="time" value="${esc(a.window.to)}" data-field="win-to" aria-label="Til"></div>` : ''}`;
@@ -792,11 +811,18 @@ function act(a, ds) {
       if (ds.v === 'time' && !t.at) t.at = '22:00';
       if (ds.v === 'light') { t.entity = t.entity && entity(t.entity)?.kind === 'light' ? t.entity : m.entities.find((e) => e.kind === 'light')?.key; t.to = t.to || 'on'; }
       if (ds.v === 'humidity') { t.entity = m.entities.find((e) => e.kind === 'vent')?.key; t.above = t.above || 70; }
-      if (ds.v !== 'light' && ds.v !== 'humidity') S.adraft.window = null;
+      if (ds.v === 'button') { const b = m.entities.find((e) => e.kind === 'button' && e.events.length); t.entity = t.entity && entity(t.entity)?.kind === 'button' ? t.entity : b?.key; t.event = entity(t.entity)?.events.includes(t.event) ? t.event : entity(t.entity)?.events[0]; }
+      if (!['light', 'humidity', 'button'].includes(ds.v)) S.adraft.window = null;
       return render();
     }
-    case 'trig-entity':
-      S.adraft.trigger.entity = ds.key;
+    case 'trig-entity': {
+      const t = S.adraft.trigger;
+      t.entity = ds.key;
+      if (t.type === 'button' && !entity(ds.key)?.events.includes(t.event)) t.event = entity(ds.key)?.events[0];
+      return render();
+    }
+    case 'trig-event':
+      S.adraft.trigger.event = ds.v;
       return render();
     case 'trig-to':
       S.adraft.trigger.to = ds.v;
@@ -831,6 +857,7 @@ function act(a, ds) {
       const trigger = t.type === 'time' ? { type: 'time', at: t.at }
         : t.type === 'light' ? { type: 'light', entity: t.entity, to: t.to }
         : t.type === 'humidity' ? { type: 'humidity', entity: t.entity, above: t.above }
+        : t.type === 'button' ? { type: 'button', entity: t.entity, event: t.event }
         : { type: t.type, offset: t.offset || 0 };
       const action = ad.action.type === 'set'
         ? { type: 'set', values: Object.fromEntries(Object.keys(ad.set.include).filter((k) => ad.set.include[k]).map((k) => [k, ad.set.values[k]])) }
