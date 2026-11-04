@@ -257,3 +257,5 @@ button, .range, .switch { touch-action: manipulation; }
 .cl-b.ok[aria-pressed="true"] { background: var(--green-soft); border-color: var(--green); color: var(--green-ink); }
 .cl-b.note[aria-pressed="true"] { background: var(--amber-soft); border-color: var(--amber); color: var(--amber-ink); }
 .cl-row.ok .t { color: var(--muted); }
+.mail-to { display: flex; align-items: center; justify-content: space-between; gap: 10px; background: var(--bg); border-radius: 14px; padding: 8px 8px 8px 14px; font-size: 14px; overflow-wrap: anywhere; }
+.mail-card .btn.ghost { text-align: center; text-decoration: none; display: flex; align-items: center; justify-content: center; }

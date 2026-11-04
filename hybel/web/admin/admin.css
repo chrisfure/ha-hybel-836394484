@@ -148,3 +148,4 @@
 .cl-tpl summary { cursor: pointer; font-size: 14px; font-weight: 600; color: #5B5045; padding: 6px 0; }
 .mono-area { font-family: var(--mono); font-size: 13px; }
 .sbtn:disabled { opacity: .45; cursor: default; }
+a.sbtn { display: inline-flex; align-items: center; text-decoration: none; color: inherit; }

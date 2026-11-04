@@ -377,7 +377,7 @@ export class Extras {
   }
 
   async handleTenant(cmd, ctx) {
-    if (await this.checklists.handleTenant(cmd)) return true;
+    if (await this.checklists.handleTenant(cmd, ctx)) return true;
     switch (cmd.type) {
       case 'push_subscribe': this.pushSubscribe(cmd, ctx); return true;
       case 'push_unsubscribe': this.pushUnsubscribe(cmd); return true;

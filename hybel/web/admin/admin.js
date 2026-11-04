@@ -291,6 +291,7 @@ function checklistPanel() {
       h += `<div class="row-btns">
         ${c.status === 'submitted' ? `<button class="sbtn on" data-act="cl-approve" data-id="${c.id}">Godkjenn</button>` : ''}
         ${c.status !== 'open' ? `<button class="sbtn" data-act="cl-reopen" data-id="${c.id}">Åpne for endringer</button>` : ''}
+        <a class="sbtn" href="api/admin/checklist/${c.id}.pdf" target="_blank" rel="noopener">Last ned PDF</a>
         <button class="sbtn" data-act="cl-print" data-id="${c.id}">Skriv ut</button>
         <button class="sbtn" data-act="cl-delete" data-id="${c.id}">${A.confirmDel === c.id ? 'Bekreft sletting' : 'Slett'}</button>
       </div></div>`;

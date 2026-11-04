@@ -1,5 +1,7 @@
 // Inn- og utflyttingssjekkliste: leietaker går gjennom rom for rom, merker OK eller skriver merknad med bilder.
-import { randomBytes } from 'node:crypto';
+import { randomBytes, createHash } from 'node:crypto';
+import { readFileSync } from 'node:fs';
+import { PdfDoc, PAGE, wrap } from './pdf.js';
 
 const newId = () => randomBytes(5).toString('hex');
 const str = (v, max) => String(v ?? '').trim().slice(0, max);
@@ -148,12 +150,13 @@ export class Checklists {
     this.x.save();
   }
 
-  submit(cmd) {
+  submit(cmd, ctx = {}) {
     const c = this.editable(cmd.id);
     const missing = c.rows.filter((r) => !r.status).length;
     if (missing) throw new Error(`Du mangler ${missing} punkt${missing === 1 ? '' : 'er'}`);
     c.status = 'submitted';
     c.submitted_at = new Date().toISOString();
+    if (ctx.email) c.submitted_by = String(ctx.email).slice(0, 120);
     this.x.save();
     const notes = c.rows.filter((r) => r.status === 'note');
     const photos = c.rows.reduce((s, r) => s + r.photos.length, 0);
@@ -170,21 +173,123 @@ export class Checklists {
     if (ch) this.x.save();
   }
 
+  // Fingeravtrykk av innholdet, slik at begge parter kan se at PDF-en ikke er endret i ettertid.
+  fingerprint(c) {
+    const data = JSON.stringify({ id: c.id, type: c.type, created: c.created, submitted_at: c.submitted_at, submitted_by: c.submitted_by, rows: c.rows, comment: c.comment });
+    return createHash('sha256').update(data).digest('hex').slice(0, 32).replace(/(.{4})/g, '$1 ').trim();
+  }
+
+  filename(c) {
+    return `${TYPE_LABEL[c.type]}ssjekkliste-${(c.submitted_at || c.created).slice(0, 10)}.pdf`;
+  }
+
+  pdf(id) {
+    const c = this.find(id);
+    const doc = new PdfDoc();
+    const { W, M } = PAGE;
+    const CW = W - 2 * M;
+    const fmt = (iso) => (iso ? new Date(iso).toLocaleString('nb-NO', { timeZone: process.env.TZ || 'Europe/Oslo', day: 'numeric', month: 'long', year: 'numeric', hour: '2-digit', minute: '2-digit' }) : '–');
+    const GREEN = '0.18 0.42 0.27', AMBER = '0.6 0.33 0.07', GRAY = '0.42 0.38 0.35';
+
+    doc.y -= 6;
+    doc.text(`${TYPE_LABEL[c.type]}ssjekkliste`, M, doc.y - 22, 22, true);
+    doc.y -= 34;
+    const info = this.d.info || {};
+    const meta = [
+      ['Opprettet', fmt(c.created)],
+      ['Sendt inn', c.submitted_at ? `${fmt(c.submitted_at)}${c.submitted_by ? ` av ${c.submitted_by}` : ''}` : 'Ikke sendt inn ennå'],
+      ['Godkjent', c.approved_at ? fmt(c.approved_at) : c.status === 'submitted' ? 'Venter på utleier' : '–'],
+      ...(info.contact_name ? [['Utleier', [info.contact_name, info.contact_email].filter(Boolean).join(', ')]] : [])
+    ];
+    for (const [k, v] of meta) {
+      doc.text(k, M, doc.y - 10, 9.5, true, GRAY);
+      doc.y -= 0;
+      const lines = wrap(v, CW - 90, 9.5);
+      lines.forEach((l, i) => doc.text(l, M + 90, doc.y - 10 - i * 13, 9.5));
+      doc.y -= Math.max(1, lines.length) * 13;
+    }
+    const notes = c.rows.filter((r) => r.status === 'note').length;
+    const ok = c.rows.filter((r) => r.status === 'ok').length;
+    doc.y -= 6;
+    doc.rect(M, doc.y - 26, CW, 26, '0.96 0.94 0.91');
+    doc.text(`${c.rows.length} punkter: ${ok} OK, ${notes} med merknad${c.rows.length - ok - notes ? `, ${c.rows.length - ok - notes} ikke besvart` : ''}.`, M + 10, doc.y - 17, 10, true);
+    doc.y -= 38;
+
+    const COL = 170;
+    const rooms = [...new Set(c.rows.map((r) => r.room))];
+    for (const room of rooms) {
+      doc.ensure(50);
+      doc.text(room, M, doc.y - 14, 13, true);
+      doc.y -= 20;
+      doc.line(M, doc.y, M + CW, doc.y, 0.75, 0.8);
+      doc.y -= 4;
+      for (const r of c.rows.filter((x) => x.room === room)) {
+        const itemLines = wrap(r.item, COL - 8, 10);
+        const noteLines = r.note ? wrap(r.note, CW - COL, 9.5) : [];
+        const h = Math.max(itemLines.length * 13, 13 + noteLines.length * 12.5) + 8;
+        doc.ensure(h);
+        const top = doc.y;
+        itemLines.forEach((l, i) => doc.text(l, M, top - 12 - i * 13, 10));
+        const st = r.status === 'ok' ? ['OK', GREEN] : r.status === 'note' ? ['Merknad', AMBER] : ['Ikke besvart', GRAY];
+        doc.text(st[0], M + COL, top - 12, 10, true, st[1]);
+        noteLines.forEach((l, i) => doc.text(l, M + COL, top - 25 - i * 12.5, 9.5));
+        doc.y = top - h;
+        if (r.photos?.length) {
+          const per = 3, gap = 8, pw = (CW - COL - gap * (per - 1)) / per;
+          let col = 0, rowH = 0;
+          for (const pid of r.photos) {
+            let buf;
+            try { buf = readFileSync(this.x.photoFile(pid)); } catch { continue; }
+            const img = doc.addImage(buf);
+            if (!img) continue;
+            const ih = Math.min(pw * img.h / img.w, 150);
+            const iw = ih * img.w / img.h;
+            if (col === 0) doc.ensure(ih + 8);
+            doc.image(img, M + COL + col * (pw + gap), doc.y, iw, ih);
+            rowH = Math.max(rowH, ih);
+            col++;
+            if (col === per) { doc.y -= rowH + gap; col = 0; rowH = 0; }
+          }
+          if (col) doc.y -= rowH + gap;
+        }
+        doc.line(M, doc.y + 2, M + CW, doc.y + 2, 0.92);
+        doc.y -= 4;
+      }
+      doc.y -= 10;
+    }
+    const block = (title, text) => {
+      if (!text) return;
+      doc.ensure(40);
+      doc.text(title, M, doc.y - 13, 12, true);
+      doc.y -= 20;
+      doc.para(text, M, CW, 10);
+      doc.y -= 10;
+    };
+    block('Kommentar fra leietaker', c.comment);
+    block('Kommentar fra utleier', c.landlord_comment);
+    doc.ensure(60);
+    doc.y -= 6;
+    doc.line(M, doc.y, M + CW, doc.y, 0.8);
+    doc.y -= 4;
+    doc.para(`Dokumentet er laget av Hybel-appen ${fmt(new Date().toISOString())} fra det som ble registrert i appen. Bildene er tatt av leietaker. Fingeravtrykk for innholdet: ${this.fingerprint(c)}`, M, CW, 8.5, false, 1.35, GRAY);
+    return doc.build({ footer: `${TYPE_LABEL[c.type]}ssjekkliste · ${c.id}` });
+  }
+
   view() {
     return this.list.map((c) => ({
       id: c.id, type: c.type, label: TYPE_LABEL[c.type], status: c.status, created: c.created, submitted_at: c.submitted_at || null, approved_at: c.approved_at || null,
-      rows: c.rows, comment: c.comment, landlord_comment: c.landlord_comment, unread: Boolean(c.tenant_unread),
+      rows: c.rows, comment: c.comment, submitted_by: c.submitted_by || null, landlord_comment: c.landlord_comment, unread: Boolean(c.tenant_unread),
       done: c.rows.filter((r) => r.status).length, total: c.rows.length
     }));
   }
 
-  async handleTenant(cmd) {
+  async handleTenant(cmd, ctx = {}) {
     switch (cmd.type) {
       case 'checklist_set': this.set(cmd); return true;
       case 'checklist_photo_add': this.addPhoto(cmd); return true;
       case 'checklist_photo_remove': this.removePhoto(cmd); return true;
       case 'checklist_comment': this.setComment(cmd); return true;
-      case 'checklist_submit': this.submit(cmd); return true;
+      case 'checklist_submit': this.submit(cmd, ctx); return true;
       case 'checklist_seen': this.markSeen(); return true;
       default: return false;
     }

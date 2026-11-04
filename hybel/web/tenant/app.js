@@ -40,6 +40,7 @@ const S = {
   push: { supported: false, ios: false, standalone: false, permission: 'default', sub: null, busy: false },
   uploading: null,     // nøkkel for punkt som laster opp bilde
   photo: null,         // bilde som vises i stort format
+  pdf: null,           // { key, file } – ferdig hentet PDF av sjekklisten
   reply: {},
   reading: { date: new Date().toISOString().slice(0, 10), value: '' }
 };
@@ -631,7 +632,7 @@ function meldHTML() {
 
 function currentChecklist() {
   const list = S.m.checklists || [];
-  return list.find((c) => c.status === 'open') || list[0] || null;
+  return list.find((c) => c.id === S.clSel) || list.find((c) => c.status === 'open') || list[0] || null;
 }
 
 function sjekkHTML() {
@@ -640,7 +641,9 @@ function sjekkHTML() {
   const pct = Math.round((c.done / Math.max(1, c.total)) * 100);
   const rooms = [...new Set(c.rows.map((r) => r.room))];
   const editable = c.status === 'open';
-  let h = `<section class="card info-card cl-top"><h2>${esc(c.label)}ssjekkliste</h2>`;
+  const all = S.m.checklists || [];
+  let h = all.length > 1 ? `<div class="chips cl-pick">${all.map((x) => `<button class="chip" aria-pressed="${x.id === c.id}" data-act="cl-sel" data-id="${x.id}">${esc(x.label)} · ${esc(dateFmt(x.created))}</button>`).join('')}</div>` : '';
+  h += `<section class="card info-card cl-top"><h2>${esc(c.label)}ssjekkliste</h2>`;
   if (editable) {
     h += `<p class="note">Gå gjennom hybelen og trykk <strong>OK</strong> når noe er i orden, eller <strong>Merknad</strong> hvis du ser riper, flekker, skader eller noe som ikke virker. Ta gjerne bilder – det gjør det enklere for begge senere.</p>
       <div class="progress"><span style="width:${pct}%"></span></div><span class="note">${c.done} av ${c.total} punkter</span>`;
@@ -649,6 +652,7 @@ function sjekkHTML() {
       ${c.landlord_comment ? `<div class="msg landlord"><span>${esc(c.landlord_comment)}</span><small>Utleier</small></div>` : ''}`;
   }
   h += `</section>`;
+  if (!editable) h += mailCardHTML(c);
   rooms.forEach((room) => {
     const rows = c.rows.map((r, i) => ({ ...r, i })).filter((r) => r.room === room);
     const done = rows.filter((r) => r.status).length;
@@ -682,6 +686,61 @@ function sjekkHTML() {
     h += textCard('Din kommentar', c.comment);
   }
   return h;
+}
+
+// ---------- PDF på e-post ----------
+
+const pdfKey = (c) => `${c.id}-${c.status}-${c.approved_at || ''}-${c.landlord_comment || ''}`;
+const pdfName = (c) => `${c.label}ssjekkliste-${(c.submitted_at || c.created).slice(0, 10)}.pdf`;
+
+function ensurePdf(c) {
+  const key = pdfKey(c);
+  if (S.pdf && (S.pdf.key === key)) return;
+  S.pdf = { key, file: null };
+  fetch(`api/checklist/${c.id}.pdf`, { credentials: 'same-origin' })
+    .then((r) => (r.ok ? r.blob() : Promise.reject(new Error('PDF feilet'))))
+    .then((b) => { if (S.pdf.key === key) { S.pdf.file = new File([b], pdfName(c), { type: 'application/pdf' }); render(); } })
+    .catch(() => { if (S.pdf.key === key) S.pdf = null; });
+}
+
+function mailCardHTML(c) {
+  ensurePdf(c);
+  const email = S.m.info.contact_email;
+  const ready = S.pdf && S.pdf.file;
+  return `<section class="card info-card mail-card"><h2>Send kopi på e-post</h2>
+    <p class="note">Send sjekklisten som PDF fra din egen e-post${email ? ' til utleier' : ''}. Da har dere begge en datert kopi med alle merknader og bilder.</p>
+    ${email ? `<div class="mail-to"><span>Til: <strong>${esc(email)}</strong></span><button class="chip-btn" data-act="copy" data-v="${esc(email)}" data-msg="E-postadressen er kopiert">Kopier</button></div>` : ''}
+    <button class="btn primary big" data-act="cl-mail" data-id="${c.id}" ${ready ? '' : 'disabled'}>${ready ? 'Send PDF på e-post' : 'Lager PDF …'}</button>
+    <a class="btn ghost" href="api/checklist/${c.id}.pdf" download="${esc(pdfName(c))}">Last ned PDF</a>
+  </section>`;
+}
+
+function mailChecklist(c) {
+  const email = S.m.info.contact_email || '';
+  const file = S.pdf && S.pdf.file;
+  if (!file) return;
+  const subject = `${c.label}ssjekkliste ${dateFmt(c.submitted_at || c.created)}`;
+  const body = `Hei!\n\nVedlagt er ${c.label.toLowerCase()}ssjekklisten for hybelen, sendt inn i appen ${dateFmt(c.submitted_at || c.created)}.\n`;
+  // Mobil: del filen direkte til e-postappen.
+  if (navigator.canShare && navigator.canShare({ files: [file] })) {
+    navigator.share({ files: [file], title: subject, text: body })
+      .then(() => showToast('Delt'), (err) => { if (err && err.name !== 'AbortError') showToast('Kunne ikke dele filen', true); });
+    if (email) showToast(`Velg e-post og send til ${email}`);
+    return;
+  }
+  // PC: last ned PDF-en og åpne e-postprogrammet med mottaker og emne.
+  const url = URL.createObjectURL(file);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = file.name;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 60000);
+  setTimeout(() => {
+    location.href = `mailto:${encodeURIComponent(email)}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body + '\n(Legg ved PDF-filen som nettopp ble lastet ned.)')}`;
+  }, 400);
+  showToast('PDF lastet ned – legg den ved i e-posten');
 }
 
 function photoViewHTML() {
@@ -1031,10 +1090,16 @@ function act(a, ds) {
     case 'cl-photo-rm':
       cmd({ type: 'checklist_photo_remove', id: ds.id, i: Number(ds.i), photo: ds.photo });
       return;
+    case 'cl-sel': S.clSel = ds.id; window.scrollTo(0, 0); return render();
+    case 'cl-mail': {
+      const c = (m.checklists || []).find((x) => x.id === ds.id);
+      if (c) mailChecklist(c);
+      return;
+    }
     case 'cl-submit':
       if (!S.confirmDelete) { S.confirmDelete = 'submit'; return render(); }
       S.confirmDelete = false;
-      cmd({ type: 'checklist_submit', id: ds.id }).then((r) => { if (r.ok) { showToast('Sjekklisten er sendt til utleier'); window.scrollTo(0, 0); } });
+      cmd({ type: 'checklist_submit', id: ds.id }).then((r) => { if (r.ok) { showToast('Sendt! Send gjerne en kopi på e-post.'); window.scrollTo(0, 0); } });
       return;
     case 'info-sub':
       S.infoSub = ds.v;
@@ -1050,7 +1115,7 @@ function act(a, ds) {
       window.scrollTo(0, 0);
       return render();
     case 'copy':
-      try { navigator.clipboard.writeText(ds.v).then(() => showToast('Passordet er kopiert'), () => showToast('Kunne ikke kopiere', true)); } catch { showToast('Kunne ikke kopiere', true); }
+      try { navigator.clipboard.writeText(ds.v).then(() => showToast(ds.msg || 'Passordet er kopiert'), () => showToast('Kunne ikke kopiere', true)); } catch { showToast('Kunne ikke kopiere', true); }
       return;
     case 'report-cat':
       S.report.category = ds.v;

@@ -1,5 +1,12 @@
 # Endringslogg
 
+## 0.5.1
+
+- Sjekklisten kan lastes ned som **PDF** med alle merknader, bilder, tidspunkter og hvem som sendte inn, pluss et fingeravtrykk av innholdet.
+- Leietaker kan sende PDF-en fra **sin egen e-post** til utleiers e-postadresse (fra Info-innstillingene): på mobil via deling til e-postappen, på PC lastes filen ned og e-postprogrammet åpnes med mottaker og emne.
+- Utleier kan laste ned PDF-en fra utleiersiden.
+- Leietaker kan bla mellom tidligere sjekklister.
+
 ## 0.5.0
 
 - **Inn- og utflyttingssjekkliste**: utleier sender sjekklisten fra utleiersiden, leietaker går gjennom rom for rom og merker OK eller skriver merknad med bilder. Utleier får varsel, kan godkjenne med kommentar, åpne for endringer og skrive ut. Punktene kan redigeres.

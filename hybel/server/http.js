@@ -72,6 +72,24 @@ export function servePhoto(res, file, headers = {}) {
   }
 }
 
+export function sendPdf(res, checklists, id, headers = {}) {
+  try {
+    const c = checklists.find(id);
+    const buf = checklists.pdf(id);
+    const name = checklists.filename(c);
+    res.writeHead(200, {
+      'Content-Type': 'application/pdf',
+      'Content-Length': buf.length,
+      'Content-Disposition': `inline; filename="${name.replace(/[^\x20-\x7e]/g, '_')}"; filename*=UTF-8''${encodeURIComponent(name)}`,
+      'Cache-Control': 'no-store',
+      ...headers
+    });
+    res.end(buf);
+  } catch (err) {
+    sendJson(res, 404, { ok: false, error: err.message });
+  }
+}
+
 export function readJson(req, limit = 64 * 1024) {
   return new Promise((resolve, reject) => {
     let size = 0;

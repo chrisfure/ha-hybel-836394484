@@ -1,7 +1,7 @@
 // Leietakerens side. Har KUN leietakerfunksjoner – ingen utleier-API finnes her.
 import http from 'node:http';
 import { join } from 'node:path';
-import { serveStatic, sendJson, readJson, readBody, servePhoto, EventHub } from './http.js';
+import { serveStatic, sendJson, readJson, readBody, servePhoto, sendPdf, EventHub } from './http.js';
 import { AccessVerifier } from './cfaccess.js';
 import { log } from './log.js';
 
@@ -30,10 +30,11 @@ export function startTenantServer({ engine, options, webRoot, port }) {
     log.warn('Cloudflare Access-sjekk er SLÅTT AV. Bruk bare dette til testing på hjemmenettet.');
   }
 
+  // Returnerer innloggingsinfo fra Cloudflare Access (eller {} når sjekken er av), null = ingen tilgang.
   async function authorized(req) {
-    if (!required) return true;
-    if (!verifier.configured) return false;
-    return Boolean(await verifier.verify(AccessVerifier.tokenFrom(req)));
+    if (!required) return {};
+    if (!verifier.configured) return null;
+    return (await verifier.verify(AccessVerifier.tokenFrom(req))) || null;
   }
 
   const server = http.createServer(async (req, res) => {
@@ -45,7 +46,8 @@ export function startTenantServer({ engine, options, webRoot, port }) {
         res.writeHead(503, { 'Content-Type': 'text/html; charset=utf-8', ...SECURITY });
         return res.end(notConfiguredPage);
       }
-      if (!(await authorized(req))) {
+      const who = await authorized(req);
+      if (!who) {
         res.writeHead(403, { 'Content-Type': 'text/plain; charset=utf-8', ...SECURITY });
         return res.end('Ingen tilgang');
       }
@@ -64,7 +66,7 @@ export function startTenantServer({ engine, options, webRoot, port }) {
         try {
           const body = await readJson(req);
           const proto = String(req.headers['x-forwarded-proto'] || 'https').split(',')[0].trim();
-          await engine.handleTenant(body, { origin: `${proto === 'http' ? 'http' : 'https'}://${String(req.headers.host || '').replace(/[^a-z0-9.:-]/gi, '')}` });
+          await engine.handleTenant(body, { origin: `${proto === 'http' ? 'http' : 'https'}://${String(req.headers.host || '').replace(/[^a-z0-9.:-]/gi, '')}`, email: who.email || null });
           return sendJson(res, 200, { ok: true });
         } catch (err) {
           return sendJson(res, 400, { ok: false, error: err.message });
@@ -82,6 +84,8 @@ export function startTenantServer({ engine, options, webRoot, port }) {
           return sendJson(res, 400, { ok: false, error: err.message });
         }
       }
+      const cm = url.pathname.match(/^\/api\/checklist\/([a-f0-9]{10})\.pdf$/);
+      if (cm && req.method === 'GET') return sendPdf(res, engine.extras.checklists, cm[1], SECURITY);
       const pm = url.pathname.match(/^\/api\/photo\/([a-f0-9]{16})$/);
       if (pm && req.method === 'GET') return servePhoto(res, engine.extras.photoFile(pm[1]), SECURITY);
       if (url.pathname.startsWith('/api/')) return sendJson(res, 404, { ok: false, error: 'Ikke funnet' });
