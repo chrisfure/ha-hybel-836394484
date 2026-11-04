@@ -87,6 +87,10 @@ const same = (a, b) => JSON.stringify(a) === JSON.stringify(b);
 // ---------- tilkobling ----------
 
 function connect() {
+  // Kommer ingen data innen 15 sek, vis en knapp i stedet for å vente for alltid.
+  setTimeout(() => {
+    if (!S.m) { S.conn = 'relogin'; render(); }
+  }, 15000);
   const es = new EventSource('api/events');
   es.onmessage = (e) => {
     S.fails = 0;
@@ -607,7 +611,7 @@ function autoEditorHTML() {
 }
 
 function reloginHTML() {
-  return `<div class="loading"><p>Du er logget ut, eller forbindelsen ble brutt.</p>
+  return `<div class="loading"><p>Fikk ikke kontakt. Du kan være logget ut, eller forbindelsen ble brutt.</p>
     <button class="btn primary big relogin" data-act="relogin">Logg inn på nytt</button></div>`;
 }
 
@@ -626,8 +630,18 @@ function render() {
   if (S.view === 'scene' && !S.draft) S.view = 'settings';
   if (S.view === 'auto' && !S.adraft) S.view = 'tabs';
   const fid = ae?.dataset?.fid;
+  let html;
+  try {
+    html = S.view === 'settings' ? settingsHTML() : S.view === 'scene' ? sceneEditorHTML() : S.view === 'auto' ? autoEditorHTML() : tabsHTML();
+  } catch (err) {
+    console.error(err);
+    if (S.view !== 'tabs') { S.view = 'tabs'; S.draft = null; S.adraft = null; return render(); }
+    $app.innerHTML = `<div class="loading"><p>Noe gikk galt ved visning av siden.</p><p class="note">${esc(err.message)}</p>
+      <button class="btn primary big relogin" data-act="relogin">Last inn på nytt</button></div>`;
+    return;
+  }
   $app.classList.toggle('has-tabs', S.view === 'tabs');
-  $app.innerHTML = S.view === 'settings' ? settingsHTML() : S.view === 'scene' ? sceneEditorHTML() : S.view === 'auto' ? autoEditorHTML() : tabsHTML();
+  $app.innerHTML = html;
   if (fid) $app.querySelector(`[data-fid="${CSS.escape(fid)}"]`)?.focus({ preventScroll: true });
 }
 

@@ -1,5 +1,10 @@
 # Endringslogg
 
+## 0.3.1
+
+- Nettleseren henter alltid nyeste versjon av siden etter en oppdatering (unngår at siden blir stående på «Kobler til huset»).
+- Får siden ikke kontakt innen 15 sekunder, vises en «Last inn på nytt»-knapp. Eventuelle visningsfeil vises i stedet for en tom side.
+
 ## 0.3.0
 
 - **Faner** nederst: Scener, Lys, Klima og Automasjoner. Siste fane huskes.

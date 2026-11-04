@@ -25,7 +25,7 @@ export async function serveStatic(req, res, roots, headers = {}, onMissing = nul
       const ext = extname(file);
       res.writeHead(200, {
         'Content-Type': TYPES[ext] || 'application/octet-stream',
-        'Cache-Control': ext === '.html' ? 'no-cache' : 'public, max-age=300',
+        'Cache-Control': ['.html', '.js', '.css', '.webmanifest'].includes(ext) ? 'no-cache' : 'public, max-age=3600',
         ...headers
       });
       return res.end(body);
