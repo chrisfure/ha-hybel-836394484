@@ -35,7 +35,7 @@ async function api(path, opts = {}) {
 
 function pickCfg(st) {
   return JSON.parse(JSON.stringify({
-    entities: st.entities.map(({ entity_id, label, kind, enabled }) => ({ entity_id, label, kind, enabled })),
+    entities: st.entities.map(({ entity_id, label, kind, enabled, min_pct, max_pct }) => ({ entity_id, label, kind, enabled, ...(kind === 'light' ? { min_pct: min_pct ?? 1, max_pct: max_pct ?? 100 } : {}) })),
     limits: st.limits,
     tenant_can_edit_scenes: st.tenant_can_edit_scenes,
     alerts: st.alerts
@@ -97,7 +97,9 @@ function entitiesPanel() {
       <div class="meta">
         ${e.entity_id.startsWith('climate.')
           ? `<select class="select" aria-label="Type" data-field="kind" data-i="${i}"><option value="heat" ${e.kind === 'heat' ? 'selected' : ''}>Varme</option><option value="vent" ${e.kind === 'vent' ? 'selected' : ''}>Ventilasjon</option></select>`
-          : `<span style="font-size:14px;font-weight:600">${KIND_LABEL[e.kind]}</span>`}
+          : `<span class="range-pair"><span style="font-size:14px;font-weight:600">Lys</span>
+              <label>Lavest <input class="input num-in" type="number" min="1" max="99" value="${e.min_pct ?? 1}" data-field="min_pct" data-i="${i}" aria-label="Laveste ekte lysstyrke for ${esc(e.label)}">%</label>
+              <label>Høyest <input class="input num-in" type="number" min="2" max="100" value="${e.max_pct ?? 100}" data-field="max_pct" data-i="${i}" aria-label="Høyeste ekte lysstyrke for ${esc(e.label)}">%</label></span>`}
         <span class="mono">${esc(e.entity_id)}${now ? ` · ${esc(now)}` : ''}${l && !l.available ? ' · utilgjengelig' : ''}</span>
       </div>
       <div class="tools">
@@ -241,7 +243,7 @@ document.addEventListener('click', async (ev) => {
     case 'pick': {
       const c = A.cand.entities.find((x) => x.entity_id === d.id);
       if (!c) return;
-      if (d.kind === 'entity') ents.push({ entity_id: c.entity_id, label: c.name.slice(0, 40), kind: c.kind, enabled: true });
+      if (d.kind === 'entity') ents.push({ entity_id: c.entity_id, label: c.name.slice(0, 40), kind: c.kind, enabled: true, ...(c.kind === 'light' ? { min_pct: 1, max_pct: 100 } : {}) });
       else A.cfg.alerts.entities.push(c.entity_id);
       A.picker = null;
       setDirty();
@@ -290,6 +292,7 @@ document.addEventListener('input', (ev) => {
   const f = el.dataset?.field;
   if (!f || !A.cfg) return;
   if (f === 'label') { A.cfg.entities[Number(el.dataset.i)].label = el.value; setDirty(); }
+  else if (f === 'min_pct' || f === 'max_pct') { A.cfg.entities[Number(el.dataset.i)][f] = Number(el.value); setDirty(); }
   else if (f === 'notify') { A.cfg.alerts.notify_service = el.value.trim(); setDirty(); }
   else if (f === 'q') { A.q = el.value; render(); }
 });

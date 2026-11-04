@@ -1,5 +1,9 @@
 # Endringslogg
 
+## 0.2.1
+
+- Lysområde per lys: utleier setter laveste og høyeste ekte lysstyrke (f.eks. 21–50 %). Leietakeren ser fortsatt 1–100 %, som strekkes over området.
+
 ## 0.2.0
 
 - **Egendefinerte scener**: leietakeren lager egne scener (f.eks. Matlaging, Dusj, Kos, Lesestund) med navn og ikon, og velger selv hva hver scene styrer – bare lys, lys og varme, eller lys, varme og ventilasjon. Det som ikke er med, blir som det er.

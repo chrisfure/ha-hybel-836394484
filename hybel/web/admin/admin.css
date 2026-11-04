@@ -77,3 +77,7 @@
 .danger.confirm { background: #A2461F; color: #fff; }
 .help { font-size: 13.5px; line-height: 1.5; color: #5B5045; margin: 0; }
 .help code { font-family: var(--mono); font-size: 12.5px; background: #fff; padding: 1px 5px; border-radius: 6px; }
+
+.range-pair { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px; font-size: 13px; color: var(--muted); }
+.range-pair label { display: inline-flex; align-items: center; gap: 4px; font-size: 13px; color: var(--muted); }
+.num-in { width: 64px; min-height: 34px; padding: 0 8px; font-size: 14px; text-align: right; }

@@ -24,6 +24,23 @@ const pad = (n) => String(n).padStart(2, '0');
 const dateKey = (d) => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
 const isoDay = (d) => ((d.getDay() + 6) % 7) + 1; // man=1 … søn=7
 
+// Lysområde: leietakeren ser 1–100 %, men lyset bruker bare utleiers område (f.eks. 21–50 % ekte).
+const lightRange = (e) => {
+  const lo = Math.min(99, Math.max(1, Math.round(Number(e.min_pct) || 1)));
+  const hi = Math.min(100, Math.max(lo + 1, Math.round(Number(e.max_pct) || 100)));
+  return [lo, hi];
+};
+export const toReal = (e, shown) => {
+  if (shown <= 0) return 0;
+  const [lo, hi] = lightRange(e);
+  return Math.round(lo + ((Math.min(100, shown) - 1) * (hi - lo)) / 99);
+};
+export const toShown = (e, real) => {
+  if (real <= 0) return 0;
+  const [lo, hi] = lightRange(e);
+  return Math.min(100, Math.max(1, Math.round(1 + ((real - lo) * 99) / (hi - lo))));
+};
+
 export class Engine extends EventEmitter {
   constructor({ ha, store }) {
     super();
@@ -97,7 +114,7 @@ export class Engine extends EventEmitter {
     const a = st.attributes || {};
     if (e.kind === 'light') {
       if (st.state !== 'on') return 0;
-      return a.brightness == null ? 100 : Math.max(1, Math.round(a.brightness / 2.55));
+      return a.brightness == null ? 100 : toShown(e, Math.max(1, Math.round(a.brightness / 2.55)));
     }
     if (e.kind === 'heat') {
       // Noen Zigbee-termostater rapporterer kortvarig søppelverdier (f.eks. 3840 eller -2713).
@@ -142,7 +159,7 @@ export class Engine extends EventEmitter {
       if (v <= 0) return this.ha.callService('light', 'turn_off', { entity_id: id });
       const modes = a.supported_color_modes || [];
       const dimmable = !(modes.length === 1 && modes[0] === 'onoff');
-      return this.ha.callService('light', 'turn_on', dimmable ? { entity_id: id, brightness_pct: v } : { entity_id: id });
+      return this.ha.callService('light', 'turn_on', dimmable ? { entity_id: id, brightness_pct: toReal(e, v) } : { entity_id: id });
     }
     if (e.kind === 'heat') {
       const data = { entity_id: id, temperature: Math.round(v) };
@@ -236,7 +253,7 @@ export class Engine extends EventEmitter {
       if (cur === null) return false;
       if (e.kind === 'light') {
         if ((cur > 0) !== (want > 0)) return false;
-        if (cur > 0 && Math.abs(cur - want) > 3) return false;
+        if (cur > 0 && Math.abs(toReal(e, cur) - toReal(e, want)) > 2) return false;
       } else if (e.kind === 'heat') {
         if (Math.abs(cur - want) > 0.5) return false;
       } else if (cur !== want) return false;
@@ -551,7 +568,14 @@ export class Engine extends EventEmitter {
         if (!/^(light|climate)\.[a-z0-9_]+$/.test(id) || seen.has(id)) { errors.push(`Ugyldig enhet: ${id}`); continue; }
         const kind = id.startsWith('light.') ? 'light' : e.kind === 'vent' ? 'vent' : 'heat';
         seen.add(id);
-        ents.push({ entity_id: id, label: String(e.label || '').trim().slice(0, 40) || id, kind, enabled: e.enabled !== false });
+        const ent = { entity_id: id, label: String(e.label || '').trim().slice(0, 40) || id, kind, enabled: e.enabled !== false };
+        if (kind === 'light') {
+          const lo = Math.round(Number(e.min_pct ?? 1));
+          const hi = Math.round(Number(e.max_pct ?? 100));
+          if (!(lo >= 1 && lo <= 99 && hi >= 2 && hi <= 100 && hi > lo)) errors.push(`${ent.label}: laveste må være lavere enn høyeste (1–100 %)`);
+          else if (lo !== 1 || hi !== 100) Object.assign(ent, { min_pct: lo, max_pct: hi });
+        }
+        ents.push(ent);
       }
       d.entities = ents;
     }
