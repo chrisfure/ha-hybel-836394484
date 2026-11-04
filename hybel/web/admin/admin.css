@@ -107,3 +107,6 @@
 .tmsg.sys { background: transparent; font-style: italic; color: var(--muted); padding: 0 4px; }
 .reply-a { display: flex; gap: 8px; align-items: flex-end; margin-top: 8px; }
 .reply-a .area { flex: 1; }
+.start-reading { background: var(--soft); border-radius: 16px; padding: 14px; display: flex; flex-direction: column; gap: 6px; margin: 4px 0 12px; }
+.start-reading .form-grid { margin: 4px 0 0; }
+.start-reading .sbtn { align-self: flex-start; }

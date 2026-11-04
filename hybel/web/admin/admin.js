@@ -21,6 +21,7 @@ const A = {
   q: '',
   resetScenes: false,
   replies: {},
+  newReading: { value: '', date: '' },
   confirmDel: null,
   confirmScenes: false,
   confirmReset: false
@@ -243,10 +244,24 @@ function electricityPanel() {
       <label class="lbl-col">Merknad til leietaker<input class="input" type="text" maxlength="300" placeholder="F.eks. Betales sammen med husleien" value="${esc(c.note || '')}" data-field="el.note"></label>
     </div>
     <p class="help">Prisen lagres på hver avlesning, så gamle perioder beholder prisen de ble lest av med.</p>`;
-  if (!e.periods.length) h += `<p class="help">${e.last ? `Startavlesning: ${e.last.value} kWh (${esc(fmtDate(e.last.date))}). Perioder vises når neste avlesning kommer.` : 'Ingen avlesninger ennå.'}</p>`;
+  const nr = A.newReading;
+  const today = new Date().toISOString().slice(0, 10);
+  h += `<div class="start-reading">
+      <strong>${e.last ? 'Legg inn avlesning' : 'Startavlesning før innflytting'}</strong>
+      <span class="help">${e.last ? 'F.eks. ved utflytting, eller hvis leietaker har glemt å lese av. Leietaker får ikke varsel.' : 'Målerstanden når leietaker flytter inn. Første periode regnes fra denne.'}</span>
+      <div class="form-grid">
+        <label class="lbl-col">Målerstand (kWh)<input class="input" type="text" inputmode="decimal" placeholder="F.eks. 12345,6" value="${esc(nr.value)}" data-field="nr.value"></label>
+        <label class="lbl-col">Dato<input class="input" type="date" value="${esc(nr.date || today)}" max="${today}" data-field="nr.date"></label>
+      </div>
+      <button class="sbtn on" data-act="reading-add">Lagre ${e.last ? 'avlesning' : 'startavlesning'}</button>
+    </div>`;
+  if (!e.periods.length) h += e.last
+    ? `<p class="help">Startavlesning: <strong>${e.last.value} kWh</strong> (${esc(fmtDate(e.last.date))})${e.last.by === 'landlord' ? ', lagt inn av deg' : ''}. Perioder vises når neste avlesning kommer.
+        <button class="sbtn" data-act="reading-delete" data-id="${e.last.id}">${A.confirmDel === e.last.id ? 'Bekreft sletting' : 'Slett'}</button></p>`
+    : '<p class="help">Ingen avlesninger ennå.</p>';
   else {
     h += `<table class="tbl"><thead><tr><th>Periode</th><th>kWh</th><th>Beløp</th><th>Betalt</th></tr></thead><tbody>
-      ${e.periods.map((p, i) => `<tr><td>${esc(fmtDate(p.from))} – ${esc(fmtDate(p.to))}<br><span class="help">${p.start} → ${p.end}</span></td><td>${p.kwh.toLocaleString('nb-NO')}</td><td>${esc(kr(p.amount))}</td>
+      ${e.periods.map((p, i) => `<tr><td>${esc(fmtDate(p.from))} – ${esc(fmtDate(p.to))}<br><span class="help">${p.start} → ${p.end}${p.by === 'landlord' ? ' · lagt inn av deg' : ''}</span></td><td>${p.kwh.toLocaleString('nb-NO')}</td><td>${esc(kr(p.amount))}</td>
         <td><button class="sbtn ${p.paid ? 'on' : ''}" data-act="reading-paid" data-id="${p.id}" data-v="${p.paid ? '0' : '1'}">${p.paid ? 'Betalt' : 'Marker betalt'}</button>
         ${i === 0 ? `<button class="sbtn" data-act="reading-delete" data-id="${p.id}">${A.confirmDel === p.id ? 'Bekreft' : 'Slett'}</button>` : ''}</td></tr>`).join('')}
     </tbody></table>`;
@@ -352,6 +367,17 @@ document.addEventListener('click', async (ev) => {
       } catch (e) { message(esc(e.message), true); }
       break;
     }
+    case 'reading-add': {
+      const nr = A.newReading;
+      if (!String(nr.value).trim()) { message('Skriv inn målerstanden.', true); return; }
+      try {
+        const r = await api('api/admin/reading', { method: 'POST', body: JSON.stringify({ add: { value: nr.value, date: nr.date || new Date().toISOString().slice(0, 10) } }) });
+        if (!r.ok) { message(esc(r.error), true); return; }
+        A.st = r.state; A.newReading = { value: '', date: '' };
+        message('Avlesningen er lagret.');
+      } catch (e) { message(esc(e.message), true); }
+      break;
+    }
     case 'reading-paid':
     case 'reading-delete': {
       const body = d.act === 'reading-paid' ? { id: d.id, paid: d.v === '1' } : { id: d.id, delete: true };
@@ -411,6 +437,8 @@ document.addEventListener('input', (ev) => {
   else if (f.startsWith('info.')) { A.cfg.info[f.slice(5)] = el.value; setDirty(); }
   else if (f === 'el.price') { A.cfg.electricity.price_per_kwh = el.value.trim() === '' ? null : el.value; setDirty(); }
   else if (f === 'el.note') { A.cfg.electricity.note = el.value; setDirty(); }
+  else if (f === 'nr.value') { A.newReading.value = el.value; }
+  else if (f === 'nr.date') { A.newReading.date = el.value; }
   else if (f === 'admin-reply') { A.replies[el.dataset.id] = el.value; }
   else if (f === 'notify') { A.cfg.alerts.notify_service = el.value.trim(); setDirty(); }
   else if (f === 'q') { A.q = el.value; render(); }

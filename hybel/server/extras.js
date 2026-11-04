@@ -126,7 +126,7 @@ export class Extras {
 
   // ---------- strøm ----------
 
-  addReading(cmd) {
+  addReading(cmd, admin = false) {
     const date = isDate(cmd.date) ? cmd.date : new Date().toISOString().slice(0, 10);
     const value = Math.round(Number(String(cmd.value).replace(',', '.')) * 10) / 10;
     if (!Number.isFinite(value) || value < 0 || value > 10_000_000) throw new Error('Ugyldig målerstand');
@@ -137,8 +137,11 @@ export class Extras {
       if (value < prev.value) throw new Error(`Målerstanden kan ikke være lavere enn forrige (${prev.value} kWh)`);
       if (value - prev.value > 20000) throw new Error('Forbruket ser urimelig høyt ut – sjekk tallet');
     }
-    list.push({ id: newId(), date, value, price: this.d.electricity.price_per_kwh, paid: false, at: new Date().toISOString() });
+    const reading = { id: newId(), date, value, price: this.d.electricity.price_per_kwh, paid: false, at: new Date().toISOString() };
+    if (admin) reading.by = 'landlord';
+    list.push(reading);
     this.engine.store.save();
+    if (admin) return;
     const p = this.d.electricity.price_per_kwh;
     const fmtD = (x) => x.split('-').reverse().join('.');
     let msg;
@@ -180,7 +183,7 @@ export class Extras {
       const b = list[i];
       const kwh = Math.round((b.value - a.value) * 10) / 10;
       const days = Math.max(1, Math.round((new Date(b.date) - new Date(a.date)) / 86400000));
-      out.push({ id: b.id, from: a.date, to: b.date, start: a.value, end: b.value, kwh, days, per_day: Math.round((kwh / days) * 10) / 10, price: b.price, amount: b.price != null ? Math.round(kwh * b.price * 100) / 100 : null, paid: b.paid });
+      out.push({ id: b.id, from: a.date, to: b.date, start: a.value, end: b.value, kwh, days, per_day: Math.round((kwh / days) * 10) / 10, price: b.price, amount: b.price != null ? Math.round(kwh * b.price * 100) / 100 : null, paid: b.paid, by: b.by || 'tenant' });
     }
     return out.reverse();
   }
@@ -195,7 +198,7 @@ export class Extras {
     return {
       price: this.d.electricity.price_per_kwh,
       note: this.d.electricity.note,
-      last: last ? { id: last.id, date: last.date, value: last.value, deletable: !last.paid && Date.now() - new Date(last.at).getTime() < 7 * 86400000 } : null,
+      last: last ? { id: last.id, date: last.date, value: last.value, by: last.by || 'tenant', deletable: last.by !== 'landlord' && !last.paid && Date.now() - new Date(last.at).getTime() < 7 * 86400000 } : null,
       periods,
       unpaid: Math.round(periods.filter((p) => !p.paid && p.amount != null).reduce((s, p) => s + p.amount, 0) * 100) / 100,
       remind

@@ -1,5 +1,9 @@
 # Endringslogg
 
+## 0.4.2
+
+- Utleier kan legge inn **startavlesning** av strømmen før innflytting (og egne avlesninger senere, f.eks. ved utflytting). Første periode regnes fra startavlesningen, og leietaker ser at den er lagt inn av utleier.
+
 ## 0.4.1
 
 - Nye meldinger, svar fra leietaker og strømavlesninger havner nå alltid som varsel i Home Assistant (bjella), også når push til telefon er satt opp.

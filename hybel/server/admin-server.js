@@ -115,7 +115,8 @@ export function startAdminServer({ engine, ha, webRoot, port, tenantHub, devOpen
       if (p === '/api/admin/reading' && req.method === 'POST') {
         const body = await readJson(req);
         try {
-          if (body.delete) engine.extras.deleteLastReading(body.id, true);
+          if (body.add) engine.extras.addReading(body.add, true);
+          else if (body.delete) engine.extras.deleteLastReading(body.id, true);
           else engine.extras.setPaid(body.id, body.paid);
           engine.changed();
           return sendJson(res, 200, { ok: true, state: engine.adminView({ tenant_clients: tenantHub.size }) });
