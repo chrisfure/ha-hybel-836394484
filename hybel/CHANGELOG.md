@@ -1,5 +1,14 @@
 # Endringslogg
 
+## 0.3.0
+
+- **Faner** nederst: Scener, Lys, Klima og Automasjoner. Siste fane huskes.
+- Scener vises som kort med oppsummering, og kan redigeres med blyant-knappen.
+- **Rekkefølge**: leietakeren kan flytte enheter og scener under Innstillinger.
+- **Varmepumpe / klimaenhet**: ny enhetstype med av/på, modus (varme, kjøling, auto, tørk, vifte), temperatur og viftehastighet. Kan brukes i scener og automasjoner. Gjenkjennes automatisk når du legger den til.
+- **Temperaturgrenser per enhet** (f.eks. gulvvarme 15–28°, varmepumpe 16–24°).
+- **Flere automasjonsvalg**: utløs når et lys slås på/av eller når luftfuktigheten går over en grense, eventuelt bare i et tidsrom. Handlingen kan være en scene, «slå av alle lys» eller valgfrie enheter. «Gjør om etter» setter alt tilbake etter valgt tid. «Test nå»-knapp.
+
 ## 0.2.1
 
 - Lysområde per lys: utleier setter laveste og høyeste ekte lysstyrke (f.eks. 21–50 %). Leietakeren ser fortsatt 1–100 %, som strekkes over området.

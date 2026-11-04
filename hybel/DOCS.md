@@ -14,7 +14,7 @@ Leietakersiden har bare leietakerfunksjoner. Grenser, valg av enheter og standar
 1. Legg til dette repoet under **Innstillinger → Apper → App-butikk → ⋮ → Repositorier**.
 2. Installer **Hybelstyring** og start den.
 3. Åpne **Hybel** i sidemenyen:
-   - **Synlige enheter**: legg til lys, termostat (Varme) og ventilasjon. Gi dem navnene leietakeren skal se. For lys kan du sette laveste og høyeste ekte lysstyrke – leietakeren ser 1–100 %, som strekkes over området.
+   - **Synlige enheter**: legg til lys, termostat (Varme), varmepumpe/klima og ventilasjon. Termostater og varmepumper har egne temperaturgrenser. Gi dem navnene leietakeren skal se. For lys kan du sette laveste og høyeste ekte lysstyrke – leietakeren ser 1–100 %, som strekkes over området.
    - **Standarder for scener**: still inn Hjemme, Kveld, Natt og Borte.
    - **Grenser**: maks og min gulvvarme, maks tid på høy ventilasjon, og om Borte på ventilasjonen er tillatt.
    - **Varsle meg**: velg varslingstjeneste og alarmer (f.eks. filter- eller frostalarm).
