@@ -808,7 +808,10 @@ export class Engine extends EventEmitter {
         const st = this.state(e);
         const a = st?.attributes || {};
         const base = { key: keyOf(e.entity_id), kind: e.kind, label: e.label, available: !unavailable(st), value: this.currentValue(e) };
-        const cur = typeof a.current_temperature === 'number' && a.current_temperature > -30 && a.current_temperature < 60 ? a.current_temperature : null;
+        const okT = (t) => typeof t === 'number' && t > -30 && t < 60;
+        // Egen føler (f.eks. gulvføler) for «Nå», ellers termostatens egen.
+        const sensorT = e.now_sensor ? Number(this.ha.states.get(e.now_sensor)?.state) : NaN;
+        const cur = okT(sensorT) ? sensorT : okT(a.current_temperature) ? a.current_temperature : null;
         if (e.kind === 'light') {
           const modes = a.supported_color_modes || [];
           base.dimmable = !(modes.length === 1 && modes[0] === 'onoff');
@@ -884,6 +887,11 @@ export class Engine extends EventEmitter {
           if (!(lo >= 5 && hi <= 35 && hi > lo)) errors.push(`${ent.label}: laveste temperatur må være lavere enn høyeste (5–35°)`);
           else Object.assign(ent, { min_temp: lo, max_temp: hi });
         }
+        if ((kind === 'heat' || kind === 'climate') && e.now_sensor) {
+          const sid = String(e.now_sensor);
+          if (/^sensor\.[a-z0-9_]+$/.test(sid)) ent.now_sensor = sid;
+          else errors.push(`${ent.label}: ugyldig føler`);
+        }
         ents.push(ent);
       }
       d.entities = ents;
@@ -936,6 +944,7 @@ export class Engine extends EventEmitter {
 
   onState(entityId, newState, oldState) {
     if (entityId === 'sun.sun') this.recordSun();
+    if (this.data.entities.some((e) => e.enabled && e.now_sensor === entityId)) this.changed();
     if (this.data.entities.some((e) => e.enabled && e.entity_id === entityId)) {
       this.changed();
       this.checkStateTriggers(entityId, newState, oldState);

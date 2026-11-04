@@ -1,5 +1,9 @@
 # Endringslogg
 
+## 0.3.5
+
+- «Nå»-temperaturen for termostater og varmepumper kan hentes fra en valgfri føler (f.eks. gulvføleren) – velges på utleiersiden.
+
 ## 0.3.4
 
 - Dimming ved hold går raskere: ett trinn hvert kvarte sekund.

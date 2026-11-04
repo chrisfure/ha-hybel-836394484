@@ -35,7 +35,7 @@ async function api(path, opts = {}) {
 
 function pickCfg(st) {
   return JSON.parse(JSON.stringify({
-    entities: st.entities.map(({ entity_id, label, kind, enabled, min_pct, max_pct, min_temp, max_temp }) => ({ entity_id, label, kind, enabled, ...(kind === 'light' ? { min_pct: min_pct ?? 1, max_pct: max_pct ?? 100 } : {}), ...(kind === 'heat' || kind === 'climate' ? { min_temp: min_temp ?? st.limits.heat_min, max_temp: max_temp ?? st.limits.heat_max } : {}) })),
+    entities: st.entities.map(({ entity_id, label, kind, enabled, min_pct, max_pct, min_temp, max_temp, now_sensor }) => ({ entity_id, label, kind, enabled, ...(now_sensor ? { now_sensor } : {}), ...(kind === 'light' ? { min_pct: min_pct ?? 1, max_pct: max_pct ?? 100 } : {}), ...(kind === 'heat' || kind === 'climate' ? { min_temp: min_temp ?? st.limits.heat_min, max_temp: max_temp ?? st.limits.heat_max } : {}) })),
     limits: st.limits,
     tenant_can_edit_scenes: st.tenant_can_edit_scenes,
     alerts: st.alerts
@@ -82,6 +82,17 @@ function renderStatus() {
 // ---------- hovedvisning ----------
 
 
+// Velg hvilken føler «Nå»-temperaturen skal hentes fra. Følere fra samme enhet sorteres først.
+function sensorSelect(e, i) {
+  const list = A.cand?.temp_sensors || [];
+  if (!list.length && !e.now_sensor) return '';
+  const base = e.entity_id.split('.')[1];
+  const sorted = [...list].sort((a, b) => (b.entity_id.includes(base) - a.entity_id.includes(base)) || a.name.localeCompare(b.name, 'nb'));
+  const opts = sorted.map((s) => `<option value="${esc(s.entity_id)}" ${e.now_sensor === s.entity_id ? 'selected' : ''}>${esc(s.name)} (${esc(s.state)}°)</option>`).join('');
+  return `<label class="sensor-pick">«Nå» fra <select class="select" data-field="now_sensor" data-i="${i}" aria-label="Føler for ${esc(e.label)}">
+    <option value="">Termostaten selv</option>${opts}</select></label>`;
+}
+
 function entitiesPanel() {
   const ents = A.cfg.entities;
   const live = new Map(A.st.entities.map((e) => [e.entity_id, e]));
@@ -98,7 +109,8 @@ function entitiesPanel() {
         ${e.entity_id.startsWith('event.') ? `<span style="font-size:14px;font-weight:600">Trådløs knapp</span><span class="help">Brukes i leietakerens automasjoner</span>` : e.entity_id.startsWith('climate.')
           ? `<select class="select" aria-label="Type" data-field="kind" data-i="${i}"><option value="heat" ${e.kind === 'heat' ? 'selected' : ''}>Varme (termostat)</option><option value="climate" ${e.kind === 'climate' ? 'selected' : ''}>Varmepumpe / klima</option><option value="vent" ${e.kind === 'vent' ? 'selected' : ''}>Ventilasjon</option></select>
             ${e.kind !== 'vent' ? `<span class="range-pair"><label>Lavest <input class="input num-in" type="number" min="5" max="34" value="${e.min_temp ?? A.cfg.limits.heat_min}" data-field="min_temp" data-i="${i}" aria-label="Laveste temperatur for ${esc(e.label)}">°</label>
-              <label>Høyest <input class="input num-in" type="number" min="6" max="35" value="${e.max_temp ?? A.cfg.limits.heat_max}" data-field="max_temp" data-i="${i}" aria-label="Høyeste temperatur for ${esc(e.label)}">°</label></span>` : ''}`
+              <label>Høyest <input class="input num-in" type="number" min="6" max="35" value="${e.max_temp ?? A.cfg.limits.heat_max}" data-field="max_temp" data-i="${i}" aria-label="Høyeste temperatur for ${esc(e.label)}">°</label></span>
+              ${sensorSelect(e, i)}` : ''}`
           : `<span class="range-pair"><span style="font-size:14px;font-weight:600">Lys</span>
               <label>Lavest <input class="input num-in" type="number" min="1" max="99" value="${e.min_pct ?? 1}" data-field="min_pct" data-i="${i}" aria-label="Laveste ekte lysstyrke for ${esc(e.label)}">%</label>
               <label>Høyest <input class="input num-in" type="number" min="2" max="100" value="${e.max_pct ?? 100}" data-field="max_pct" data-i="${i}" aria-label="Høyeste ekte lysstyrke for ${esc(e.label)}">%</label></span>`}
@@ -302,6 +314,12 @@ document.addEventListener('change', (ev) => {
   const el = ev.target;
   const f = el.dataset?.field;
   if (!f || !A.cfg) return;
+  if (f === 'now_sensor') {
+    const ent = A.cfg.entities[Number(el.dataset.i)];
+    if (el.value) ent.now_sensor = el.value; else delete ent.now_sensor;
+    setDirty();
+    return;
+  }
   if (f === 'kind') { A.cfg.entities[Number(el.dataset.i)].kind = el.value; setDirty(); render(); }
 });
 

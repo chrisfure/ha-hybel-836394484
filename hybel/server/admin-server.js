@@ -61,7 +61,16 @@ export function startAdminServer({ engine, ha, webRoot, port, tenantHub, devOpen
       const services = await ha.send({ type: 'get_services' });
       notify = Object.keys(services.notify || {}).map((s) => `notify.${s}`).sort();
     } catch {}
-    return { entities: list, notify_services: notify };
+    // Temperaturfølere som kan brukes for «Nå» (f.eks. gulvføler).
+    const temp_sensors = [];
+    for (const [id, st] of ha.states) {
+      if (!id.startsWith('sensor.')) continue;
+      const a = st.attributes || {};
+      if (a.device_class !== 'temperature' && !['°C', '°F'].includes(a.unit_of_measurement)) continue;
+      temp_sensors.push({ entity_id: id, name: a.friendly_name || id, state: st.state });
+    }
+    temp_sensors.sort((x, y) => x.name.localeCompare(y.name, 'nb'));
+    return { entities: list, notify_services: notify, temp_sensors };
   }
 
   const server = http.createServer(async (req, res) => {

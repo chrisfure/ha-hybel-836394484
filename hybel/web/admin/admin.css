@@ -81,3 +81,6 @@
 .range-pair { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px; font-size: 13px; color: var(--muted); }
 .range-pair label { display: inline-flex; align-items: center; gap: 4px; font-size: 13px; color: var(--muted); }
 .num-in { width: 64px; min-height: 34px; padding: 0 8px; font-size: 14px; text-align: right; }
+
+.sensor-pick { display: flex; align-items: center; gap: 8px; font-size: 13px; color: var(--muted); margin-top: 4px; }
+.sensor-pick .select { min-height: 34px; font-size: 13px; max-width: 260px; }
