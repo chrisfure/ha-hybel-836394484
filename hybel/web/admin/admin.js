@@ -19,8 +19,8 @@ const A = {
   cand: null,
   picker: null,       // 'entity' | 'alarm' | null
   q: '',
-  tab: 'Hjemme',
-  resetTenant: [],
+  resetScenes: false,
+  confirmScenes: false,
   confirmReset: false
 };
 
@@ -38,7 +38,6 @@ function pickCfg(st) {
     entities: st.entities.map(({ entity_id, label, kind, enabled }) => ({ entity_id, label, kind, enabled })),
     limits: st.limits,
     tenant_can_edit_scenes: st.tenant_can_edit_scenes,
-    factory_scenes: st.factory_scenes,
     alerts: st.alerts
   }));
 }
@@ -76,16 +75,12 @@ function renderStatus() {
       <span class="v">${tc ? `${tc} åpen nå` : 'Ingen åpen nå'}</span>
       <span class="s">${esc(since(s.last_tenant_activity))}</span></div>
     <div class="tile"><span class="k">Aktiv scene</span>
-      <span class="v">${esc(s.active_scene || '–')}${s.active_scene && !s.matches ? ' <span class="warn">· midlertidig endret</span>' : ''}</span>
+      <span class="v">${esc((s.active_scenes || []).join(' · ') || 'Ingen')}</span>
       <span class="s">${s.boost ? `Høy ventilasjon til kl. ${new Date(s.boost.until).toLocaleTimeString('nb-NO', { hour: '2-digit', minute: '2-digit' })}` : 'Ingen tidsbegrensede endringer'}</span></div>`;
 }
 
 // ---------- hovedvisning ----------
 
-function sceneValue(e, scene) {
-  const v = A.cfg.factory_scenes?.[scene]?.[e.entity_id];
-  return v ?? DEFAULTS[e.kind][scene];
-}
 
 function entitiesPanel() {
   const ents = A.cfg.entities;
@@ -139,34 +134,24 @@ function pickerHTML(kind) {
 }
 
 function scenesPanel() {
-  const names = A.st.scene_names;
-  const ents = A.cfg.entities.filter((e) => e.enabled);
-  const L = A.cfg.limits;
-  const customized = A.st.tenant_customized.filter((n) => !A.resetTenant.includes(n));
-  let h = `<section class="panel"><div class="panel-head"><h2>Standarder for scener</h2><span>Det leietakeren får – og ved «Utleiers standard»</span></div>
-    <div class="seg" role="tablist">${names.map((n) => `<button role="tab" aria-pressed="${A.tab === n}" data-act="tab" data-name="${n}">${n}</button>`).join('')}</div>`;
-  if (!ents.length) h += `<p class="help">Legg til enheter først.</p>`;
-  for (const e of ents) {
-    const v = sceneValue(e, A.tab);
-    let ctl = '';
-    if (e.kind === 'light') {
-      ctl = `<input class="range" type="range" min="0" max="100" value="${v}" data-field="scene" data-id="${esc(e.entity_id)}" aria-label="${esc(e.label)} i ${A.tab}"><span class="num">${v ? v + ' %' : 'Av'}</span>`;
-    } else if (e.kind === 'heat') {
-      const c = Math.min(L.heat_max, Math.max(L.heat_min, v));
-      ctl = `<span class="stepper sm"><button data-act="scene-heat" data-dir="-1" data-id="${esc(e.entity_id)}" aria-label="Senk" ${c <= L.heat_min ? 'disabled' : ''}>−</button><output>${deg(c)}</output><button data-act="scene-heat" data-dir="1" data-id="${esc(e.entity_id)}" aria-label="Øk" ${c >= L.heat_max ? 'disabled' : ''}>+</button></span>`;
-    } else {
-      const modes = ['away', 'low', 'normal', 'high'].filter((m) => m !== 'away' || L.vent_allow_away);
-      const cur = modes.includes(v) ? v : 'low';
-      ctl = `<select class="select" data-field="scene-vent" data-id="${esc(e.entity_id)}" aria-label="${esc(e.label)} i ${A.tab}">${modes.map((m) => `<option value="${m}" ${m === cur ? 'selected' : ''}>${VENT_LABEL[m]}</option>`).join('')}</select>`;
-    }
-    h += `<div class="srow"><span class="lbl">${esc(e.label)}</span><span class="ctl">${ctl}</span></div>`;
+  const st = A.st;
+  const days = (d) => d.length === 7 ? 'hver dag' : d.join() === '1,2,3,4,5' ? 'hverdager' : d.join() === '6,7' ? 'helg' : d.map((n) => ['ma', 'ti', 'on', 'to', 'fr', 'lø', 'sø'][n - 1]).join(', ');
+  let h = `<section class="panel"><div class="panel-head"><h2>Leietakers scener</h2><span>Leietakeren lager og endrer disse selv</span></div>`;
+  if (!st.scenes.length) h += `<p class="help">Ingen scener ennå. Forslag lages automatisk når enhetene er lagt inn.</p>`;
+  for (const sc of st.scenes) {
+    h += `<div class="srow"><span class="lbl">${esc(sc.name)}</span><span class="ctl" style="justify-content:space-between">
+      <span class="help">${esc(sc.parts.join(', ') || 'ingen enheter')}</span>
+      <button class="sbtn" data-act="apply-scene" data-id="${esc(sc.id)}">Bruk nå</button></span></div>`;
   }
+  h += `<h2 style="font-size:20px;margin-top:18px">Automasjoner</h2>`;
+  h += st.automations.length
+    ? st.automations.map((a) => `<div class="srow"><span class="lbl" style="${a.enabled ? '' : 'opacity:.5'}">${esc(a.label)}</span><span class="help">${esc(days(a.days))}${a.enabled ? '' : ' · av'}</span></div>`).join('')
+    : `<p class="help">Ingen automasjoner ennå.</p>`;
   h += `<div class="row-btns">
-      <button class="sbtn" data-act="apply-scene">Bruk ${A.tab} i hybelen nå</button>
-      ${customized.includes(A.tab) ? `<span class="badge">Leietaker har egen versjon</span><button class="sbtn" data-act="reset-tenant-scene">Nullstill leietakers ${A.tab}</button>` : ''}
+      <button class="sbtn" data-act="reset-scenes">${A.resetScenes ? 'Tilbakestilles ved lagring ✓' : A.confirmScenes ? 'Trykk igjen for å bekrefte' : 'Tilbakestill scener til forslag'}</button>
     </div>
     <button class="toggle-row" data-act="toggle-tenant-edit" style="margin-top:10px">
-      <span><span class="t">Leietaker kan endre egne standarder</span><span class="s">Av: scenene er låst til det du setter her</span></span>
+      <span><span class="t">Leietaker kan lage og endre scener og automasjoner</span><span class="s">Av: leietakeren kan bare bruke scenene som finnes</span></span>
       <span class="switch" role="switch" aria-checked="${A.cfg.tenant_can_edit_scenes}"></span>
     </button>
   </section>`;
@@ -206,7 +191,7 @@ function alertsPanel() {
 
 function resetPanel() {
   return `<section class="panel soft"><h2>Leietakerbytte</h2>
-    <p class="help">Tilbakestiller leietakerens scener og innstillinger til dine standarder. Husk å fjerne forrige leietaker i Cloudflare Access og legge inn den nye.</p>
+    <p class="help">Sletter leietakerens scener og automasjoner og lager nye forslag. Husk å fjerne forrige leietaker i Cloudflare Access og legge inn den nye.</p>
     <button class="danger ${A.confirmReset ? 'confirm' : ''}" data-act="tenant-reset">${A.confirmReset ? 'Trykk igjen for å bekrefte' : 'Klargjør for ny leietaker'}</button>
   </section>
   <section class="panel soft"><h2>Oppsett</h2>
@@ -237,11 +222,6 @@ async function loadCandidates() {
   render();
 }
 
-function setScene(id, v) {
-  const fs = (A.cfg.factory_scenes ||= {});
-  (fs[A.tab] ||= {})[id] = v;
-  setDirty();
-}
 
 document.addEventListener('click', async (ev) => {
   const b = ev.target.closest('[data-act]');
@@ -250,6 +230,7 @@ document.addEventListener('click', async (ev) => {
   const ents = A.cfg.entities;
   const i = Number(d.i);
   if (d.act !== 'tenant-reset') A.confirmReset = false;
+  if (d.act !== 'reset-scenes') A.confirmScenes = false;
   switch (d.act) {
     case 'ent-toggle': ents[i].enabled = !ents[i].enabled; setDirty(); break;
     case 'ent-up': [ents[i - 1], ents[i]] = [ents[i], ents[i - 1]]; setDirty(); break;
@@ -267,14 +248,6 @@ document.addEventListener('click', async (ev) => {
       break;
     }
     case 'alarm-remove': A.cfg.alerts.entities = A.cfg.alerts.entities.filter((x) => x !== d.id); setDirty(); break;
-    case 'tab': A.tab = d.name; break;
-    case 'scene-heat': {
-      const e = ents.find((x) => x.entity_id === d.id);
-      const L = A.cfg.limits;
-      const cur = Math.min(L.heat_max, Math.max(L.heat_min, sceneValue(e, A.tab)));
-      setScene(d.id, Math.min(L.heat_max, Math.max(L.heat_min, Math.round(cur) + Number(d.dir))));
-      break;
-    }
     case 'toggle-tenant-edit': A.cfg.tenant_can_edit_scenes = !A.cfg.tenant_can_edit_scenes; setDirty(); break;
     case 'toggle-away': A.cfg.limits.vent_allow_away = !A.cfg.limits.vent_allow_away; setDirty(); break;
     case 'limit': {
@@ -289,12 +262,14 @@ document.addEventListener('click', async (ev) => {
       setDirty();
       break;
     }
-    case 'reset-tenant-scene': A.resetTenant.push(A.tab); setDirty(); break;
+    case 'reset-scenes':
+      if (A.resetScenes) break;
+      if (!A.confirmScenes) { A.confirmScenes = true; break; }
+      A.confirmScenes = false; A.resetScenes = true; setDirty(); break;
     case 'apply-scene':
-      if (A.dirty) { message('Lagre endringene først, så bruker scenen de nye verdiene.', true); return; }
       try {
-        const r = await api('api/admin/apply-scene', { method: 'POST', body: JSON.stringify({ name: A.tab }) });
-        message(r.ok ? `${esc(A.tab)} er satt i hybelen.` : esc(r.error), !r.ok);
+        const r = await api('api/admin/apply-scene', { method: 'POST', body: JSON.stringify({ id: d.id }) });
+        message(r.ok ? 'Scenen er satt i hybelen.' : esc(r.error), !r.ok);
       } catch (e) { message(esc(e.message), true); }
       return;
     case 'tenant-reset':
@@ -317,12 +292,6 @@ document.addEventListener('input', (ev) => {
   if (f === 'label') { A.cfg.entities[Number(el.dataset.i)].label = el.value; setDirty(); }
   else if (f === 'notify') { A.cfg.alerts.notify_service = el.value.trim(); setDirty(); }
   else if (f === 'q') { A.q = el.value; render(); }
-  else if (f === 'scene') {
-    const v = Number(el.value);
-    setScene(el.dataset.id, v);
-    const num = el.parentElement.querySelector('.num');
-    if (num) num.textContent = v ? `${v} %` : 'Av';
-  }
 });
 
 document.addEventListener('change', (ev) => {
@@ -330,17 +299,16 @@ document.addEventListener('change', (ev) => {
   const f = el.dataset?.field;
   if (!f || !A.cfg) return;
   if (f === 'kind') { A.cfg.entities[Number(el.dataset.i)].kind = el.value; setDirty(); render(); }
-  else if (f === 'scene-vent') setScene(el.dataset.id, el.value);
 });
 
 $('save').addEventListener('click', async () => {
-  const body = { ...A.cfg, reset_tenant_scenes: A.resetTenant };
+  const body = { ...A.cfg, reset_scenes: A.resetScenes };
   try {
     const r = await api('api/admin/config', { method: 'PUT', body: JSON.stringify(body) });
     A.st = r.state;
     if (r.ok) {
       A.cfg = pickCfg(r.state);
-      A.resetTenant = [];
+      A.resetScenes = false;
       setDirty(false);
       message('Lagret. Leietakersiden er oppdatert.');
     } else {

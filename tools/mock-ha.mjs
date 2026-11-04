@@ -84,6 +84,7 @@ function handle(c, msg) {
   }
   const ok = (result = null) => c.send({ id: msg.id, type: 'result', success: true, result });
   switch (msg.type) {
+    case 'ping': return c.send({ id: msg.id, type: 'pong' });
     case 'get_states': return ok([...states.values()]);
     case 'subscribe_events': c.subId = msg.id; return ok();
     case 'call_service': callService(msg.domain, msg.service, msg.service_data || {}); return ok({ context: {} });

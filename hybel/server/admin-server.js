@@ -84,7 +84,7 @@ export function startAdminServer({ engine, ha, webRoot, port, tenantHub, devOpen
       if (p === '/api/admin/apply-scene' && req.method === 'POST') {
         const body = await readJson(req);
         try {
-          await engine.applyScene(body.name);
+          await engine.activateScene(body.id);
           return sendJson(res, 200, { ok: true });
         } catch (err) {
           return sendJson(res, 400, { ok: false, error: err.message });

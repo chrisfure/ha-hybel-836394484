@@ -3,22 +3,20 @@ import { readFileSync, writeFileSync, renameSync, mkdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { log } from './log.js';
 
-export const SCENE_NAMES = ['Hjemme', 'Kveld', 'Natt', 'Borte'];
-
 export function defaultData() {
   return {
-    version: 1,
+    version: 2,
     entities: [],
     limits: { heat_min: 15, heat_max: 28, boost_max_minutes: 60, vent_allow_away: true },
     tenant_can_edit_scenes: true,
-    factory_scenes: {},
-    tenant_scenes: {},
-    tenant_prefs: { boost_minutes: 30, night_reset: true },
-    active_scene: 'Hjemme',
+    scenes: null,          // null = ikke laget ennå → forslag lages når enhetene er satt opp
+    automations: [],
+    tenant_prefs: { boost_minutes: 30 },
     boost: null,
     alerts: { notify_service: '', entities: [] },
     last_tenant_activity: null,
-    last_night_reset: null
+    auto_runs: {},
+    sun_cache: {}
   };
 }
 
@@ -29,13 +27,21 @@ export class Store {
     const base = defaultData();
     try {
       const raw = JSON.parse(readFileSync(this.file, 'utf8'));
+      const migrated = raw.version === 2 ? raw : { entities: raw.entities, limits: raw.limits, alerts: raw.alerts, tenant_can_edit_scenes: raw.tenant_can_edit_scenes, last_tenant_activity: raw.last_tenant_activity };
+      if (raw.version !== 2) log.info('Oppgraderer lagrede innstillinger: faste scener erstattes av egendefinerte scener.');
       this.data = {
         ...base,
-        ...raw,
-        limits: { ...base.limits, ...(raw.limits || {}) },
-        tenant_prefs: { ...base.tenant_prefs, ...(raw.tenant_prefs || {}) },
-        alerts: { ...base.alerts, ...(raw.alerts || {}) }
+        ...migrated,
+        version: 2,
+        limits: { ...base.limits, ...(migrated.limits || {}) },
+        tenant_prefs: { ...base.tenant_prefs, ...(migrated.tenant_prefs || {}) },
+        alerts: { ...base.alerts, ...(migrated.alerts || {}) },
+        entities: migrated.entities || [],
+        automations: migrated.automations || [],
+        auto_runs: migrated.auto_runs || {},
+        sun_cache: migrated.sun_cache || {}
       };
+      if (raw.version !== 2) this.save();
     } catch (err) {
       if (err.code !== 'ENOENT') log.warn('Kunne ikke lese lagrede innstillinger, starter med standard:', err.message);
       this.data = base;

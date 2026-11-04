@@ -1,5 +1,14 @@
 # Endringslogg
 
+## 0.2.0
+
+- **Egendefinerte scener**: leietakeren lager egne scener (f.eks. Matlaging, Dusj, Kos, Lesestund) med navn og ikon, og velger selv hva hver scene styrer – bare lys, lys og varme, eller lys, varme og ventilasjon. Det som ikke er med, blir som det er.
+- Forslag til scener lages automatisk. De gamle faste scenene (Hjemme/Kveld/Natt/Borte) er erstattet.
+- **Automasjoner**: kjør en scene, slå av alle lys eller sett varmen på et klokkeslett, ved solnedgang eller soloppgang (med forskyvning), valgte dager.
+- Høy ventilasjon går også tilbake av seg selv når en scene slår den på.
+- **Retting**: appen kunne bli hengende uten kontakt med Home Assistant etter en omstart. Nå har oppkoblingen tidsavbrudd, livstegn-sjekk hvert 30. sekund og prøver på nytt hvis innloggingen avvises.
+- Utleiersiden viser leietakerens scener og automasjoner, med «Bruk nå» og tilbakestilling til forslag.
+
 ## 0.1.4
 
 - Zoom er sperret på leietakersiden (kniping og dobbelttrykk), så den oppfører seg som en app.

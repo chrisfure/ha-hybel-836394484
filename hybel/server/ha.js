@@ -23,6 +23,7 @@ export class HAClient extends EventEmitter {
   }
 
   connect() {
+    clearTimeout(this.reconnectTimer);
     let ws;
     try {
       ws = new WebSocket(this.url);
@@ -31,7 +32,14 @@ export class HAClient extends EventEmitter {
       return this.scheduleReconnect();
     }
     this.ws = ws;
+    this.lastMessage = Date.now();
+    // Må være innlogget innen 20 sek, ellers prøver vi på nytt (HA kan henge under omstart).
+    this.authTimer = setTimeout(() => {
+      if (this.ws === ws && !this.connected) this.drop(ws, 'Ingen svar fra Home Assistant ved oppkobling');
+    }, 20000);
     ws.onmessage = (ev) => {
+      if (this.ws !== ws) return;
+      this.lastMessage = Date.now();
       let msg;
       try {
         msg = JSON.parse(typeof ev.data === 'string' ? ev.data : ev.data.toString());
@@ -40,28 +48,47 @@ export class HAClient extends EventEmitter {
       }
       for (const m of Array.isArray(msg) ? msg : [msg]) this.onMessage(m);
     };
-    ws.onclose = () => {
-      if (this.ws !== ws) return;
-      const was = this.connected;
-      this.connected = false;
-      for (const [, p] of this.pending) {
-        clearTimeout(p.timer);
-        p.reject(new Error('Forbindelsen til Home Assistant ble brutt'));
-      }
-      this.pending.clear();
-      if (was) {
-        log.warn('Mistet forbindelsen til Home Assistant – prøver igjen.');
-        this.emit('status', false);
-      }
-      this.scheduleReconnect();
-    };
+    ws.onclose = () => this.drop(ws, null);
     ws.onerror = () => {};
   }
 
+  // Kaster en forbindelse og planlegger ny. Trygg å kalle flere ganger.
+  drop(ws, reason) {
+    if (this.ws !== ws) return;
+    this.ws = null;
+    clearTimeout(this.authTimer);
+    clearInterval(this.pingTimer);
+    try { ws.close(); } catch {}
+    const was = this.connected;
+    this.connected = false;
+    for (const [, p] of this.pending) {
+      clearTimeout(p.timer);
+      p.reject(new Error('Forbindelsen til Home Assistant ble brutt'));
+    }
+    this.pending.clear();
+    if (was) {
+      log.warn(`Mistet forbindelsen til Home Assistant${reason ? ` (${reason})` : ''} – prøver igjen.`);
+      this.emit('status', false);
+    } else if (reason) {
+      log.debug(reason);
+    }
+    this.scheduleReconnect();
+  }
+
   scheduleReconnect() {
+    clearTimeout(this.reconnectTimer);
     const delay = this.backoff;
     this.backoff = Math.min(this.backoff * 2, 30000);
-    setTimeout(() => this.connect(), delay);
+    this.reconnectTimer = setTimeout(() => this.connect(), delay);
+  }
+
+  startHeartbeat(ws) {
+    clearInterval(this.pingTimer);
+    this.pingTimer = setInterval(() => {
+      if (this.ws !== ws) return clearInterval(this.pingTimer);
+      if (Date.now() - this.lastMessage > 75000) return this.drop(ws, 'ingen livstegn på over ett minutt');
+      this.send({ type: 'ping' }).catch(() => {});
+    }, 30000);
   }
 
   async onMessage(msg) {
@@ -70,7 +97,8 @@ export class HAClient extends EventEmitter {
         this.ws.send(JSON.stringify({ type: 'auth', access_token: this.token }));
         break;
       case 'auth_invalid':
-        log.error('Home Assistant avviste innloggingen:', msg.message || '');
+        log.warn('Home Assistant avviste innloggingen (kan skje under omstart):', msg.message || '');
+        this.drop(this.ws, null);
         break;
       case 'auth_ok':
         this.backoff = 1000;
@@ -80,14 +108,19 @@ export class HAClient extends EventEmitter {
           for (const s of states) this.states.set(s.entity_id, s);
           await this.send({ type: 'subscribe_events', event_type: 'state_changed' }, true);
           this.connected = true;
+          clearTimeout(this.authTimer);
+          this.startHeartbeat(this.ws);
           log.info(`Koblet til Home Assistant (${this.states.size} entiteter).`);
           this.emit('status', true);
           this.emit('ready');
         } catch (err) {
           log.error('Oppstart mot Home Assistant feilet:', err.message);
-          try { this.ws.close(); } catch {}
+          this.drop(this.ws, null);
         }
         break;
+      case 'pong':
+        msg = { ...msg, success: true, result: null };
+      // fallthrough
       case 'result': {
         const p = this.pending.get(msg.id);
         if (!p) return;

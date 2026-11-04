@@ -53,11 +53,12 @@ Slå av **Krev Cloudflare Access** og aktiver port `8100` under **Nettverk** i a
 
 ## Slik oppfører leietakersiden seg
 
-- **Scenene** setter lys, varme og ventilasjon samtidig.
-- **Endringer på forsiden er midlertidige.** Leietakeren kan gå tilbake til scenen eller lagre endringen som ny standard (om du tillater det).
-- **Høy ventilasjon** går automatisk tilbake etter valgt tid.
-- **Om natten** (kl. 03) settes hybelen tilbake til aktiv scene hvis noe er glemt. Leietakeren kan slå dette av.
-- **Leietakerbytte** tilbakestiller leietakerens scener og innstillinger. Husk å oppdatere e-postlisten i Cloudflare Access.
+- **Scener** lager leietakeren selv (navn, ikon og hva som skal være med). En scene styrer bare det den inneholder – «Dusj» kan f.eks. sette varme og ventilasjon uten å røre lyset.
+- **Automasjoner** kjører en scene, slår av alle lys eller setter varmen på et klokkeslett eller ved sol opp/ned, valgte dager.
+- **Høy ventilasjon** går automatisk tilbake etter valgt tid, også når en scene eller automasjon har slått den på.
+- **Grensene** dine gjelder overalt – også i scener og automasjoner.
+- Du kan låse scener og automasjoner, slik at leietakeren bare kan bruke dem som finnes.
+- **Leietakerbytte** sletter leietakerens scener og automasjoner og lager nye forslag. Husk å oppdatere e-postlisten i Cloudflare Access.
 
 ## Personvern
 
