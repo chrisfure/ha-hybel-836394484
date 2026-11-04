@@ -1,5 +1,10 @@
 # Endringslogg
 
+## 0.6.3
+
+- Husleien avregnes per dag når leieforholdet starter etter den 1. eller slutter før månedsslutt, og det vises hvordan beløpet er regnet ut.
+- Husleie vises og lagres uten øre.
+
 ## 0.6.2
 
 - Åpne sider (også appen på Hjem-skjermen) laster seg automatisk inn på nytt når appen er oppdatert, så nye funksjoner vises uten å lukke appen.

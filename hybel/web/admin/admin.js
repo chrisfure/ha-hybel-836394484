@@ -222,7 +222,7 @@ function alertsPanel() {
 
 const STATUS_LABEL = { new: 'Mottatt', in_progress: 'Under arbeid', done: 'Løst' };
 const fmtDate = (d) => new Date(d).toLocaleDateString('nb-NO', { day: 'numeric', month: 'short', year: 'numeric' });
-const kr = (n) => (n == null ? '–' : n.toLocaleString('nb-NO', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + ' kr');
+const kr = (n) => (n == null ? '–' : n.toLocaleString('nb-NO', Number.isInteger(n) ? { maximumFractionDigits: 0 } : { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + ' kr');
 
 const photoThumbs = (ids) => (ids && ids.length ? `<div class="thumbs">${ids.map((id) => `<button class="thumb" data-act="photo" data-id="${id}" aria-label="Vis bilde"><img src="api/admin/photo/${id}" alt="" loading="lazy"></button>`).join('')}</div>` : '');
 
@@ -359,13 +359,13 @@ function leasePanel() {
       ${(A.cand?.meters || []).map((m) => `<option value="${esc(m.entity_id)}" ${l.meter_sensor === m.entity_id ? 'selected' : ''}>${esc(m.name)} (${esc(m.state)})</option>`).join('')}
       ${l.meter_sensor && !(A.cand?.meters || []).some((m) => m.entity_id === l.meter_sensor) ? `<option value="${esc(l.meter_sensor)}" selected>${esc(l.meter_sensor)}</option>` : ''}</select>
       <span class="help">Har hybelen egen strømmåler i Home Assistant (kWh totalt), leses den av automatisk kl. 23:45 siste dag i måneden.</span></label>
-    <p class="help">Husleie betales forskuddsvis. Strøm legges til på første forfall etter hver avlesning. Leietaker får påminnelse før forfall, og både du og leietaker får varsel 90 og 30 dager før kontrakten utløper. Husk «Lagre endringer» øverst.</p>`;
+    <p class="help">Husleie betales forskuddsvis, og første og siste måned avregnes per dag hvis leieforholdet ikke starter den 1. eller slutter siste dag i måneden. Strøm legges til på første forfall etter hver avlesning. Leietaker får påminnelse før forfall, og både du og leietaker får varsel 90 og 30 dager før kontrakten utløper. Husk «Lagre endringer» øverst.</p>`;
   if (L.ledger.length) {
     h += `<table class="tbl"><thead><tr><th>Måned</th><th>Husleie</th><th>Strøm</th><th>Sum</th><th></th></tr></thead><tbody>
       ${L.ledger.map((r) => {
         const el = r.electricity.reduce((a, p) => a + (p.amount || 0), 0);
         const [lab, cls] = LSTAT_A[r.status];
-        return `<tr><td>${esc(r.label)}<br><span class="help">Forfall ${esc(fmtDate(r.due))}</span></td><td>${r.rent ? esc(kr(r.rent)) : '–'}</td>
+        return `<tr><td>${esc(r.label)}<br><span class="help">Forfall ${esc(fmtDate(r.due))}</span></td><td>${r.rent ? esc(kr(r.rent)) : '–'}${r.rent_note ? `<br><span class="help">Avregnet ${esc(r.rent_note)}</span>` : ''}</td>
           <td>${el ? esc(kr(el)) : '–'}${r.electricity.map((p) => `<br><span class="help">${p.kwh.toLocaleString('nb-NO')} kWh</span>`).join('')}</td>
           <td><strong>${esc(kr(r.total))}</strong><br><span class="pill2 ${cls}">${lab}</span></td>
           <td><button class="sbtn ${r.paid ? 'on' : ''}" data-act="month-paid" data-v="${r.month}" data-paid="${r.paid ? '0' : '1'}">${r.paid ? 'Betalt ✓' : 'Marker betalt'}</button></td></tr>`;

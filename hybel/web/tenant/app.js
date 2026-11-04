@@ -465,7 +465,7 @@ function autoTab() {
 
 // ---------- info, strøm og meldinger ----------
 
-const nok = (n) => (n == null ? '–' : n.toLocaleString('nb-NO', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + ' kr');
+const nok = (n) => (n == null ? '–' : n.toLocaleString('nb-NO', Number.isInteger(n) ? { maximumFractionDigits: 0 } : { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + ' kr');
 const kwhFmt = (n) => (n == null ? '–' : n.toLocaleString('nb-NO', { maximumFractionDigits: 1 }) + ' kWh');
 const dateFmt = (d) => new Date(d).toLocaleDateString('nb-NO', { day: 'numeric', month: 'short', year: 'numeric' });
 const STATUS = { new: ['Mottatt', 'st-new'], in_progress: ['Under arbeid', 'st-work'], done: ['Løst', 'st-done'] };
@@ -556,7 +556,7 @@ const elSum = (r) => r.electricity.reduce((s, p) => s + (p.amount || 0), 0);
 
 function payLines(r) {
   let h = '';
-  if (r.rent) h += `<div class="pay-line"><span>Husleie ${esc(r.label.split(' ')[0])}</span><span>${esc(nok(r.rent))}</span></div>`;
+  if (r.rent) h += `<div class="pay-line"><span>Husleie ${esc(r.label.split(' ')[0])}${r.rent_note ? `<small>Avregnet ${esc(r.rent_note)}</small>` : ''}</span><span>${esc(nok(r.rent))}</span></div>`;
   for (const p of r.electricity) h += `<div class="pay-line"><span>Strøm ${esc(dateFmt(p.from))} – ${esc(dateFmt(p.to))}<small>${esc(kwhFmt(p.kwh))}${p.price != null ? ` × ${esc(nok(p.price))}` : ''}</small></span><span>${esc(nok(p.amount))}</span></div>`;
   return h;
 }
@@ -567,6 +567,7 @@ function contractHTML(c) {
   rows.push(['Kontrakt til', c.end ? longDate(c.end) : 'Tidsubestemt']);
   if (c.notice_months) rows.push(['Oppsigelsestid', `${c.notice_months} måned${c.notice_months === 1 ? '' : 'er'}`]);
   if (c.rent) rows.push(['Husleie', `${nok(c.rent)} per måned, forfall den ${c.due_day}.`]);
+  if (c.rent && (c.start || c.end)) rows.push(['Delvis måned', 'Avregnes per dag']);
   if (c.deposit) rows.push(['Depositum', `${nok(c.deposit)}${c.deposit_note ? ` – ${c.deposit_note}` : ''}`]);
   if (c.account) rows.push(['Kontonummer', c.account]);
   let h = `<section class="card info-card"><h2>Leieforholdet</h2>`;
@@ -620,7 +621,7 @@ function stromHTML() {
       const [lab, cls] = LSTAT[r.status];
       const el = elSum(r);
       return `<div class="list-row period">
-        <span class="grow"><span class="t">${esc(r.label.charAt(0).toUpperCase() + r.label.slice(1))}</span><span class="s">Forfall ${esc(dateFmt(r.due))}${r.rent ? ` · leie ${esc(nok(r.rent))}` : ''}${el ? ` · strøm ${esc(nok(el))}` : ''}</span></span>
+        <span class="grow"><span class="t">${esc(r.label.charAt(0).toUpperCase() + r.label.slice(1))}</span><span class="s">Forfall ${esc(dateFmt(r.due))}${r.rent ? ` · leie ${esc(nok(r.rent))}${r.rent_note ? ' (avregnet)' : ''}` : ''}${el ? ` · strøm ${esc(nok(el))}` : ''}</span></span>
         <span class="amt"><span class="t">${esc(nok(r.total))}</span><span class="pill ${cls}">${lab}</span></span>
       </div>`;
     }).join('')}</div></section>`;

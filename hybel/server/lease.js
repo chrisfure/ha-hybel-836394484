@@ -16,7 +16,7 @@ const dueDate = (m, day) => `${m}-${pad(Math.min(day, daysIn(m)))}`;
 const MONTHS = ['januar', 'februar', 'mars', 'april', 'mai', 'juni', 'juli', 'august', 'september', 'oktober', 'november', 'desember'];
 export const monthName = (m) => `${MONTHS[Number(m.slice(5)) - 1]} ${m.slice(0, 4)}`;
 const daysBetween = (a, b) => Math.round((new Date(b) - new Date(a)) / 86400000);
-const kr = (n) => `${n.toLocaleString('nb-NO', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} kr`;
+const kr = (n) => `${n.toLocaleString('nb-NO', Number.isInteger(n) ? { maximumFractionDigits: 0 } : { minimumFractionDigits: 2, maximumFractionDigits: 2 })} kr`;
 
 export function defaultLease() {
   return { rent: null, due_day: 1, start: '', end: '', notice_months: 3, deposit: null, deposit_note: '', account: '', includes: '', note: '', remind_days: 3, meter_sensor: '' };
@@ -51,7 +51,7 @@ export class Lease {
       if (!(n >= min && n <= max)) { errors.push(`${label} må være mellom ${min} og ${max}`); return undefined; }
       return n;
     };
-    const rent = num(b.rent, 0, 200000, 'Husleien');
+    const rent = num(b.rent, 0, 200000, 'Husleien', 0);
     if (rent !== undefined) l.rent = rent;
     const dep = num(b.deposit, 0, 1000000, 'Depositumet');
     if (dep !== undefined) l.deposit = dep;
@@ -103,7 +103,20 @@ export class Lease {
     return rows.map((r) => {
       const rec = this.pay[r.month] || {};
       const inLease = !l.start || r.month >= monthKey(l.start);
-      r.rent = rec.paid ? rec.rent ?? null : inLease ? l.rent : null;
+      r.rent = null;
+      r.rent_note = null;
+      if (rec.paid) { r.rent = rec.rent ?? null; r.rent_note = rec.rent_note || null; }
+      else if (inLease && l.rent) {
+        // Avregning for delvis måned ved innflytting eller utflytting.
+        const dim = daysIn(r.month);
+        const from = l.start && monthKey(l.start) === r.month ? Number(l.start.slice(8)) : 1;
+        const to = l.end && monthKey(l.end) === r.month ? Number(l.end.slice(8)) : dim;
+        const days = Math.max(0, to - from + 1);
+        if (days < dim) {
+          r.rent = Math.round((l.rent * days) / dim);
+          r.rent_note = `${from}.–${to}. ${MONTHS[Number(r.month.slice(5)) - 1].slice(0, 3)}: ${days} av ${dim} dager`;
+        } else r.rent = Math.round(l.rent);
+      }
       const el = r.electricity.reduce((s, p) => s + (p.amount || 0), 0);
       r.total = Math.round(((r.rent || 0) + el) * 100) / 100;
       r.paid = Boolean(rec.paid);
@@ -118,7 +131,7 @@ export class Lease {
     if (!/^\d{4}-\d{2}$/.test(String(month))) throw new Error('Ugyldig måned');
     const row = this.ledger().find((r) => r.month === month);
     if (!row) throw new Error('Fant ikke måneden');
-    if (paid) this.pay[month] = { paid: true, at: new Date().toISOString(), rent: row.rent, total: row.total };
+    if (paid) this.pay[month] = { paid: true, at: new Date().toISOString(), rent: row.rent, rent_note: row.rent_note, total: row.total };
     else delete this.pay[month];
     for (const p of row.electricity) {
       const rd = this.d.readings.find((x) => x.id === p.id);
