@@ -1,5 +1,9 @@
 # Endringslogg
 
+## 0.6.4
+
+- Scener er tonet ned: vises som en kompakt liste, og fanen ligger etter Lys og Klima. Appen åpner på Lys.
+
 ## 0.6.3
 
 - Husleien avregnes per dag når leieforholdet starter etter den 1. eller slutter før månedsslutt, og det vises hvordan beløpet er regnet ut.

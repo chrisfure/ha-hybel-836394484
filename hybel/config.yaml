@@ -1,5 +1,5 @@
 name: Hybelstyring
-version: "0.6.3"
+version: "0.6.4"
 slug: hybel
 description: Enkel og rask styringsside for en hybel – leietakeren bruker eget domene via Cloudflare Tunnel, du styrer alt fra Home Assistant.
 url: https://github.com/chrisfure/ha-hybel-836394484

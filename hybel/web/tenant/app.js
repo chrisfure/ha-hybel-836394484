@@ -22,7 +22,7 @@ const store = {
 
 const S = {
   m: null,             // siste tilstand fra serveren
-  tab: store.get('hybel-tab') || 'scener',
+  tab: store.get('hybel-tab') || 'lys',
   view: 'tabs',        // tabs | settings | scene | auto
   draft: null,         // sceneutkast { id, name, icon, include, values }
   adraft: null,        // automasjonsutkast
@@ -83,9 +83,9 @@ const FAN_LABEL = { auto: 'Auto', low: 'Lav', medium: 'Middels', mid: 'Middels',
 const fanLabel = (f) => FAN_LABEL[String(f).toLowerCase()] || String(f).charAt(0).toUpperCase() + String(f).slice(1);
 const DAYS = ['Ma', 'Ti', 'On', 'To', 'Fr', 'Lø', 'Sø'];
 const TABS = [
-  { id: 'scener', label: 'Scener', icon: ICON.star },
   { id: 'lys', label: 'Lys', icon: UI.bulb },
   { id: 'klima', label: 'Klima', icon: UI.flame },
+  { id: 'scener', label: 'Scener', icon: ICON.star },
   { id: 'auto', label: 'Automasjoner', short: 'Auto', icon: UI.clock },
   { id: 'info', label: 'Info', icon: 'M12 8h.01M11 12h1v4h1M21 12a9 9 0 1 1-18 0 9 9 0 0 1 18 0z' }
 ];
@@ -391,19 +391,22 @@ function climateControls(e, v, mode) {
 
 function scenesTab() {
   const m = S.m;
-  let h = `<div class="scene-grid">`;
-  for (const s of m.scenes) {
-    h += `<div class="scene-card ${s.active ? 'active' : ''}">
-      <button class="scene-main" data-act="scene" data-id="${s.id}" data-fid="s-${s.id}" aria-pressed="${s.active}">
-        <span class="ic">${svg(ICON[s.icon] || ICON.star, 22)}</span>
-        <span class="name">${esc(s.name)}</span>
-        <span class="sum">${esc(valuesSummary(s.values))}</span>
-      </button>
-      ${m.can_edit ? `<button class="scene-edit" data-act="scene-edit" data-id="${s.id}" aria-label="Rediger ${esc(s.name)}">${svg(UI.pencil, 16, 2)}</button>` : ''}
-    </div>`;
+  let h = '';
+  if (m.scenes.length) {
+    h += `<section class="card section scene-list">`;
+    for (const s of m.scenes) {
+      h += `<div class="scene-row ${s.active ? 'active' : ''}">
+        <button class="scene-main" data-act="scene" data-id="${s.id}" data-fid="s-${s.id}" aria-pressed="${s.active}">
+          <span class="ic">${svg(ICON[s.icon] || ICON.star, 18)}</span>
+          <span class="txt"><span class="name">${esc(s.name)}</span><span class="sum">${esc(valuesSummary(s.values))}</span></span>
+          ${s.active ? '<span class="pill lvl-ok">På</span>' : ''}
+        </button>
+        ${m.can_edit ? `<button class="scene-edit" data-act="scene-edit" data-id="${s.id}" aria-label="Rediger ${esc(s.name)}">${svg(UI.pencil, 15, 2)}</button>` : ''}
+      </div>`;
+    }
+    h += `</section>`;
   }
-  if (m.can_edit) h += `<button class="scene-card add" data-act="scene-new" data-fid="s-new">${svg(UI.plus, 24, 2)}<span class="name">Ny scene</span></button>`;
-  h += `</div>`;
+  if (m.can_edit) h += `<button class="btn ghost scene-add" data-act="scene-new" data-fid="s-new">${svg(UI.plus, 18, 2)} Ny scene</button>`;
   if (!m.scenes.length && !m.can_edit) h += `<p class="intro">Ingen scener ennå.</p>`;
   return h;
 }
@@ -820,7 +823,7 @@ function tabsHTML() {
   const list = tabs();
   if (!list.some((t) => t.id === S.tab)) S.tab = list[0].id;
   const t = TABS.find((x) => x.id === S.tab);
-  const title = S.tab === 'scener' ? 'Hybelen' : t.label;
+  const title = t.label;
   let body = '';
   if (!S.m.entities.length) body = `<section class="card section"><p class="intro" style="padding:18px 0">Ingen enheter er satt opp ennå. Ta kontakt med utleier.</p></section>`;
   else if (S.tab === 'scener') body = scenesTab();

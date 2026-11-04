@@ -277,3 +277,16 @@ button, .range, .switch { touch-action: manipulation; }
 .kv-row:last-child { border-bottom: 0; }
 .kv-row > span:first-child { color: var(--muted); flex: none; }
 .kv-row > span:last-child { text-align: right; font-weight: 500; }
+
+/* ---------- nedtonede scener ---------- */
+.scene-list { padding-top: 4px; padding-bottom: 4px; }
+.scene-row { display: flex; align-items: center; gap: 6px; border-bottom: 1px solid var(--line); }
+.scene-row:last-child { border-bottom: 0; }
+.scene-row .scene-main { flex: 1; min-width: 0; flex-direction: row; align-items: center; justify-content: flex-start; gap: 12px; padding: 11px 0; border-radius: 12px; min-height: 0; }
+.scene-row .scene-main .ic { width: 34px; height: 34px; border-radius: 11px; background: var(--bg); color: var(--muted); flex: none; }
+.scene-row .txt { display: flex; flex-direction: column; min-width: 0; flex: 1; }
+.scene-row .scene-main .name { font-family: var(--sans); font-size: 15px; font-weight: 600; }
+.scene-row .scene-main .sum { font-size: 12.5px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.scene-row.active .scene-main .ic { background: var(--green-soft); color: var(--green-ink); }
+.scene-row .scene-edit { position: static; width: 34px; height: 34px; background: transparent; color: var(--muted); flex: none; }
+.scene-add { flex: none; width: 100%; display: flex; align-items: center; justify-content: center; gap: 6px; }
