@@ -1,5 +1,9 @@
 # Endringslogg
 
+## 0.4.3
+
+- Utleiersiden: alle seksjoner kan felles sammen og ut. Valget huskes; meldinger fra leietaker åpnes automatisk når noe venter.
+
 ## 0.4.2
 
 - Utleier kan legge inn **startavlesning** av strømmen før innflytting (og egne avlesninger senere, f.eks. ved utflytting). Første periode regnes fra startavlesningen, og leietaker ser at den er lagt inn av utleier.

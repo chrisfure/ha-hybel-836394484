@@ -293,11 +293,11 @@ function infoPanel() {
 }
 
 function resetPanel() {
-  return `<section class="panel soft"><h2>Leietakerbytte</h2>
+  return `<section class="panel soft"><div class="panel-head"><h2>Leietakerbytte</h2></div>
     <p class="help">Sletter leietakerens scener og automasjoner og lager nye forslag. Husk å fjerne forrige leietaker i Cloudflare Access og legge inn den nye.</p>
     <button class="danger ${A.confirmReset ? 'confirm' : ''}" data-act="tenant-reset">${A.confirmReset ? 'Trykk igjen for å bekrefte' : 'Klargjør for ny leietaker'}</button>
   </section>
-  <section class="panel soft"><h2>Oppsett</h2>
+  <section class="panel soft"><div class="panel-head"><h2>Oppsett</h2></div>
     <p class="help">Leietakersiden kjører på port <code>8100</code> inne i Home Assistant. Pek Cloudflare Tunnel til <code>http://&lt;vertsnavn&gt;:8100</code> – vertsnavnet står på appens infoside. Se dokumentasjonen for steg-for-steg.</p>
   </section>`;
 }
@@ -310,7 +310,42 @@ function render() {
     const q = document.querySelector('[data-field="q"]');
     if (q) { q.focus(); q.setSelectionRange(q.value.length, q.value.length); }
   } else if (focusId) document.getElementById(focusId)?.focus();
+  applyFolds();
 }
+
+// ---------- sammenleggbare seksjoner ----------
+
+const FOLD_KEY = 'hybel-admin-folds';
+const folds = (() => { try { return JSON.parse(localStorage.getItem(FOLD_KEY) || '{}') || {}; } catch { return {}; } })();
+function isOpen(key) {
+  if (key in folds) return folds[key];
+  // Standard: alt lukket, unntatt meldinger når noe venter.
+  return key === 'Meldinger fra leietaker' && (A.st?.extras?.reports || []).some((r) => r.status !== 'done');
+}
+function applyFolds() {
+  document.querySelectorAll('#main section.panel').forEach((sec) => {
+    const head = sec.querySelector(':scope > .panel-head');
+    const key = head?.querySelector('h2')?.textContent.trim();
+    if (!key) return;
+    const open = isOpen(key);
+    head.dataset.act = 'fold';
+    head.dataset.key = key;
+    head.setAttribute('role', 'button');
+    head.setAttribute('tabindex', '0');
+    head.setAttribute('aria-expanded', String(open));
+    if (!head.querySelector('.chev')) head.insertAdjacentHTML('beforeend', '<span class="chev" aria-hidden="true"></span>');
+    sec.classList.toggle('folded', !open);
+  });
+}
+function toggleFold(key) {
+  folds[key] = !isOpen(key);
+  try { localStorage.setItem(FOLD_KEY, JSON.stringify(folds)); } catch {}
+  applyFolds();
+}
+document.addEventListener('keydown', (ev) => {
+  const h = ev.target.closest?.('.panel-head[data-act="fold"]');
+  if (h && (ev.key === 'Enter' || ev.key === ' ')) { ev.preventDefault(); toggleFold(h.dataset.key); }
+});
 
 // ---------- handlinger ----------
 
@@ -334,6 +369,7 @@ document.addEventListener('click', async (ev) => {
   const i = Number(d.i);
   if (d.act !== 'tenant-reset') A.confirmReset = false;
   if (d.act !== 'reset-scenes') A.confirmScenes = false;
+  if (d.act === 'fold') { toggleFold(d.key); return; }
   switch (d.act) {
     case 'ent-toggle': ents[i].enabled = !ents[i].enabled; setDirty(); break;
     case 'ent-up': [ents[i - 1], ents[i]] = [ents[i], ents[i - 1]]; setDirty(); break;
