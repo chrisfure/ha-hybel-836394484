@@ -42,6 +42,10 @@ const webRoot = process.env.WEB_ROOT || join(here, '..', 'web');
 const { hub } = startTenantServer({ engine, options, webRoot, port: Number(process.env.TENANT_PORT || 8100) });
 startAdminServer({ engine, ha, webRoot, port: Number(process.env.ADMIN_PORT || 8099), tenantHub: hub, devOpen: process.env.DEV_ADMIN_OPEN === '1' });
 ha.start();
+{
+  const d = store.data;
+  log.info(`Oppsett: varsling=${d.alerts?.notify_service || 'kun bjella i Home Assistant'}, husleie=${d.lease?.rent ?? 'ikke satt'}, kontrakt=${d.lease?.start || '–'}→${d.lease?.end || '–'}, meldinger=${(d.reports || []).length}, avlesninger=${(d.readings || []).length}, varsel-enheter leietaker=${(d.push_subs || []).length}`);
+}
 
 const shutdown = () => {
   store.flush();

@@ -979,22 +979,26 @@ export class Engine extends EventEmitter {
   // eventuell push-tjeneste, og det fyres en hendelse «hybel_varsel» som kan brukes i egne automasjoner.
   async notify(message, opts = {}) {
     const svc = this.data.alerts.notify_service;
-    log.info('Varsel:', message);
+    log.info('Varsel:', message.replace(/\n+/g, ' | '));
     const title = opts.title || 'Hybel';
     const jobs = [];
     if (svc) {
       const [domain, service] = svc.split('.');
-      jobs.push(this.ha.callService(domain, service, { title, message }));
+      jobs.push(['push', svc, this.ha.callService(domain, service, { title, message })]);
     }
     if (!svc || opts.inbox) {
       const data = { title, message };
       if (opts.id) data.notification_id = `hybel_${opts.id}`;
-      jobs.push(this.ha.callService('persistent_notification', 'create', data));
+      jobs.push(['bjella', 'persistent_notification', this.ha.callService('persistent_notification', 'create', data)]);
     }
-    if (opts.event) jobs.push(this.ha.send({ type: 'fire_event', event_type: 'hybel_varsel', event_data: { type: opts.event, title, message } }).catch(() => {}));
-    const res = await Promise.allSettled(jobs);
-    const bad = res.find((r) => r.status === 'rejected');
-    if (bad) throw bad.reason;
+    if (opts.event) this.ha.send({ type: 'fire_event', event_type: 'hybel_varsel', event_data: { type: opts.event, title, message } }).catch(() => {});
+    const res = await Promise.allSettled(jobs.map((j) => j[2]));
+    const out = res.map((r, k) => ({ channel: jobs[k][0], target: jobs[k][1], ok: r.status === 'fulfilled', error: r.status === 'rejected' ? String(r.reason?.message || r.reason) : null }));
+    for (const o of out) {
+      if (o.ok) log.info(`  → ${o.channel} (${o.target}): levert til Home Assistant`);
+      else log.warn(`  → ${o.channel} (${o.target}) FEILET: ${o.error}`);
+    }
+    return out;
   }
 
   dismissNotice(id) {

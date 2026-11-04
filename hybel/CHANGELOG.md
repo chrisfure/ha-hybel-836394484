@@ -1,5 +1,10 @@
 # Endringslogg
 
+## 0.6.1
+
+- «Send testvarsel» under «Varsle meg» på utleiersiden viser om varselet kom fram til telefonen og til bjella i Home Assistant.
+- Loggen viser nå om hvert varsel ble levert eller feilet, og en oppsummering av oppsettet ved oppstart.
+
 ## 0.6.0
 
 - **Leieforhold**: husleie, forfallsdag, kontonummer, depositum, innflytting, kontraktsslutt, oppsigelsestid og hva som er inkludert – settes på utleiersiden.

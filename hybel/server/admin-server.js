@@ -121,6 +121,10 @@ export function startAdminServer({ engine, ha, webRoot, port, tenantHub, devOpen
           return sendJson(res, 400, { ok: false, error: err.message });
         }
       }
+      if (p === '/api/admin/test-notify' && req.method === 'POST') {
+        const results = await engine.notify('Dette er en test fra Hybelstyring. Kommer denne fram, virker varslene.', { title: 'Testvarsel fra hybel', inbox: true, id: 'test' });
+        return sendJson(res, 200, { ok: results.every((r) => r.ok), results });
+      }
       if (p === '/api/admin/payment' && req.method === 'POST') {
         const body = await readJson(req);
         try {

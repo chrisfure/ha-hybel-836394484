@@ -213,6 +213,9 @@ function alertsPanel() {
     <span class="help" style="margin-top:10px">Varsle når disse slår seg på (f.eks. filter- eller frostalarm):</span>
     <div class="chips">${al.entities.map((id) => `<span class="chip">${esc(names.get(id) || id)}<button data-act="alarm-remove" data-id="${esc(id)}" aria-label="Fjern">×</button></span>`).join('') || '<span class="help">Ingen valgt.</span>'}</div>
     ${A.picker === 'alarm' ? pickerHTML('alarm') : `<button class="add" data-act="open-picker" data-kind="alarm">+ Legg til alarm</button>`}
+    <p class="help" style="margin-top:12px">Meldinger, svar, strømavlesninger og sjekklister fra leietaker havner alltid i bjella i Home Assistant${al.notify_service ? ` og sendes i tillegg til ${esc(al.notify_service)}` : '. Velg en varslingstjeneste over (f.eks. telefonen din) for å få dem som push'}.</p>
+    <button class="sbtn" data-act="test-notify">Send testvarsel</button>
+    ${A.testResult ? `<div class="help">${A.testResult}</div>` : ''}
   </section>`;
 }
 
@@ -531,6 +534,14 @@ document.addEventListener('click', async (ev) => {
     case 'safety-add': A.cfg.info.safety = [...(A.cfg.info.safety || []), d.id]; A.picker = null; setDirty(); break;
     case 'safety-remove': A.cfg.info.safety = A.cfg.info.safety.filter((x) => x !== d.id); setDirty(); break;
     case 'photo': A.photo = d.id; break;
+    case 'test-notify': {
+      if (A.dirty) { message('Lagre endringene først, så testes den lagrede varslingstjenesten.', true); return; }
+      try {
+        const r = await api('api/admin/test-notify', { method: 'POST', body: '{}' });
+        A.testResult = (r.results || []).map((x) => `${x.ok ? '✓' : '✗'} ${x.channel === 'push' ? `Push til ${esc(x.target)}` : 'Bjella i Home Assistant'}${x.ok ? '' : `: ${esc(x.error)}`}`).join('<br>');
+      } catch (e) { A.testResult = '✗ ' + esc(e.message); }
+      break;
+    }
     case 'month-paid': {
       try {
         const r = await api('api/admin/payment', { method: 'POST', body: JSON.stringify({ month: d.v, paid: d.paid === '1' }) });
