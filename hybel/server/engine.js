@@ -607,7 +607,7 @@ export class Engine extends EventEmitter {
       loop.busy = true;
       await step();
       loop.busy = false;
-    }, 450);
+    }, 250);
     this.dimLoops.set(auto.id, loop);
   }
 
