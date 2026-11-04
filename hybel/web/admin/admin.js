@@ -21,6 +21,10 @@ const A = {
   q: '',
   resetScenes: false,
   replies: {},
+  compose: '',
+  clOpen: null,
+  clComment: {},
+  photo: null,
   newReading: { value: '', date: '' },
   confirmDel: null,
   confirmScenes: false,
@@ -43,7 +47,8 @@ function pickCfg(st) {
     tenant_can_edit_scenes: st.tenant_can_edit_scenes,
     alerts: st.alerts,
     info: st.extras.info,
-    electricity: { price_per_kwh: st.extras.electricity.price, note: st.extras.electricity.note }
+    electricity: { price_per_kwh: st.extras.electricity.price, note: st.extras.electricity.note },
+    checklist_template: st.extras.checklist_template
   }));
 }
 
@@ -215,24 +220,111 @@ const STATUS_LABEL = { new: 'Mottatt', in_progress: 'Under arbeid', done: 'Løst
 const fmtDate = (d) => new Date(d).toLocaleDateString('nb-NO', { day: 'numeric', month: 'short', year: 'numeric' });
 const kr = (n) => (n == null ? '–' : n.toLocaleString('nb-NO', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + ' kr');
 
+const photoThumbs = (ids) => (ids && ids.length ? `<div class="thumbs">${ids.map((id) => `<button class="thumb" data-act="photo" data-id="${id}" aria-label="Vis bilde"><img src="api/admin/photo/${id}" alt="" loading="lazy"></button>`).join('')}</div>` : '');
+
 function reportsPanel() {
   const reps = A.st.extras.reports;
-  const open = reps.filter((r) => r.status !== 'done');
-  let h = `<section class="panel"><div class="panel-head"><h2>Meldinger fra leietaker</h2><span>${open.length ? `${open.length} åpne` : 'Ingen åpne'}</span></div>`;
+  const open = reps.filter((r) => r.status === 'new' || r.status === 'in_progress' || r.landlord_unread);
+  const dev = A.st.extras.push_devices.length;
+  let h = `<section class="panel"><div class="panel-head"><h2>Meldinger</h2><span>${open.length ? `${open.length} venter på deg` : 'Ingen åpne'}</span></div>
+    <div class="compose">
+      <textarea class="input area" rows="2" maxlength="2000" placeholder="Skriv en melding til leietaker …" data-field="compose">${esc(A.compose)}</textarea>
+      <button class="sbtn on" data-act="compose-send">Send</button>
+    </div>
+    <p class="help">${dev ? `Leietaker har slått på varsler (${dev} enhet${dev === 1 ? '' : 'er'}) og får pushvarsel på meldinger, svar og statusendringer.` : 'Leietaker har ikke slått på varsler ennå – meldingen vises neste gang appen åpnes.'}</p>`;
   if (!reps.length) return h + `<p class="help">Ingen meldinger ennå. Du får varsel når leietakeren melder fra.</p></section>`;
-  for (const r of reps.slice(0, 15)) {
-    h += `<div class="report-a ${r.status}">
-      <div class="report-head"><strong>${esc(r.category)}${r.urgent ? ' · <span class="urgent">haster</span>' : ''}</strong><span class="help">${esc(fmtDate(r.created))}</span></div>
+  for (const r of reps.slice(0, 20)) {
+    const mine = r.origin === 'landlord';
+    h += `<div class="report-a ${r.status}${mine ? ' mine' : ''}${r.landlord_unread ? ' new' : ''}">
+      <div class="report-head"><strong>${mine ? 'Du skrev' : esc(r.category)}${r.urgent ? ' · <span class="urgent">haster</span>' : ''}</strong><span class="help">${esc(fmtDate(r.created))}${mine ? (r.tenant_unread ? ' · ikke lest' : ' · lest') : ''}</span></div>
       <p class="pre">${esc(r.text)}</p>
+      ${photoThumbs(r.photos)}
       ${r.updates.length ? `<div class="thread">${r.updates.map((u) => `<div class="tmsg ${u.from}${u.status ? ' sys' : ''}">${esc(u.text)} <small>${u.from === 'landlord' ? 'Du' : 'Leietaker'} · ${esc(fmtDate(u.at))}</small></div>`).join('')}</div>` : ''}
       <div class="row-btns">
-        ${['new', 'in_progress', 'done'].map((s) => `<button class="sbtn ${r.status === s ? 'on' : ''}" data-act="report-status" data-id="${r.id}" data-v="${s}">${STATUS_LABEL[s]}</button>`).join('')}
+        ${mine ? '' : ['new', 'in_progress', 'done'].map((s) => `<button class="sbtn ${r.status === s ? 'on' : ''}" data-act="report-status" data-id="${r.id}" data-v="${s}">${STATUS_LABEL[s]}</button>`).join('')}
+        ${r.landlord_unread ? `<button class="sbtn" data-act="report-seen" data-id="${r.id}">Merk som lest</button>` : ''}
         <button class="sbtn" data-act="report-delete" data-id="${r.id}">${A.confirmDel === r.id ? 'Bekreft sletting' : 'Slett'}</button>
       </div>
       <div class="reply-a"><textarea class="input area" rows="2" placeholder="Svar til leietaker …" data-field="admin-reply" data-id="${r.id}">${esc(A.replies[r.id] || '')}</textarea><button class="sbtn" data-act="report-reply" data-id="${r.id}">Send svar</button></div>
     </div>`;
   }
   return h + `</section>`;
+}
+
+const CL_STATUS = { open: ['Hos leietaker', ''], submitted: ['Sendt inn – venter på deg', 'warn'], approved: ['Godkjent', 'ok'] };
+
+function checklistPanel() {
+  const list = A.st.extras.checklists;
+  const hasOpen = list.some((c) => c.status === 'open');
+  let h = `<section class="panel"><div class="panel-head"><h2>Inn- og utflytting</h2><span>${list.length ? `${list.length} sjekkliste${list.length === 1 ? '' : 'r'}` : 'Sjekkliste for leietaker'}</span></div>
+    <p class="help">Leietaker går gjennom hybelen rom for rom, merker hvert punkt som OK eller skriver en merknad med bilder. Du får varsel når listen er sendt inn.</p>
+    <div class="row-btns">
+      <button class="sbtn on" data-act="cl-create" data-v="in" ${hasOpen ? 'disabled' : ''}>Send innflyttingssjekkliste</button>
+      <button class="sbtn" data-act="cl-create" data-v="out" ${hasOpen ? 'disabled' : ''}>Send utflyttingssjekkliste</button>
+    </div>`;
+  for (const c of list) {
+    const [label, cls] = CL_STATUS[c.status];
+    const isOpen = A.clOpen === c.id;
+    const notes = c.rows.filter((r) => r.status === 'note');
+    h += `<div class="cl-a">
+      <button class="cl-head" data-act="cl-toggle" data-id="${c.id}">
+        <span><strong>${esc(c.label)}</strong> <span class="help">· sendt ${esc(fmtDate(c.created))}</span></span>
+        <span class="cl-meta"><span class="pill2 ${cls}">${label}</span><span class="help">${c.done}/${c.total} · ${notes.length} merknad${notes.length === 1 ? '' : 'er'}</span></span>
+      </button>`;
+    if (isOpen) {
+      const rooms = [...new Set(c.rows.map((r) => r.room))];
+      h += `<div class="cl-body">`;
+      for (const room of rooms) {
+        const rows = c.rows.filter((r) => r.room === room);
+        const ok = rows.filter((r) => r.status === 'ok').length;
+        const rn = rows.filter((r) => r.status === 'note');
+        const miss = rows.filter((r) => !r.status).length;
+        h += `<div class="cl-room"><div class="cl-room-h"><strong>${esc(room)}</strong><span class="help">${ok} OK${miss ? ` · ${miss} ikke sjekket` : ''}</span></div>
+          ${rn.map((r) => `<div class="cl-note"><span class="t">${esc(r.item)}</span>${r.note ? `<p class="pre">${esc(r.note)}</p>` : ''}${photoThumbs(r.photos)}</div>`).join('')}
+        </div>`;
+      }
+      if (c.comment) h += `<div class="cl-room"><strong>Kommentar fra leietaker</strong><p class="pre">${esc(c.comment)}</p></div>`;
+      if (c.status === 'submitted') {
+        h += `<label class="lbl-col">Kommentar til leietaker (valgfritt)<textarea class="input area" rows="2" data-field="cl-comment" data-id="${c.id}" placeholder="F.eks. Takk! Riper i benken er notert.">${esc(A.clComment[c.id] || '')}</textarea></label>`;
+      }
+      if (c.landlord_comment) h += `<p class="help">Din kommentar: ${esc(c.landlord_comment)}</p>`;
+      h += `<div class="row-btns">
+        ${c.status === 'submitted' ? `<button class="sbtn on" data-act="cl-approve" data-id="${c.id}">Godkjenn</button>` : ''}
+        ${c.status !== 'open' ? `<button class="sbtn" data-act="cl-reopen" data-id="${c.id}">Åpne for endringer</button>` : ''}
+        <button class="sbtn" data-act="cl-print" data-id="${c.id}">Skriv ut</button>
+        <button class="sbtn" data-act="cl-delete" data-id="${c.id}">${A.confirmDel === c.id ? 'Bekreft sletting' : 'Slett'}</button>
+      </div></div>`;
+    }
+    h += `</div>`;
+  }
+  h += `<details class="cl-tpl"><summary>Rediger punktene i sjekklisten</summary>
+      <p class="help">Ett rom per linje: <code>Rom: punkt, punkt, punkt</code>. Endringer gjelder nye sjekklister. Husk «Lagre endringer» øverst.</p>
+      <textarea class="input area mono-area" rows="9" data-field="cl-template">${esc(A.cfg.checklist_template || '')}</textarea>
+    </details>`;
+  return h + `</section>`;
+}
+
+function printChecklist(c) {
+  const rooms = [...new Set(c.rows.map((r) => r.room))];
+  const w = window.open('', '_blank');
+  if (!w) { message('Nettleseren blokkerte utskriftsvinduet.', true); return; }
+  const imgs = (ids) => (ids || []).map((id) => `<img src="${new URL(`api/admin/photo/${id}`, location.href).href}">`).join('');
+  w.document.write(`<!doctype html><meta charset="utf-8"><title>${esc(c.label)}ssjekkliste</title>
+    <style>body{font-family:system-ui,sans-serif;max-width:800px;margin:24px auto;padding:0 16px;color:#222}h1{font-size:24px}h2{font-size:17px;margin:20px 0 6px;border-bottom:1px solid #ccc}
+    table{width:100%;border-collapse:collapse}td{padding:5px 4px;border-bottom:1px solid #eee;vertical-align:top;font-size:14px}td:first-child{width:38%}.ok{color:#2f6b45}.note{color:#9a4a12}
+    img{max-width:220px;max-height:160px;margin:4px 4px 0 0;border-radius:4px}.sig{margin-top:40px;display:flex;gap:40px}.sig div{flex:1;border-top:1px solid #333;padding-top:4px;font-size:13px}</style>
+    <h1>${esc(c.label)}ssjekkliste</h1>
+    <p>Opprettet ${esc(fmtDate(c.created))}${c.submitted_at ? ` · sendt inn ${esc(fmtDate(c.submitted_at))}` : ''}${c.approved_at ? ` · godkjent ${esc(fmtDate(c.approved_at))}` : ''}</p>
+    ${rooms.map((room) => `<h2>${esc(room)}</h2><table>${c.rows.filter((r) => r.room === room).map((r) => `<tr><td>${esc(r.item)}</td><td class="${r.status || ''}">${r.status === 'ok' ? 'OK' : r.status === 'note' ? 'Merknad' : '–'}${r.note ? `: ${esc(r.note)}` : ''}<br>${imgs(r.photos)}</td></tr>`).join('')}</table>`).join('')}
+    ${c.comment ? `<h2>Kommentar fra leietaker</h2><p>${esc(c.comment)}</p>` : ''}
+    ${c.landlord_comment ? `<h2>Kommentar fra utleier</h2><p>${esc(c.landlord_comment)}</p>` : ''}
+    <div class="sig"><div>Leietaker</div><div>Utleier</div></div>
+    <script>window.onload=()=>setTimeout(()=>print(),300)<\/script>`);
+  w.document.close();
+}
+
+function photoOverlay() {
+  return A.photo ? `<div class="lightbox" data-act="photo-close"><img src="api/admin/photo/${A.photo}" alt="Bilde fra leietaker"></div>` : '';
 }
 
 function electricityPanel() {
@@ -305,7 +397,7 @@ function resetPanel() {
 function render() {
   if (!A.cfg) return;
   const focusId = document.activeElement?.id || (document.activeElement?.dataset?.field === 'q' ? '__q' : null);
-  $('main').innerHTML = `<div class="col-main">${reportsPanel()}${entitiesPanel()}${scenesPanel()}${electricityPanel()}${infoPanel()}</div><div class="col-side">${limitsPanel()}${alertsPanel()}${resetPanel()}</div>`;
+  $('main').innerHTML = `<div class="col-main">${reportsPanel()}${checklistPanel()}${entitiesPanel()}${scenesPanel()}${electricityPanel()}${infoPanel()}</div><div class="col-side">${limitsPanel()}${alertsPanel()}${resetPanel()}</div>${photoOverlay()}`;
   if (focusId === '__q') {
     const q = document.querySelector('[data-field="q"]');
     if (q) { q.focus(); q.setSelectionRange(q.value.length, q.value.length); }
@@ -320,7 +412,9 @@ const folds = (() => { try { return JSON.parse(localStorage.getItem(FOLD_KEY) ||
 function isOpen(key) {
   if (key in folds) return folds[key];
   // Standard: alt lukket, unntatt meldinger når noe venter.
-  return key === 'Meldinger fra leietaker' && (A.st?.extras?.reports || []).some((r) => r.status !== 'done');
+  if (key === 'Meldinger') return (A.st?.extras?.reports || []).some((r) => r.status === 'new' || r.status === 'in_progress' || r.landlord_unread);
+  if (key === 'Inn- og utflytting') return (A.st?.extras?.checklists || []).some((c) => c.status === 'submitted');
+  return false;
 }
 function applyFolds() {
   document.querySelectorAll('#main section.panel').forEach((sec) => {
@@ -388,10 +482,43 @@ document.addEventListener('click', async (ev) => {
     }
     case 'safety-add': A.cfg.info.safety = [...(A.cfg.info.safety || []), d.id]; A.picker = null; setDirty(); break;
     case 'safety-remove': A.cfg.info.safety = A.cfg.info.safety.filter((x) => x !== d.id); setDirty(); break;
+    case 'photo': A.photo = d.id; break;
+    case 'photo-close': A.photo = null; break;
+    case 'compose-send': {
+      const text = A.compose.trim();
+      if (!text) return;
+      try {
+        const r = await api('api/admin/message', { method: 'POST', body: JSON.stringify({ text }) });
+        if (!r.ok) { message(esc(r.error), true); return; }
+        A.st = r.state; A.compose = '';
+        message('Meldingen er sendt til leietaker.');
+      } catch (e) { message(esc(e.message), true); }
+      break;
+    }
+    case 'cl-toggle': A.clOpen = A.clOpen === d.id ? null : d.id; break;
+    case 'cl-print': { const c = A.st.extras.checklists.find((x) => x.id === d.id); if (c) printChecklist(c); return; }
+    case 'cl-create':
+    case 'cl-approve':
+    case 'cl-reopen':
+    case 'cl-delete': {
+      const action = d.act.slice(3);
+      if (action === 'delete' && A.confirmDel !== d.id) { A.confirmDel = d.id; break; }
+      const body = { action, id: d.id, type: d.v, comment: A.clComment[d.id] || '' };
+      try {
+        const r = await api('api/admin/checklist', { method: 'POST', body: JSON.stringify(body) });
+        if (!r.ok) { message(esc(r.error), true); return; }
+        A.st = r.state; A.confirmDel = null;
+        if (action === 'create') A.clOpen = A.st.extras.checklists[0]?.id || null;
+        message({ create: 'Sjekklisten er sendt til leietaker.', approve: 'Sjekklisten er godkjent.', reopen: 'Leietaker kan endre sjekklisten igjen.', delete: 'Sjekklisten er slettet.' }[action]);
+      } catch (e) { message(esc(e.message), true); }
+      break;
+    }
     case 'report-status':
     case 'report-reply':
+    case 'report-seen':
     case 'report-delete': {
       const body = { id: d.id };
+      if (d.act === 'report-seen') body.seen = true;
       if (d.act === 'report-status') body.status = d.v;
       if (d.act === 'report-reply') { body.reply = (A.replies[d.id] || '').trim(); if (!body.reply) return; }
       if (d.act === 'report-delete') { if (A.confirmDel !== d.id) { A.confirmDel = d.id; break; } body.delete = true; }
@@ -475,6 +602,9 @@ document.addEventListener('input', (ev) => {
   else if (f === 'el.note') { A.cfg.electricity.note = el.value; setDirty(); }
   else if (f === 'nr.value') { A.newReading.value = el.value; }
   else if (f === 'nr.date') { A.newReading.date = el.value; }
+  else if (f === 'compose') { A.compose = el.value; }
+  else if (f === 'cl-comment') { A.clComment[el.dataset.id] = el.value; }
+  else if (f === 'cl-template') { A.cfg.checklist_template = el.value; setDirty(); }
   else if (f === 'admin-reply') { A.replies[el.dataset.id] = el.value; }
   else if (f === 'notify') { A.cfg.alerts.notify_service = el.value.trim(); setDirty(); }
   else if (f === 'q') { A.q = el.value; render(); }

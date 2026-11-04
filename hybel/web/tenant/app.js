@@ -35,8 +35,11 @@ const S = {
   dragging: null,
   deferred: false,
   confirmDelete: false,
-  infoSub: 'info',      // info | strom | meld
-  report: { category: null, text: '', urgent: false },
+  infoSub: 'info',      // info | strom | meld | sjekk
+  report: { category: null, text: '', urgent: false, photos: [] },
+  push: { supported: false, ios: false, standalone: false, permission: 'default', sub: null, busy: false },
+  uploading: null,     // nøkkel for punkt som laster opp bilde
+  photo: null,         // bilde som vises i stort format
   reply: {},
   reading: { date: new Date().toISOString().slice(0, 10), value: '' }
 };
@@ -462,16 +465,21 @@ const STATUS = { new: ['Mottatt', 'st-new'], in_progress: ['Under arbeid', 'st-w
 
 function infoBadge() {
   const m = S.m;
-  return (m.reports || []).some((r) => r.unread) || (m.electricity && m.electricity.remind);
+  return (m.reports || []).some((r) => r.unread) || (m.electricity && m.electricity.remind) || (m.checklists || []).some((c) => c.status === 'open' || c.unread);
 }
 
 function infoTab() {
   const m = S.m;
   const unread = (m.reports || []).filter((r) => r.unread).length;
-  const subs = [['info', 'Info'], ['strom', 'Strøm'], ['meld', `Meld fra${unread ? ` (${unread})` : ''}`]];
-  let h = `<div class="seg subnav" style="grid-template-columns: repeat(3, minmax(0, 1fr))">${subs.map(([k, l]) => `<button aria-pressed="${S.infoSub === k}" data-act="info-sub" data-v="${k}">${esc(l)}${k === 'strom' && m.electricity.remind ? ' •' : ''}</button>`).join('')}</div>`;
+  const cls = m.checklists || [];
+  const subs = [['info', 'Info'], ['strom', 'Strøm'], ['meld', 'Meldinger']];
+  if (cls.length) subs.push(['sjekk', 'Sjekkliste']);
+  if (S.infoSub === 'sjekk' && !cls.length) S.infoSub = 'info';
+  const dot = (k) => (k === 'strom' && m.electricity.remind) || (k === 'meld' && unread > 0) || (k === 'sjekk' && cls.some((c) => c.status === 'open' || c.unread));
+  let h = `<div class="seg subnav ${subs.length > 3 ? 'four' : ''}" style="grid-template-columns: repeat(${subs.length}, minmax(0, 1fr))">${subs.map(([k, l]) => `<button aria-pressed="${S.infoSub === k}" data-act="info-sub" data-v="${k}">${esc(l)}${dot(k) ? ' •' : ''}</button>`).join('')}</div>`;
   if (S.infoSub === 'strom') h += stromHTML();
   else if (S.infoSub === 'meld') h += meldHTML();
+  else if (S.infoSub === 'sjekk') h += sjekkHTML();
   else h += infoHTML();
   return h;
 }
@@ -484,6 +492,8 @@ function textCard(title, text) {
 function infoHTML() {
   const i = S.m.info;
   let h = '';
+  const openCl = (S.m.checklists || []).find((c) => c.status === 'open');
+  if (openCl) h += `<button class="notice-soft notice-btn" data-act="info-sub" data-v="sjekk"><strong>${esc(openCl.label)}ssjekkliste</strong><span>${openCl.done} av ${openCl.total} punkter – trykk for å fortsette</span></button>`;
   if (i.wifi_ssid) {
     let qr = '';
     try { qr = qrSvg(wifiString(i.wifi_ssid, i.wifi_password), { label: 'QR-kode for wifi' }); } catch {}
@@ -506,7 +516,7 @@ function infoHTML() {
         ${i.contact_phone ? `<a class="btn" href="tel:${esc(i.contact_phone.replace(/\s/g, ''))}">Ring ${esc(i.contact_phone)}</a><a class="btn" href="sms:${esc(i.contact_phone.replace(/\s/g, ''))}">Send SMS</a>` : ''}
         ${i.contact_email ? `<a class="btn" href="mailto:${esc(i.contact_email)}">E-post</a>` : ''}
       </div>
-      <button class="btn ghost" data-act="info-sub" data-v="meld" style="margin-top:8px">Meld fra om et problem</button>
+      <button class="btn ghost" data-act="info-sub" data-v="meld" style="margin-top:8px">Send melding til utleier</button>
     </section>`;
   }
   if (i.safety && i.safety.length) {
@@ -561,24 +571,55 @@ function stromHTML() {
   return h;
 }
 
+const photoThumbs = (ids, rm = null) => (ids && ids.length ? `<div class="thumbs">${ids.map((id) => `<span class="thumb-w"><button class="thumb" data-act="photo-view" data-id="${id}" aria-label="Vis bilde"><img src="api/photo/${id}" alt="" loading="lazy"></button>${rm ? `<button class="thumb-x" data-act="${rm.act}" data-photo="${id}" ${rm.attrs} aria-label="Fjern bilde">×</button>` : ''}</span>`).join('')}</div>` : '');
+
+function pushCardHTML(where) {
+  const P = S.push;
+  const m = S.m;
+  if (!m.push || !m.push.key) return '';
+  const on = P.sub && P.permission === 'granted';
+  if (where === 'meld' && on) return '';
+  let body;
+  if (on) {
+    body = `<p class="note">Varsler er på for denne enheten. Du får beskjed når utleier sender en melding eller svarer deg.</p>
+      <div class="contact-btns"><button class="btn" data-act="push-test" ${P.busy ? 'disabled' : ''}>Send testvarsel</button><button class="btn ghost" data-act="push-off" ${P.busy ? 'disabled' : ''}>Slå av</button></div>`;
+  } else if (P.ios && !P.standalone) {
+    body = `<p class="note">På iPhone må appen ligge på Hjem-skjermen for å kunne gi varsler:</p>
+      <ol class="steps"><li>Trykk på <strong>Del</strong>-knappen i Safari</li><li>Velg <strong>Legg til på Hjem-skjerm</strong></li><li>Åpne Hybel fra Hjem-skjermen og slå på varsler her</li></ol>`;
+  } else if (!P.supported) {
+    body = `<p class="note">Denne nettleseren støtter ikke varsler. Prøv Chrome eller Safari, eller legg appen på Hjem-skjermen.</p>`;
+  } else if (P.permission === 'denied') {
+    body = `<p class="note">Varsler er blokkert for denne siden. Slå dem på i innstillingene til nettleseren/telefonen, og prøv igjen.</p>`;
+  } else {
+    body = `<p class="note">Få beskjed på telefonen når utleier svarer eller sender deg en melding.</p>
+      <button class="btn primary big" data-act="push-on" ${P.busy ? 'disabled' : ''}>${P.busy ? 'Slår på …' : 'Slå på varsler'}</button>`;
+  }
+  return `<section class="card info-card push-card"><h2>Varsler</h2>${body}</section>`;
+}
+
 function meldHTML() {
   const m = S.m;
   const f = S.report;
-  let h = `<section class="card info-card"><h2>Ny melding til utleier</h2>
+  let h = pushCardHTML('meld');
+  h += `<section class="card info-card"><h2>Ny melding til utleier</h2>
     <span class="field-label">Hva gjelder det?</span>
     <div class="chips">${m.report_categories.map((c) => `<button class="chip" aria-pressed="${f.category === c}" data-act="report-cat" data-v="${esc(c)}">${esc(c)}</button>`).join('')}</div>
     <label class="field"><span class="field-label">Beskriv problemet</span><textarea class="input area" rows="4" maxlength="2000" placeholder="F.eks. vasken på badet renner sakte unna" data-field="report-text">${esc(f.text)}</textarea></label>
+    ${photoThumbs(f.photos, { act: 'report-photo-rm', attrs: '' })}
+    ${f.photos.length < 3 ? `<button class="chip-btn add-photo" data-act="report-photo" ${S.uploading === 'report' ? 'disabled' : ''}>${S.uploading === 'report' ? 'Laster opp …' : '+ Legg ved bilde'}</button>` : ''}
     <div class="row between"><span class="status">Haster</span><button class="switch" role="switch" aria-checked="${f.urgent}" aria-label="Haster" data-act="report-urgent"></button></div>
-    <button class="btn primary big" data-act="report-send">Send til utleier</button>
+    <button class="btn primary big" data-act="report-send" ${S.uploading ? 'disabled' : ''}>Send til utleier</button>
   </section>`;
   if (m.reports.length) {
-    h += `<section><h2 class="group-title">Dine meldinger</h2>`;
+    h += `<section><h2 class="group-title">Meldinger</h2>`;
     for (const r of m.reports) {
-      const [label, cls] = STATUS[r.status] || STATUS.new;
-      h += `<article class="card report ${r.unread ? 'unread' : ''}">
-        <div class="row between"><span class="t">${esc(r.category)}${r.urgent ? ' · <span class="urgent">haster</span>' : ''}</span><span class="pill ${cls}">${label}</span></div>
+      const mine = r.origin !== 'landlord';
+      const [label, cls] = STATUS[r.status] || ['Fra utleier', 'st-info'];
+      h += `<article class="card report ${r.unread ? 'unread' : ''} ${mine ? '' : 'from-landlord'}">
+        <div class="row between"><span class="t">${mine ? esc(r.category) : 'Fra utleier'}${r.urgent ? ' · <span class="urgent">haster</span>' : ''}</span>${mine ? `<span class="pill ${cls}">${label}</span>` : ''}</div>
         <span class="note">${esc(dateFmt(r.created))}</span>
         <p class="pre">${esc(r.text)}</p>
+        ${photoThumbs(r.photos)}
         ${r.updates.length ? `<div class="thread">${r.updates.map((u) => `<div class="msg ${u.from} ${u.status ? 'sys' : ''}"><span>${esc(u.text)}</span><small>${u.from === 'landlord' ? 'Utleier' : 'Deg'} · ${esc(dateFmt(u.at))}</small></div>`).join('')}</div>` : ''}
         ${r.status !== 'done' ? `<div class="reply"><textarea class="input area" rows="2" maxlength="1000" placeholder="Skriv et svar …" data-field="reply" data-id="${r.id}">${esc(S.reply[r.id] || '')}</textarea><button class="chip-btn" data-act="report-reply" data-id="${r.id}">Send</button></div>` : ''}
       </article>`;
@@ -586,6 +627,65 @@ function meldHTML() {
     h += `</section>`;
   }
   return h;
+}
+
+function currentChecklist() {
+  const list = S.m.checklists || [];
+  return list.find((c) => c.status === 'open') || list[0] || null;
+}
+
+function sjekkHTML() {
+  const c = currentChecklist();
+  if (!c) return '';
+  const pct = Math.round((c.done / Math.max(1, c.total)) * 100);
+  const rooms = [...new Set(c.rows.map((r) => r.room))];
+  const editable = c.status === 'open';
+  let h = `<section class="card info-card cl-top"><h2>${esc(c.label)}ssjekkliste</h2>`;
+  if (editable) {
+    h += `<p class="note">Gå gjennom hybelen og trykk <strong>OK</strong> når noe er i orden, eller <strong>Merknad</strong> hvis du ser riper, flekker, skader eller noe som ikke virker. Ta gjerne bilder – det gjør det enklere for begge senere.</p>
+      <div class="progress"><span style="width:${pct}%"></span></div><span class="note">${c.done} av ${c.total} punkter</span>`;
+  } else {
+    h += `<p class="note">${c.status === 'approved' ? `Godkjent av utleier ${esc(dateFmt(c.approved_at))}.` : `Sendt inn ${esc(dateFmt(c.submitted_at))}. Utleier går gjennom den.`}</p>
+      ${c.landlord_comment ? `<div class="msg landlord"><span>${esc(c.landlord_comment)}</span><small>Utleier</small></div>` : ''}`;
+  }
+  h += `</section>`;
+  rooms.forEach((room) => {
+    const rows = c.rows.map((r, i) => ({ ...r, i })).filter((r) => r.room === room);
+    const done = rows.filter((r) => r.status).length;
+    h += `<section><h2 class="group-title">${esc(room)} <span class="gt-count">${done}/${rows.length}</span></h2><div class="card cl-list">`;
+    for (const r of rows) {
+      const key = `${c.id}-${r.i}`;
+      h += `<div class="cl-row ${r.status || ''}">
+        <div class="cl-line"><span class="t">${esc(r.item)}</span>
+          ${editable ? `<span class="cl-btns">
+            <button class="cl-b ok" aria-pressed="${r.status === 'ok'}" data-act="cl-status" data-id="${c.id}" data-i="${r.i}" data-v="ok">OK</button>
+            <button class="cl-b note" aria-pressed="${r.status === 'note'}" data-act="cl-status" data-id="${c.id}" data-i="${r.i}" data-v="note">Merknad</button></span>`
+            : `<span class="pill ${r.status === 'ok' ? 'st-done' : r.status === 'note' ? 'st-new' : ''}">${r.status === 'ok' ? 'OK' : r.status === 'note' ? 'Merknad' : '–'}</span>`}
+        </div>
+        ${r.status === 'note' ? (editable
+          ? `<textarea class="input area" rows="2" maxlength="1000" placeholder="Hva ser du? F.eks. ripe i gulvet ved døra" data-field="cl-note" data-id="${c.id}" data-i="${r.i}">${esc(r.note)}</textarea>
+             ${photoThumbs(r.photos, { act: 'cl-photo-rm', attrs: `data-id="${c.id}" data-i="${r.i}"` })}
+             ${r.photos.length < 4 ? `<button class="chip-btn add-photo" data-act="cl-photo" data-id="${c.id}" data-i="${r.i}" ${S.uploading ? 'disabled' : ''}>${S.uploading === key ? 'Laster opp …' : '+ Ta bilde'}</button>` : ''}`
+          : `${r.note ? `<p class="pre note">${esc(r.note)}</p>` : ''}${photoThumbs(r.photos)}`) : ''}
+      </div>`;
+    }
+    h += `</div></section>`;
+  });
+  if (editable) {
+    const missing = c.total - c.done;
+    h += `<section class="card info-card">
+      <label class="field"><span class="field-label">Annet du vil nevne (valgfritt)</span><textarea class="input area" rows="3" maxlength="2000" placeholder="F.eks. antall nøkler, ting som mangler" data-field="cl-comment" data-id="${c.id}">${esc(c.comment)}</textarea></label>
+      <button class="btn primary big" data-act="cl-submit" data-id="${c.id}" ${missing ? 'disabled' : ''}>${missing ? `${missing} punkt${missing === 1 ? '' : 'er'} gjenstår` : S.confirmDelete ? 'Trykk igjen for å sende' : 'Send til utleier'}</button>
+      <p class="note">Når listen er sendt kan den ikke endres. Utleier får beskjed og kan åpne den igjen ved behov.</p>
+    </section>`;
+  } else if (c.comment) {
+    h += textCard('Din kommentar', c.comment);
+  }
+  return h;
+}
+
+function photoViewHTML() {
+  return S.photo ? `<div class="lightbox" data-act="photo-close"><img src="api/photo/${S.photo}" alt="Bilde"></div>` : '';
 }
 
 function tabsHTML() {
@@ -601,7 +701,7 @@ function tabsHTML() {
   else if (S.tab === 'info') body = infoTab();
   else body = autoTab();
   if (S.tab === 'info' && !S.m.entities.length) body = infoTab();
-  return topHTML(title) + toastHTML() + body + navHTML();
+  return topHTML(title) + toastHTML() + body + navHTML() + photoViewHTML();
 }
 
 // ---------- innstillinger og redigering ----------
@@ -609,6 +709,7 @@ function tabsHTML() {
 function settingsHTML() {
   const m = S.m;
   let html = subHTML('Hybelen', 'Innstillinger') + toastHTML();
+  html += pushCardHTML('settings');
 
   html += `<section><h2 class="group-title">Rekkefølge – enheter</h2><div class="list">`;
   m.entities.filter((e) => e.kind !== 'button').forEach((e, i, arr) => {
@@ -888,13 +989,59 @@ function setValueFor(e, next, draft, later = false) {
 function act(a, ds) {
   const m = S.m;
   const draft = ds.mode === 'draft';
-  if (!['scene-delete', 'auto-delete', 'reading-delete'].includes(a)) S.confirmDelete = false;
+  if (!['scene-delete', 'auto-delete', 'reading-delete', 'cl-status', 'cl-submit'].includes(a)) S.confirmDelete = false;
+  if (a === 'cl-status' && S.confirmDelete && S.confirmDelete !== `${ds.id}-${ds.i}`) S.confirmDelete = false;
   switch (a) {
     case 'relogin':
       location.reload();
       return;
+    case 'photo-view': S.photo = ds.id; return render();
+    case 'photo-close': S.photo = null; return render();
+    case 'push-on': return pushOn();
+    case 'push-off': return pushOff();
+    case 'push-test':
+      if (!S.push.sub) return;
+      S.push.busy = true; render();
+      cmd({ type: 'push_test', endpoint: S.push.sub.endpoint }).then((r) => { S.push.busy = false; if (r.ok) showToast('Testvarsel sendt'); render(); });
+      return;
+    case 'report-photo':
+      pickPhoto('report', (id) => { S.report.photos.push(id); });
+      return;
+    case 'report-photo-rm':
+      S.report.photos = S.report.photos.filter((x) => x !== ds.photo);
+      return render();
+    case 'cl-status': {
+      const c = (m.checklists || []).find((x) => x.id === ds.id);
+      const r = c && c.rows[Number(ds.i)];
+      if (!r) return;
+      const next = r.status === ds.v && ds.v === 'ok' ? null : ds.v;
+      if (r.status === 'note' && next !== 'note' && (r.note || r.photos.length)) {
+        if (!S.confirmDelete) { S.confirmDelete = `${ds.id}-${ds.i}`; showToast('Trykk OK igjen for å fjerne merknaden'); return; }
+      }
+      if (!r.status && next) c.done++;
+      if (r.status && !next) c.done--;
+      r.status = next;
+      if (next !== 'note' && (r.note || r.photos.length)) { r.note = ''; r.photos = []; }
+      cmd({ type: 'checklist_set', id: ds.id, i: Number(ds.i), status: next, ...(next !== 'note' ? { note: '' } : {}) });
+      return render();
+    }
+    case 'cl-photo':
+      pickPhoto(`${ds.id}-${ds.i}`, (id) => cmd({ type: 'checklist_photo_add', id: ds.id, i: Number(ds.i), photo: id }));
+      return;
+    case 'cl-photo-rm':
+      cmd({ type: 'checklist_photo_remove', id: ds.id, i: Number(ds.i), photo: ds.photo });
+      return;
+    case 'cl-submit':
+      if (!S.confirmDelete) { S.confirmDelete = 'submit'; return render(); }
+      S.confirmDelete = false;
+      cmd({ type: 'checklist_submit', id: ds.id }).then((r) => { if (r.ok) { showToast('Sjekklisten er sendt til utleier'); window.scrollTo(0, 0); } });
+      return;
     case 'info-sub':
       S.infoSub = ds.v;
+      if (ds.v === 'sjekk' && (S.m.checklists || []).some((c) => c.unread)) {
+        S.m.checklists.forEach((c) => { c.unread = false; });
+        cmd({ type: 'checklist_seen' });
+      }
       if (ds.v === 'meld' && (S.m.reports || []).some((r) => r.unread)) {
         S.m.reports.forEach((r) => { r.unread = false; });
         cmd({ type: 'report_seen' });
@@ -914,9 +1061,9 @@ function act(a, ds) {
     case 'report-send': {
       const f = S.report;
       if (!f.category) return showToast('Velg hva det gjelder', true);
-      cmd({ type: 'report_create', category: f.category, text: f.text, urgent: f.urgent }).then((r) => {
+      cmd({ type: 'report_create', category: f.category, text: f.text, urgent: f.urgent, photos: f.photos }).then((r) => {
         if (!r.ok) return;
-        S.report = { category: null, text: '', urgent: false };
+        S.report = { category: null, text: '', urgent: false, photos: [] };
         showToast('Meldingen er sendt til utleier');
       });
       return;
@@ -1186,6 +1333,7 @@ $app.addEventListener('input', (ev) => {
   const f = t.dataset.field;
   if (f === 'scene-name') { S.draft.name = t.value; return; }
   if (f === 'report-text') { S.report.text = t.value; return; }
+  if (f === 'cl-note' || f === 'cl-comment') return;
   if (f === 'reply') { S.reply[t.dataset.id] = t.value; return; }
   if (f === 'reading-value') { S.reading.value = t.value; return; }
   if (f === 'reading-date') { S.reading.date = t.value; return; }
@@ -1210,10 +1358,143 @@ $app.addEventListener('input', (ev) => {
 });
 
 $app.addEventListener('change', (ev) => {
-  if (ev.target.closest('input.range[data-key]')) endDrag();
+  const t = ev.target;
+  if (t.closest('input.range[data-key]')) endDrag();
+  if (t.dataset.field === 'cl-note') {
+    const c = (S.m.checklists || []).find((x) => x.id === t.dataset.id);
+    if (c && c.rows[Number(t.dataset.i)]) c.rows[Number(t.dataset.i)].note = t.value;
+    cmd({ type: 'checklist_set', id: t.dataset.id, i: Number(t.dataset.i), note: t.value });
+  }
+  if (t.dataset.field === 'cl-comment') {
+    const c = (S.m.checklists || []).find((x) => x.id === t.dataset.id);
+    if (c) c.comment = t.value;
+    cmd({ type: 'checklist_comment', id: t.dataset.id, text: t.value });
+  }
 });
 $app.addEventListener('focusout', (ev) => {
   if (ev.target.matches?.(TYPING)) setTimeout(render, 0);
 });
 
+// ---------- bilder ----------
+
+async function shrink(file) {
+  const max = 1600;
+  let bmp;
+  try { bmp = await createImageBitmap(file, { imageOrientation: 'from-image' }); }
+  catch {
+    bmp = await new Promise((res, rej) => { const img = new Image(); img.onload = () => res(img); img.onerror = rej; img.src = URL.createObjectURL(file); });
+  }
+  const w = bmp.width, h = bmp.height;
+  const k = Math.min(1, max / Math.max(w, h));
+  const cv = document.createElement('canvas');
+  cv.width = Math.round(w * k);
+  cv.height = Math.round(h * k);
+  cv.getContext('2d').drawImage(bmp, 0, 0, cv.width, cv.height);
+  return new Promise((res, rej) => cv.toBlob((b) => (b ? res(b) : rej(new Error('Kunne ikke lese bildet'))), 'image/jpeg', 0.82));
+}
+
+function pickPhoto(key, done) {
+  const inp = document.createElement('input');
+  inp.type = 'file';
+  inp.accept = 'image/*';
+  inp.onchange = async () => {
+    const file = inp.files && inp.files[0];
+    if (!file) return;
+    S.uploading = key;
+    render();
+    try {
+      const blob = await shrink(file);
+      const r = await fetch('api/photo', { method: 'POST', headers: { 'Content-Type': 'image/jpeg' }, body: blob, credentials: 'same-origin' });
+      const j = await r.json().catch(() => ({ ok: false, error: 'Uventet svar' }));
+      if (!j.ok) throw new Error(j.error || 'Opplasting feilet');
+      await done(j.id);
+    } catch (err) {
+      showToast(err.message || 'Kunne ikke laste opp bildet', true);
+    }
+    S.uploading = null;
+    render();
+  };
+  inp.click();
+}
+
+// ---------- pushvarsler ----------
+
+const b64uToBytes = (s) => {
+  const b = atob(s.replace(/-/g, '+').replace(/_/g, '/') + '==='.slice((s.length + 3) % 4));
+  return Uint8Array.from(b, (c) => c.charCodeAt(0));
+};
+
+async function initPush() {
+  const P = S.push;
+  P.ios = /iPhone|iPad|iPod/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+  P.standalone = window.matchMedia('(display-mode: standalone)').matches || navigator.standalone === true;
+  P.supported = 'serviceWorker' in navigator && 'PushManager' in window && 'Notification' in window;
+  if (!('serviceWorker' in navigator)) return;
+  try {
+    const reg = await navigator.serviceWorker.register('sw.js', { scope: './' });
+    if (P.supported) {
+      P.permission = Notification.permission;
+      P.sub = await reg.pushManager.getSubscription();
+    }
+  } catch (err) {
+    console.warn('Service worker:', err);
+  }
+  navigator.serviceWorker.addEventListener('message', (e) => { if (e.data?.type === 'open') openFromUrl(e.data.url); });
+  render();
+}
+
+async function pushOn() {
+  const P = S.push;
+  if (!S.m.push?.key) return;
+  P.busy = true;
+  render();
+  try {
+    const perm = await Notification.requestPermission();
+    P.permission = perm;
+    if (perm !== 'granted') throw new Error(perm === 'denied' ? 'Varsler ble blokkert' : 'Varsler ble ikke slått på');
+    const reg = await navigator.serviceWorker.ready;
+    let sub = await reg.pushManager.getSubscription();
+    if (sub) { try { await sub.unsubscribe(); } catch {} }
+    sub = await reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: b64uToBytes(S.m.push.key) });
+    const device = P.ios ? 'iPhone/iPad' : /Android/.test(navigator.userAgent) ? 'Android' : 'Nettleser';
+    const r = await cmd({ type: 'push_subscribe', subscription: sub.toJSON(), device });
+    if (!r.ok) throw new Error(r.error || 'Kunne ikke lagre');
+    P.sub = sub;
+    showToast('Varsler er slått på');
+  } catch (err) {
+    showToast(err.message || 'Kunne ikke slå på varsler', true);
+  }
+  P.busy = false;
+  render();
+}
+
+async function pushOff() {
+  const P = S.push;
+  if (!P.sub) return;
+  P.busy = true;
+  render();
+  const endpoint = P.sub.endpoint;
+  try { await P.sub.unsubscribe(); } catch {}
+  await cmd({ type: 'push_unsubscribe', endpoint });
+  P.sub = null;
+  P.busy = false;
+  showToast('Varsler er slått av');
+  render();
+}
+
+// Åpnet fra et varsel: /?vis=meld | strom | sjekk
+function openFromUrl(href) {
+  let v = null;
+  try { v = new URL(href, location.href).searchParams.get('vis'); } catch {}
+  if (!['meld', 'strom', 'sjekk', 'info'].includes(v)) return;
+  S.view = 'tabs';
+  S.tab = 'info';
+  store.set('hybel-tab', 'info');
+  S.infoSub = v;
+  if (location.search) history.replaceState(null, '', location.pathname);
+  render();
+}
+
+openFromUrl(location.href);
+initPush();
 connect();

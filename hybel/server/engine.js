@@ -704,7 +704,7 @@ export class Engine extends EventEmitter {
     if (!this.data.tenant_can_edit_scenes) throw new Error('Utleier har låst scener og automasjoner');
   }
 
-  async handleTenant(cmd) {
+  async handleTenant(cmd, ctx = {}) {
     this.touch();
     const d = this.data;
     switch (cmd?.type) {
@@ -774,7 +774,7 @@ export class Engine extends EventEmitter {
         break;
       }
       default:
-        if (!(await this.extras.handleTenant(cmd))) throw new Error('Ukjent kommando');
+        if (!(await this.extras.handleTenant(cmd, ctx))) throw new Error('Ukjent kommando');
     }
     this.changed();
   }
@@ -920,6 +920,7 @@ export class Engine extends EventEmitter {
       }
     }
     this.extras.saveInfo(body, errors);
+    this.extras.saveTemplate(body, errors);
     if (body.reset_scenes === true) {
       d.scenes = null;
       d.automations = d.automations.filter((a) => a.action.type !== 'scene');
@@ -944,11 +945,13 @@ export class Engine extends EventEmitter {
     d.boost = null;
     d.last_tenant_activity = null;
     // Ta vare på forrige leietakers strøm og meldinger i et arkiv.
-    if (d.readings?.length || d.reports?.length) {
-      d.archive = [...(d.archive || []), { at: new Date().toISOString(), readings: d.readings || [], reports: d.reports || [] }].slice(-10);
+    if (d.readings?.length || d.reports?.length || d.checklists?.length) {
+      d.archive = [...(d.archive || []), { at: new Date().toISOString(), readings: d.readings || [], reports: d.reports || [], checklists: d.checklists || [] }].slice(-10);
     }
     d.readings = [];
     d.reports = [];
+    d.checklists = [];
+    d.push_subs = []; // forrige leietakers telefoner skal ikke få varsler
     this.ensureScenes();
     this.store.save();
     this.changed();
@@ -996,6 +999,7 @@ export class Engine extends EventEmitter {
   }
 
   async tick() {
+    try { this.extras.tick(); } catch (err) { log.warn('Feil i jevnlig oppgave:', err.message); }
     if (!this.ha.connected) return;
     const d = this.data;
     if (d.boost && Date.now() >= d.boost.until) {

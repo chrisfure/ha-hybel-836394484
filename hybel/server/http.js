@@ -1,5 +1,6 @@
 // Små HTTP-hjelpere: statiske filer, JSON og Server-Sent Events.
 import { readFile } from 'node:fs/promises';
+import { createReadStream, statSync } from 'node:fs';
 import { join, normalize, extname } from 'node:path';
 
 const TYPES = {
@@ -26,6 +27,7 @@ export async function serveStatic(req, res, roots, headers = {}, onMissing = nul
       res.writeHead(200, {
         'Content-Type': TYPES[ext] || 'application/octet-stream',
         'Cache-Control': ['.html', '.js', '.css', '.webmanifest'].includes(ext) ? 'no-cache' : 'public, max-age=3600',
+        ...(rel === 'sw.js' ? { 'Service-Worker-Allowed': '/' } : {}),
         ...headers
       });
       return res.end(body);
@@ -40,6 +42,34 @@ export function sendJson(res, status, obj, headers = {}) {
   const body = JSON.stringify(obj);
   res.writeHead(status, { 'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': 'no-store', ...headers });
   res.end(body);
+}
+
+export function readBody(req, limit) {
+  return new Promise((resolve, reject) => {
+    let size = 0;
+    const chunks = [];
+    req.on('data', (c) => {
+      size += c.length;
+      if (size > limit) {
+        reject(new Error('Bildet er for stort'));
+        req.destroy();
+      } else chunks.push(c);
+    });
+    req.on('end', () => resolve(Buffer.concat(chunks)));
+    req.on('error', reject);
+  });
+}
+
+export function servePhoto(res, file, headers = {}) {
+  try {
+    if (!file) throw new Error();
+    const st = statSync(file);
+    res.writeHead(200, { 'Content-Type': 'image/jpeg', 'Content-Length': st.size, 'Cache-Control': 'private, max-age=86400', ...headers });
+    createReadStream(file).pipe(res);
+  } catch {
+    res.writeHead(404, { 'Content-Type': 'text/plain; charset=utf-8' });
+    res.end('Ikke funnet');
+  }
 }
 
 export function readJson(req, limit = 64 * 1024) {

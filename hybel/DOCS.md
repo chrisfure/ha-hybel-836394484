@@ -67,6 +67,11 @@ Slå av **Krev Cloudflare Access** og aktiver port `8100` under **Nettverk** i a
 - **Meldinger**: nye meldinger sendes til varslingstjenesten under «Varsle meg». Svar og status vises for leietaker.
 - Ved «Klargjør for ny leietaker» arkiveres avlesninger og meldinger.
 
+## Sjekkliste og pushvarsler
+
+- **Sjekkliste**: «Inn- og utflytting» på utleiersiden. Trykk «Send innflyttingssjekkliste». Leietaker finner den under Info → Sjekkliste. Bilder lagres i appens datamappe og blir med i sikkerhetskopien.
+- **Pushvarsler**: leietaker slår på varsler under Info → Meldinger eller i innstillingene i appen. På iPhone må appen først legges på Hjem-skjermen (Del → Legg til på Hjem-skjerm). Nøklene lages automatisk og lagres i datamappen.
+
 ## Personvern
 
 Innstillinger, navn og e-postadresser lagres i `/data` i appen og aldri i koden.

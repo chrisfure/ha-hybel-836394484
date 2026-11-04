@@ -27,6 +27,7 @@ export function defaultData() {
 
 export class Store {
   constructor(dir) {
+    this.dir = dir;
     this.file = join(dir, 'hybel.json');
     mkdirSync(dir, { recursive: true });
     const base = defaultData();

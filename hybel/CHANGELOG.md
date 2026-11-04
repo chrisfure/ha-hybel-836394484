@@ -1,5 +1,13 @@
 # Endringslogg
 
+## 0.5.0
+
+- **Inn- og utflyttingssjekkliste**: utleier sender sjekklisten fra utleiersiden, leietaker går gjennom rom for rom og merker OK eller skriver merknad med bilder. Utleier får varsel, kan godkjenne med kommentar, åpne for endringer og skrive ut. Punktene kan redigeres.
+- **Meldinger fra utleier**: utleier kan skrive til leietaker fra utleiersiden, og leietaker kan svare.
+- **Pushvarsler til leietaker** (Web Push, uten tredjepartstjenester): ved meldinger, svar, statusendringer, sjekklister og påminnelse om strømavlesning i slutten av måneden. På iPhone må appen ligge på Hjem-skjermen.
+- Bilder kan legges ved meldinger til utleier.
+- «Klargjør for ny leietaker» fjerner også forrige leietakers varselabonnementer og arkiverer sjekklister.
+
 ## 0.4.3
 
 - Utleiersiden: alle seksjoner kan felles sammen og ut. Valget huskes; meldinger fra leietaker åpnes automatisk når noe venter.

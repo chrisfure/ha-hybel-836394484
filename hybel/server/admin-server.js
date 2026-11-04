@@ -1,7 +1,7 @@
 // Utleiersiden. Nås kun via Home Assistant ingress (Supervisor-proxyen), aldri via Cloudflare.
 import http from 'node:http';
 import { join } from 'node:path';
-import { serveStatic, sendJson, readJson } from './http.js';
+import { serveStatic, sendJson, readJson, servePhoto } from './http.js';
 import { log } from './log.js';
 
 const INGRESS_IP = '172.30.32.2';
@@ -112,6 +112,33 @@ export function startAdminServer({ engine, ha, webRoot, port, tenantHub, devOpen
           return sendJson(res, 400, { ok: false, error: err.message });
         }
       }
+      if (p === '/api/admin/message' && req.method === 'POST') {
+        const body = await readJson(req);
+        try {
+          engine.extras.adminMessage(body);
+          engine.changed();
+          return sendJson(res, 200, { ok: true, state: engine.adminView({ tenant_clients: tenantHub.size }) });
+        } catch (err) {
+          return sendJson(res, 400, { ok: false, error: err.message });
+        }
+      }
+      if (p === '/api/admin/checklist' && req.method === 'POST') {
+        const body = await readJson(req);
+        try {
+          const c = engine.extras.checklists;
+          if (body.action === 'create') c.create(body.type);
+          else if (body.action === 'approve') c.approve(body.id, body.comment);
+          else if (body.action === 'reopen') c.reopen(body.id);
+          else if (body.action === 'delete') c.remove(body.id);
+          else throw new Error('Ukjent handling');
+          engine.changed();
+          return sendJson(res, 200, { ok: true, state: engine.adminView({ tenant_clients: tenantHub.size }) });
+        } catch (err) {
+          return sendJson(res, 400, { ok: false, error: err.message });
+        }
+      }
+      const pm = p.match(/^\/api\/admin\/photo\/([a-f0-9]{16})$/);
+      if (pm && req.method === 'GET') return servePhoto(res, engine.extras.photoFile(pm[1]));
       if (p === '/api/admin/reading' && req.method === 'POST') {
         const body = await readJson(req);
         try {
