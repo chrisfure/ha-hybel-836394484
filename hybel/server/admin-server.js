@@ -45,7 +45,11 @@ export function startAdminServer({ engine, ha, webRoot, port, tenantHub, devOpen
       const a = st.attributes || {};
       let kind = null;
       if (domain === 'light') kind = 'light';
-      else if (domain === 'climate') kind = Array.isArray(a.fan_modes) && a.fan_modes.length ? 'vent' : 'heat';
+      else if (domain === 'climate') {
+        const hv = a.hvac_modes || [];
+        // Varmepumpe/aircondition: kan kjøle. Ventilasjon: viftenivåer uten egen varmemodus. Ellers: varme (termostat).
+        kind = hv.includes('cool') || hv.includes('heat_cool') ? 'climate' : Array.isArray(a.fan_modes) && a.fan_modes.length && !hv.includes('heat') ? 'vent' : 'heat';
+      }
       const areaId = reg.entityArea.get(id);
       list.push({ entity_id: id, name: a.friendly_name || id, domain, kind, area: areaId ? reg.areas.get(areaId) || areaId : '' });
     }

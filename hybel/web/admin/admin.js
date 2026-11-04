@@ -9,7 +9,7 @@ const DEFAULTS = {
   vent: { Hjemme: 'normal', Kveld: 'low', Natt: 'low', Borte: 'away' }
 };
 const VENT_LABEL = { away: 'Borte', low: 'Lav', normal: 'Normal', high: 'Høy' };
-const KIND_LABEL = { light: 'Lys', heat: 'Varme', vent: 'Ventilasjon' };
+const KIND_LABEL = { light: 'Lys', heat: 'Varme', vent: 'Ventilasjon', climate: 'Varmepumpe' };
 const BOOST_STEPS = [15, 30, 60, 90, 120];
 
 const A = {
@@ -35,7 +35,7 @@ async function api(path, opts = {}) {
 
 function pickCfg(st) {
   return JSON.parse(JSON.stringify({
-    entities: st.entities.map(({ entity_id, label, kind, enabled, min_pct, max_pct }) => ({ entity_id, label, kind, enabled, ...(kind === 'light' ? { min_pct: min_pct ?? 1, max_pct: max_pct ?? 100 } : {}) })),
+    entities: st.entities.map(({ entity_id, label, kind, enabled, min_pct, max_pct, min_temp, max_temp }) => ({ entity_id, label, kind, enabled, ...(kind === 'light' ? { min_pct: min_pct ?? 1, max_pct: max_pct ?? 100 } : {}), ...(kind === 'heat' || kind === 'climate' ? { min_temp: min_temp ?? st.limits.heat_min, max_temp: max_temp ?? st.limits.heat_max } : {}) })),
     limits: st.limits,
     tenant_can_edit_scenes: st.tenant_can_edit_scenes,
     alerts: st.alerts
@@ -96,7 +96,9 @@ function entitiesPanel() {
         <input id="lbl-${i}" class="input" type="text" maxlength="40" value="${esc(e.label)}" data-field="label" data-i="${i}"></div>
       <div class="meta">
         ${e.entity_id.startsWith('climate.')
-          ? `<select class="select" aria-label="Type" data-field="kind" data-i="${i}"><option value="heat" ${e.kind === 'heat' ? 'selected' : ''}>Varme</option><option value="vent" ${e.kind === 'vent' ? 'selected' : ''}>Ventilasjon</option></select>`
+          ? `<select class="select" aria-label="Type" data-field="kind" data-i="${i}"><option value="heat" ${e.kind === 'heat' ? 'selected' : ''}>Varme (termostat)</option><option value="climate" ${e.kind === 'climate' ? 'selected' : ''}>Varmepumpe / klima</option><option value="vent" ${e.kind === 'vent' ? 'selected' : ''}>Ventilasjon</option></select>
+            ${e.kind !== 'vent' ? `<span class="range-pair"><label>Lavest <input class="input num-in" type="number" min="5" max="34" value="${e.min_temp ?? A.cfg.limits.heat_min}" data-field="min_temp" data-i="${i}" aria-label="Laveste temperatur for ${esc(e.label)}">°</label>
+              <label>Høyest <input class="input num-in" type="number" min="6" max="35" value="${e.max_temp ?? A.cfg.limits.heat_max}" data-field="max_temp" data-i="${i}" aria-label="Høyeste temperatur for ${esc(e.label)}">°</label></span>` : ''}`
           : `<span class="range-pair"><span style="font-size:14px;font-weight:600">Lys</span>
               <label>Lavest <input class="input num-in" type="number" min="1" max="99" value="${e.min_pct ?? 1}" data-field="min_pct" data-i="${i}" aria-label="Laveste ekte lysstyrke for ${esc(e.label)}">%</label>
               <label>Høyest <input class="input num-in" type="number" min="2" max="100" value="${e.max_pct ?? 100}" data-field="max_pct" data-i="${i}" aria-label="Høyeste ekte lysstyrke for ${esc(e.label)}">%</label></span>`}
@@ -168,8 +170,7 @@ function limitsPanel() {
   </div>`;
   const bi = BOOST_STEPS.indexOf(L.boost_max_minutes);
   return `<section class="panel"><div class="panel-head"><h2>Grenser</h2></div>
-    ${row('heat_max', 'Maks gulvvarme', 'Høyere kan skade gulvbelegg', deg(L.heat_max), L.heat_max <= L.heat_min + 1, L.heat_max >= 35)}
-    ${row('heat_min', 'Min gulvvarme', 'Beskytter mot fukt og frost', deg(L.heat_min), L.heat_min <= 5, L.heat_min >= L.heat_max - 1)}
+    <p class="help" style="margin:0 0 6px">Temperaturgrenser settes per enhet under «Synlige enheter».</p>
     ${row('boost', 'Høy ventilasjon maks', 'Går tilbake automatisk etter', `${L.boost_max_minutes} min`, bi <= 0, bi >= BOOST_STEPS.length - 1)}
     <button class="toggle-row" data-act="toggle-away" style="border-top:1px solid var(--line);margin-top:6px">
       <span><span class="t">Leietaker kan velge Borte på ventilasjon</span><span class="s">Lav drift når hybelen står tom</span></span>
@@ -243,7 +244,7 @@ document.addEventListener('click', async (ev) => {
     case 'pick': {
       const c = A.cand.entities.find((x) => x.entity_id === d.id);
       if (!c) return;
-      if (d.kind === 'entity') ents.push({ entity_id: c.entity_id, label: c.name.slice(0, 40), kind: c.kind, enabled: true, ...(c.kind === 'light' ? { min_pct: 1, max_pct: 100 } : {}) });
+      if (d.kind === 'entity') ents.push({ entity_id: c.entity_id, label: c.name.slice(0, 40), kind: c.kind, enabled: true, ...(c.kind === 'light' ? { min_pct: 1, max_pct: 100 } : {}), ...(c.kind === 'heat' || c.kind === 'climate' ? { min_temp: c.kind === 'climate' ? 16 : A.cfg.limits.heat_min, max_temp: c.kind === 'climate' ? 26 : A.cfg.limits.heat_max } : {}) });
       else A.cfg.alerts.entities.push(c.entity_id);
       A.picker = null;
       setDirty();
@@ -292,7 +293,7 @@ document.addEventListener('input', (ev) => {
   const f = el.dataset?.field;
   if (!f || !A.cfg) return;
   if (f === 'label') { A.cfg.entities[Number(el.dataset.i)].label = el.value; setDirty(); }
-  else if (f === 'min_pct' || f === 'max_pct') { A.cfg.entities[Number(el.dataset.i)][f] = Number(el.value); setDirty(); }
+  else if (['min_pct', 'max_pct', 'min_temp', 'max_temp'].includes(f)) { A.cfg.entities[Number(el.dataset.i)][f] = Number(el.value); setDirty(); }
   else if (f === 'notify') { A.cfg.alerts.notify_service = el.value.trim(); setDirty(); }
   else if (f === 'q') { A.q = el.value; render(); }
 });

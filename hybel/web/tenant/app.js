@@ -13,15 +13,22 @@ document.addEventListener('touchend', (e) => {
   lastTouchEnd = now;
 }, { passive: false });
 
+const store = {
+  get(k) { try { return localStorage.getItem(k); } catch { return null; } },
+  set(k, v) { try { localStorage.setItem(k, v); } catch {} }
+};
+
 const S = {
-  m: null,            // siste tilstand fra serveren
-  view: 'main',       // main | settings | scene | auto
-  draft: null,        // sceneutkast
-  adraft: null,       // automasjonsutkast
-  pending: {},        // key -> { v, t } (optimistisk visning mens HA svarer)
+  m: null,             // siste tilstand fra serveren
+  tab: store.get('hybel-tab') || 'scener',
+  view: 'tabs',        // tabs | settings | scene | auto
+  draft: null,         // sceneutkast { id, name, icon, include, values }
+  adraft: null,        // automasjonsutkast
+  pending: {},         // key -> { v, t } (optimistisk visning mens HA svarer)
   lastBri: {},
+  lastMode: {},
   toast: null,
-  conn: 'connecting', // connecting | ok | lost | relogin
+  conn: 'connecting',  // connecting | ok | lost | relogin
   fails: 0,
   dragging: null,
   deferred: false,
@@ -42,14 +49,40 @@ const ICON = {
   star: 'M12 3l2.7 5.6 6.1.9-4.4 4.3 1 6.1L12 17l-5.4 2.9 1-6.1L3.2 9.5l6.1-.9z',
   leaf: 'M5 19c0-8 5-14 15-15 0 10-6 15-14 15zM5 19l7-7'
 };
+const UI = {
+  bulb: 'M9 18h6M10 21h4M12 3a6 6 0 0 0-3.6 10.8c.7.5 1.1 1.3 1.1 2.2h5c0-.9.4-1.7 1.1-2.2A6 6 0 0 0 12 3z',
+  flame: 'M12 3c2 3 5 5 5 9a5 5 0 0 1-10 0c0-2 1-3.5 2-4.5.5 1.5 1.5 2.5 3 2.5-1-2-1-4.5 0-7z',
+  clock: 'M12 7v5l3 2M21 12a9 9 0 1 1-18 0 9 9 0 0 1 18 0z',
+  spark: 'M12 3v4M12 17v4M3 12h4M17 12h4M6 6l2.5 2.5M15.5 15.5L18 18M6 18l2.5-2.5M15.5 8.5L18 6',
+  gear: 'M4 7h10M18 7h2M4 17h4M12 17h8M16 5v4M10 15v4',
+  pencil: 'M4 20h4L19 9l-4-4L4 16zM14 6l4 4',
+  up: 'M6 15l6-6 6 6',
+  down: 'M6 9l6 6 6-6',
+  plus: 'M12 5v14M5 12h14',
+  check: 'M5 12l5 5 9-10',
+  back: 'M15 5l-7 7 7 7',
+  chevron: 'M9 5l7 7-7 7',
+  snow: 'M12 2v20M4 6l16 12M20 6L4 18',
+  power: 'M12 3v9M6.3 7a8 8 0 1 0 11.4 0'
+};
 const VENT_LABEL = { away: 'Borte', low: 'Lav', normal: 'Normal', high: 'Høy' };
 const VENT_LEVEL = { away: 0, low: 1, normal: 2, high: 3 };
+const MODE_LABEL = { off: 'Av', heat: 'Varme', cool: 'Kjøling', heat_cool: 'Auto', auto: 'Auto', dry: 'Tørk', fan_only: 'Vifte' };
+const FAN_LABEL = { auto: 'Auto', low: 'Lav', medium: 'Middels', mid: 'Middels', high: 'Høy', quiet: 'Stille', silent: 'Stille', turbo: 'Turbo', powerful: 'Kraftig' };
+const fanLabel = (f) => FAN_LABEL[String(f).toLowerCase()] || String(f).charAt(0).toUpperCase() + String(f).slice(1);
 const DAYS = ['Ma', 'Ti', 'On', 'To', 'Fr', 'Lø', 'Sø'];
+const TABS = [
+  { id: 'scener', label: 'Scener', icon: ICON.star },
+  { id: 'lys', label: 'Lys', icon: UI.bulb },
+  { id: 'klima', label: 'Klima', icon: UI.flame },
+  { id: 'auto', label: 'Automasjoner', short: 'Auto', icon: UI.clock }
+];
 
 const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const deg = (t) => (t == null || !Number.isFinite(Number(t)) ? '–' : String(Math.round(Number(t) * 10) / 10).replace('.', ',') + '°');
 const svg = (d, size = 22, sw = 1.8) => `<svg width="${size}" height="${size}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="${sw}" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="${d}"/></svg>`;
 const clock = (ms) => new Date(ms).toLocaleTimeString('nb-NO', { hour: '2-digit', minute: '2-digit' });
+const same = (a, b) => JSON.stringify(a) === JSON.stringify(b);
 
 // ---------- tilkobling ----------
 
@@ -126,8 +159,13 @@ function prunePending() {
   const now = Date.now();
   for (const [key, p] of Object.entries(S.pending)) {
     const ent = S.m.entities.find((e) => e.key === key);
-    const same = ent && (ent.kind === 'light' ? Math.abs((ent.value ?? -99) - p.v) <= 2 || (p.v === 0 && ent.value === 0) : ent.value === p.v);
-    if (!ent || (same && now - p.t > 300) || now - p.t > 4000) delete S.pending[key];
+    let ok = false;
+    if (ent) {
+      if (ent.kind === 'light') ok = Math.abs((ent.value ?? -99) - p.v) <= 2 || (p.v === 0 && ent.value === 0);
+      else if (ent.kind === 'climate') ok = ent.value && ent.value.mode === p.v.mode && (p.v.mode === 'off' || ((p.v.temp == null || ent.value.temp === p.v.temp) && (p.v.fan == null || ent.value.fan === p.v.fan)));
+      else ok = same(ent.value, p.v);
+    }
+    if (!ent || (ok && now - p.t > 300) || now - p.t > 5000) delete S.pending[key];
   }
 }
 function valueOf(ent) {
@@ -136,6 +174,7 @@ function valueOf(ent) {
 }
 const entity = (key) => S.m.entities.find((e) => e.key === key);
 const sceneById = (id) => S.m.scenes.find((s) => s.id === id);
+const target = () => (S.view === 'scene' ? S.draft : S.adraft?.set);
 
 let toastTimer;
 function showToast(msg, error = false) {
@@ -150,29 +189,40 @@ function showToast(msg, error = false) {
 
 // ---------- tekst ----------
 
-function sceneSummary(values) {
+function valuesSummary(values) {
   const parts = [];
   const ents = S.m.entities;
-  const lights = ents.filter((e) => values[e.key] !== undefined && e.kind === 'light');
+  const lights = ents.filter((e) => e.kind === 'light' && values[e.key] !== undefined);
   if (lights.length) {
     const on = lights.filter((l) => values[l.key] > 0);
     parts.push(on.length ? (on.length === lights.length && lights.length > 1 ? 'lys' : `${on.length} lys`) : 'lys av');
   }
-  const h = ents.find((e) => e.kind === 'heat' && values[e.key] !== undefined);
-  if (h) parts.push(`varme ${deg(values[h.key])}`);
-  const v = ents.find((e) => e.kind === 'vent' && values[e.key] !== undefined);
-  if (v) parts.push(`luft ${VENT_LABEL[values[v.key]].toLowerCase()}`);
+  for (const e of ents) {
+    const v = values[e.key];
+    if (v === undefined || e.kind === 'light') continue;
+    if (e.kind === 'heat') parts.push(`${e.label.toLowerCase()} ${deg(v)}`);
+    else if (e.kind === 'vent') parts.push(`luft ${VENT_LABEL[v].toLowerCase()}`);
+    else if (e.kind === 'climate') parts.push(v.mode === 'off' ? `${e.label.toLowerCase()} av` : `${e.label.toLowerCase()} ${MODE_LABEL[v.mode].toLowerCase()}${v.temp != null && v.mode !== 'fan_only' ? ` ${deg(v.temp)}` : ''}`);
+  }
   const s = parts.join(' · ');
   return s.charAt(0).toUpperCase() + s.slice(1);
 }
 
-function autoWhen(t) {
-  if (t.type === 'time') return `Kl. ${t.at}`;
-  const base = t.type === 'sunset' ? 'Solnedgang' : 'Soloppgang';
-  if (!t.offset) return base;
-  const abs = Math.abs(t.offset);
-  const amount = abs % 60 === 0 ? `${abs / 60} t` : `${abs} min`;
-  return `${amount} ${t.offset < 0 ? 'før' : 'etter'} ${base.toLowerCase()}`;
+function autoWhen(t, w) {
+  let s;
+  if (t.type === 'time') s = `Kl. ${t.at}`;
+  else if (t.type === 'sunset' || t.type === 'sunrise') {
+    const base = t.type === 'sunset' ? 'Solnedgang' : 'Soloppgang';
+    if (!t.offset) s = base;
+    else {
+      const abs = Math.abs(t.offset);
+      s = `${abs % 60 === 0 ? `${abs / 60} t` : `${abs} min`} ${t.offset < 0 ? 'før' : 'etter'} ${base.toLowerCase()}`;
+    }
+  } else if (t.type === 'light') s = `Når ${(entity(t.entity)?.label || 'lyset').toLowerCase()} slås ${t.to === 'on' ? 'på' : 'av'}`;
+  else if (t.type === 'humidity') s = `Når luftfuktigheten er over ${t.above} %`;
+  else s = '';
+  if (w) s += ` (${w.from}–${w.to})`;
+  return s;
 }
 function autoDays(days) {
   if (days.length === 7) return 'hver dag';
@@ -183,10 +233,12 @@ function autoDays(days) {
 function autoWhat(a) {
   if (a.type === 'scene') return sceneById(a.scene_id)?.name || '(slettet scene)';
   if (a.type === 'lights_off') return 'Slå av alle lys';
-  return `Varme ${deg(a.value)}`;
+  if (a.type === 'set') return valuesSummary(a.values) || 'Styr enheter';
+  return '';
 }
+const revertLabel = (m) => (m === 0 ? 'Aldri' : m < 60 ? `${m} min` : `${m / 60} t`);
 
-// ---------- visning ----------
+// ---------- byggeklosser ----------
 
 function kicker() {
   if (S.conn !== 'ok') return ['warn', 'Kobler til …'];
@@ -194,38 +246,46 @@ function kicker() {
   return ['', 'Tilkoblet'];
 }
 
-function topHTML() {
+function tabs() {
+  const m = S.m;
+  return TABS.filter((t) => {
+    if (t.id === 'lys') return m.entities.some((e) => e.kind === 'light');
+    if (t.id === 'klima') return m.entities.some((e) => e.kind !== 'light');
+    if (t.id === 'auto') return m.can_edit || m.automations.length;
+    return true;
+  });
+}
+
+function topHTML(title) {
   const [cls, text] = kicker();
   const active = S.m.scenes.filter((s) => s.active).map((s) => s.name);
   return `<header class="top">
     <div>
       <span class="kicker ${cls}"><span class="dot ${cls}"></span>${text}</span>
-      <h1>Hybelen</h1>
-      ${active.length ? `<span class="active-line">${esc(active.join(' · '))}</span>` : ''}
+      <h1>${esc(title)}</h1>
+      ${active.length && S.tab === 'scener' ? `<span class="active-line">${esc(active.join(' · '))}</span>` : ''}
     </div>
-    <button class="icon-btn" data-act="settings" data-fid="settings" aria-label="Innstillinger">${svg('M4 7h10M18 7h2M4 17h4M12 17h8M16 5v4M10 15v4')}</button>
+    <button class="icon-btn" data-act="settings" data-fid="settings" aria-label="Innstillinger">${svg(UI.gear)}</button>
   </header>`;
 }
 
 function subHTML(kick, title) {
   return `<header class="sub">
-    <button class="icon-btn" data-act="back" data-fid="back" aria-label="Tilbake">${svg('M15 5l-7 7 7 7', 22, 2)}</button>
+    <button class="icon-btn" data-act="back" data-fid="back" aria-label="Tilbake">${svg(UI.back, 22, 2)}</button>
     <div><span class="kicker">${esc(kick)}</span><h1>${esc(title)}</h1></div>
   </header>`;
 }
 
-function toastHTML() {
-  if (!S.toast) return '';
-  return `<div class="toast ${S.toast.error ? 'error' : ''}" role="status">${S.toast.error ? '' : svg('M5 12l5 5 9-10', 18, 2.2)}<span>${esc(S.toast.msg)}</span></div>`;
+function navHTML() {
+  const list = tabs();
+  return `<nav class="tabbar" style="grid-template-columns: repeat(${list.length}, minmax(0, 1fr))" aria-label="Faner">
+    ${list.map((t) => `<button class="tab" aria-current="${S.tab === t.id ? 'page' : 'false'}" data-act="tab" data-id="${t.id}" data-fid="tab-${t.id}">${svg(t.icon, 22)}<span>${t.short || t.label}</span></button>`).join('')}
+  </nav>`;
 }
 
-function scenesHTML() {
-  const m = S.m;
-  if (!m.scenes.length && !m.can_edit) return '';
-  return `<div class="scenes" role="list">
-    ${m.scenes.map((s) => `<button class="scene" role="listitem" aria-pressed="${s.active}" data-act="scene" data-id="${s.id}" data-fid="s-${s.id}" title="${esc(sceneSummary(s.values))}">${svg(ICON[s.icon] || ICON.star, 20)}<span class="name">${esc(s.name)}</span></button>`).join('')}
-    ${m.can_edit ? `<button class="scene add" data-act="scene-new" data-fid="s-new" aria-label="Ny scene">${svg('M12 5v14M5 12h14', 20, 2)}<span class="name">Ny</span></button>` : ''}
-  </div>`;
+function toastHTML() {
+  if (!S.toast) return '';
+  return `<div class="toast ${S.toast.error ? 'error' : ''}" role="status">${S.toast.error ? '' : svg(UI.check, 18, 2.2)}<span>${esc(S.toast.msg)}</span></div>`;
 }
 
 function lightRow(e, v, mode) {
@@ -234,23 +294,29 @@ function lightRow(e, v, mode) {
   const status = !live ? 'Svarer ikke' : on ? (e.dimmable ? `På · ${v} %` : 'På') : 'Av';
   return `<div class="light ${live ? '' : 'unavail'}">
     <div class="row">
-      <span><span class="name">${esc(e.label)}</span><span class="status" data-status="${e.key}">${status}</span></span>
+      ${mode === 'draft' ? `<span class="status" data-status="${e.key}">${status}</span>` : `<span><span class="name">${esc(e.label)}</span><span class="status" data-status="${e.key}">${status}</span></span>`}
       <button class="switch" role="switch" aria-checked="${on}" aria-label="${esc(e.label)}" data-act="toggle" data-key="${e.key}" data-mode="${mode}" data-fid="t-${mode}-${e.key}" ${live ? '' : 'disabled'}></button>
     </div>
     ${on && e.dimmable && live ? `<input class="range" type="range" min="1" max="100" step="1" value="${v}" aria-label="Lysstyrke ${esc(e.label)}" data-key="${e.key}" data-mode="${mode}" data-fid="r-${mode}-${e.key}">` : ''}
   </div>`;
 }
 
-function heatControl(e, v, mode) {
-  const m = S.m;
+function stepper(e, v, mode, act = 'heat') {
   const live = mode === 'draft' || e.available;
-  const atMax = v != null && v >= m.limits.heat_max;
-  const atMin = v != null && v <= m.limits.heat_min;
+  const atMax = v != null && v >= e.max;
+  const atMin = v != null && v <= e.min;
   return `<span class="stepper">
-    <button data-act="heat" data-dir="-1" data-key="${e.key}" data-mode="${mode}" data-fid="hd-${mode}-${e.key}" aria-label="Senk temperatur" ${!live || atMin ? 'disabled' : ''}>−</button>
+    <button data-act="${act}" data-dir="-1" data-key="${e.key}" data-mode="${mode}" data-fid="hd-${mode}-${e.key}" aria-label="Senk temperatur" ${!live || atMin ? 'disabled' : ''}>−</button>
     <output aria-live="polite">${deg(v)}</output>
-    <button data-act="heat" data-dir="1" data-key="${e.key}" data-mode="${mode}" data-fid="hu-${mode}-${e.key}" aria-label="Øk temperatur" ${!live || atMax ? 'disabled' : ''}>+</button>
+    <button data-act="${act}" data-dir="1" data-key="${e.key}" data-mode="${mode}" data-fid="hu-${mode}-${e.key}" aria-label="Øk temperatur" ${!live || atMax ? 'disabled' : ''}>+</button>
   </span>`;
+}
+
+function limitLine(e, v) {
+  const atMax = v != null && v >= e.max;
+  const atMin = v != null && v <= e.min;
+  const text = !e.available ? 'Svarer ikke akkurat nå' : atMax ? `Maks ${e.max}° – satt av utleier` : atMin ? `Minimum ${e.min}°` : `Kan stilles mellom ${e.min}° og ${e.max}°`;
+  return `<div class="limit ${atMax || atMin ? 'hit' : ''}">${text}</div>`;
 }
 
 function ventButtons(e, v, mode) {
@@ -264,73 +330,139 @@ function ventButtons(e, v, mode) {
   </div>`;
 }
 
-function controlsHTML() {
-  const m = S.m;
-  let html = '';
-  const lights = m.entities.filter((e) => e.kind === 'light');
-  if (lights.length) {
-    html += `<section class="card section"><div class="section-head"><h2>Lys</h2>
-      <button class="chip-btn" data-act="all-off" data-fid="alloff">Slå av alle</button></div>
-      ${lights.map((e) => lightRow(e, valueOf(e) ?? 0, 'live')).join('')}</section>`;
+function climateControls(e, v, mode) {
+  v = v || { mode: 'off' };
+  const live = mode === 'draft' || e.available;
+  const on = v.mode !== 'off';
+  const modes = e.modes.filter((m) => m !== 'off');
+  let h = `<div class="row climate-power">
+      <span class="status">${on ? MODE_LABEL[v.mode] : 'Av'}${!on || mode === 'draft' || S.pending[e.key] || !e.action || e.action === 'idle' || e.action === 'off' ? '' : e.action === 'heating' ? ' · varmer' : e.action === 'cooling' ? ' · kjøler' : ''}</span>
+      <button class="switch" role="switch" aria-checked="${on}" aria-label="${esc(e.label)} på eller av" data-act="cl-power" data-key="${e.key}" data-mode="${mode}" data-fid="cp-${mode}-${e.key}" ${live ? '' : 'disabled'}></button>
+    </div>`;
+  if (on) {
+    if (modes.length > 1) {
+      h += `<div class="seg" style="grid-template-columns: repeat(${modes.length}, minmax(0, 1fr))">${modes.map((mo) => `<button aria-pressed="${v.mode === mo}" data-act="cl-mode" data-key="${e.key}" data-v="${mo}" data-mode="${mode}" ${live ? '' : 'disabled'}>${MODE_LABEL[mo]}</button>`).join('')}</div>`;
+    }
+    if (v.mode !== 'fan_only') h += `<div class="row climate-temp"><span class="status">Temperatur</span>${stepper(e, v.temp, mode, 'cl-temp')}</div>`;
+    if (e.fans.length) {
+      h += `<span class="field-label">Vifte</span><div class="seg fans-seg" style="grid-template-columns: repeat(${Math.min(e.fans.length, 5)}, minmax(0, 1fr))">${e.fans.map((f) => `<button aria-pressed="${v.fan === f}" data-act="cl-fan" data-key="${e.key}" data-v="${esc(f)}" data-mode="${mode}" ${live ? '' : 'disabled'}>${esc(fanLabel(f))}</button>`).join('')}</div>`;
+    }
   }
-  for (const e of m.entities.filter((x) => x.kind === 'heat')) {
-    const v = valueOf(e);
-    const atMax = v != null && v >= m.limits.heat_max;
-    const atMin = v != null && v <= m.limits.heat_min;
-    const limitText = !e.available ? 'Termostaten svarer ikke akkurat nå'
-      : atMax ? `Maks ${m.limits.heat_max}° – satt av utleier`
-      : atMin ? `Minimum ${m.limits.heat_min}° – beskytter mot fukt`
-      : `Kan stilles mellom ${m.limits.heat_min}° og ${m.limits.heat_max}°`;
-    const now = e.current != null ? `Nå ${deg(e.current)}${e.heating ? ' · varmer' : ''}` : '';
-    html += `<section class="card heat ${e.available ? '' : 'unavail'}">
-      <div class="row"><span><span class="title">${esc(e.label)}</span><span class="muted" style="font-size:13px">${now}</span></span>${heatControl(e, v, 'live')}</div>
-      <div class="limit ${atMax || atMin ? 'hit' : ''}">${limitText}</div>
-    </section>`;
-  }
-  for (const e of m.entities.filter((x) => x.kind === 'vent')) {
-    const v = valueOf(e);
-    const meta = [e.humidity != null ? `Luftfukt ${Math.round(e.humidity)} %` : '', e.temperature != null ? deg(e.temperature) : ''].filter(Boolean).join(' · ');
-    html += `<section class="vent ${e.available ? '' : 'unavail'}">
-      <div class="section-head"><h2>${esc(e.label)}</h2><span class="meta">${e.available ? meta : 'Svarer ikke'}</span></div>
-      ${ventButtons(e, v, 'live')}
-      ${v === 'high' && m.boost && m.boost.key === e.key ? `<div class="boost">${svg('M12 9v4l2.5 2M9 2h6M20 13a8 8 0 1 1-16 0 8 8 0 0 1 16 0z', 18, 2)}<span>Høy til kl. ${clock(m.boost.until)}, så tilbake til ${VENT_LABEL[m.boost.return_to].toLowerCase()}</span></div>` : ''}
-    </section>`;
-  }
-  if (!m.entities.length) html += `<section class="card section"><p class="intro" style="padding:18px 0">Ingen enheter er satt opp ennå. Ta kontakt med utleier.</p></section>`;
-  return html;
+  return h;
 }
 
-function mainHTML() {
-  return topHTML() + scenesHTML() + toastHTML() + controlsHTML();
+// ---------- faner ----------
+
+function scenesTab() {
+  const m = S.m;
+  let h = `<div class="scene-grid">`;
+  for (const s of m.scenes) {
+    h += `<div class="scene-card ${s.active ? 'active' : ''}">
+      <button class="scene-main" data-act="scene" data-id="${s.id}" data-fid="s-${s.id}" aria-pressed="${s.active}">
+        <span class="ic">${svg(ICON[s.icon] || ICON.star, 22)}</span>
+        <span class="name">${esc(s.name)}</span>
+        <span class="sum">${esc(valuesSummary(s.values))}</span>
+      </button>
+      ${m.can_edit ? `<button class="scene-edit" data-act="scene-edit" data-id="${s.id}" aria-label="Rediger ${esc(s.name)}">${svg(UI.pencil, 16, 2)}</button>` : ''}
+    </div>`;
+  }
+  if (m.can_edit) h += `<button class="scene-card add" data-act="scene-new" data-fid="s-new">${svg(UI.plus, 24, 2)}<span class="name">Ny scene</span></button>`;
+  h += `</div>`;
+  if (!m.scenes.length && !m.can_edit) h += `<p class="intro">Ingen scener ennå.</p>`;
+  return h;
 }
+
+function lightsTab() {
+  const lights = S.m.entities.filter((e) => e.kind === 'light');
+  return `<section class="card section"><div class="section-head"><h2>Alle lys</h2>
+      <button class="chip-btn" data-act="all-off" data-fid="alloff">Slå av alle</button></div>
+      ${lights.map((e) => lightRow(e, valueOf(e) ?? 0, 'live')).join('')}</section>`;
+}
+
+function climateTab() {
+  const m = S.m;
+  let h = '';
+  for (const e of m.entities.filter((x) => x.kind !== 'light')) {
+    const v = valueOf(e);
+    if (e.kind === 'heat') {
+      const now = e.current != null ? `Nå ${deg(e.current)}${e.heating ? ' · varmer' : ''}` : '';
+      h += `<section class="card heat ${e.available ? '' : 'unavail'}">
+        <div class="row"><span><span class="title">${esc(e.label)}</span><span class="muted" style="font-size:13px">${now}</span></span>${stepper(e, v, 'live')}</div>
+        ${limitLine(e, v)}
+      </section>`;
+    } else if (e.kind === 'climate') {
+      h += `<section class="card heat climate ${e.available ? '' : 'unavail'}">
+        <div class="row"><span><span class="title">${esc(e.label)}</span><span class="muted" style="font-size:13px">${e.current != null ? `Nå ${deg(e.current)}` : ''}</span></span></div>
+        ${climateControls(e, v, 'live')}
+        ${v && v.mode !== 'off' && v.mode !== 'fan_only' ? limitLine(e, v.temp) : ''}
+      </section>`;
+    } else if (e.kind === 'vent') {
+      const meta = [e.humidity != null ? `Luftfukt ${Math.round(e.humidity)} %` : '', e.temperature != null ? deg(e.temperature) : ''].filter(Boolean).join(' · ');
+      h += `<section class="vent ${e.available ? '' : 'unavail'}">
+        <div class="section-head"><h2>${esc(e.label)}</h2><span class="meta">${e.available ? meta : 'Svarer ikke'}</span></div>
+        ${ventButtons(e, v, 'live')}
+        ${v === 'high' && m.boost && m.boost.key === e.key ? `<div class="boost">${svg(UI.clock, 18, 2)}<span>Høy til kl. ${clock(m.boost.until)}, så tilbake til ${VENT_LABEL[m.boost.return_to].toLowerCase()}</span></div>` : ''}
+      </section>`;
+    }
+  }
+  return h;
+}
+
+function autoTab() {
+  const m = S.m;
+  let h = '';
+  if (!m.automations.length) h += `<p class="intro">Automasjoner gjør ting av seg selv – f.eks. «Kos 30 min før solnedgang» eller «Høy ventilasjon når luftfuktigheten er over 70 %».</p>`;
+  h += `<div class="list">`;
+  for (const a of m.automations) {
+    h += `<div class="list-row auto-row">
+      <button class="grow plain" data-act="auto-edit" data-id="${a.id}" data-fid="a-${a.id}" ${m.can_edit ? '' : 'disabled'}>
+        <span class="t">${esc(autoWhat(a.action))}</span>
+        <span class="s">${esc(autoWhen(a.trigger, a.window))} · ${esc(autoDays(a.days))}${a.revert_after ? ` · tilbake etter ${revertLabel(a.revert_after)}` : ''}</span>
+      </button>
+      ${m.can_edit ? `<button class="switch teal" role="switch" aria-checked="${a.enabled}" aria-label="Automasjon på" data-act="auto-toggle" data-id="${a.id}" data-fid="at-${a.id}"></button>` : ''}
+    </div>`;
+  }
+  if (m.can_edit) h += `<button class="list-row add-row" data-act="auto-new" data-fid="a-new">${svg(UI.plus, 20, 2)}<span class="t">Ny automasjon</span></button>`;
+  return h + `</div>`;
+}
+
+function tabsHTML() {
+  const list = tabs();
+  if (!list.some((t) => t.id === S.tab)) S.tab = list[0].id;
+  const t = TABS.find((x) => x.id === S.tab);
+  const title = S.tab === 'scener' ? 'Hybelen' : t.label;
+  let body = '';
+  if (!S.m.entities.length) body = `<section class="card section"><p class="intro" style="padding:18px 0">Ingen enheter er satt opp ennå. Ta kontakt med utleier.</p></section>`;
+  else if (S.tab === 'scener') body = scenesTab();
+  else if (S.tab === 'lys') body = lightsTab();
+  else if (S.tab === 'klima') body = climateTab();
+  else body = autoTab();
+  return topHTML(title) + toastHTML() + body + navHTML();
+}
+
+// ---------- innstillinger og redigering ----------
 
 function settingsHTML() {
   const m = S.m;
   let html = subHTML('Hybelen', 'Innstillinger') + toastHTML();
 
-  html += `<section><h2 class="group-title">Mine scener</h2><div class="list">`;
-  for (const s of m.scenes) {
-    const inner = `<span class="row-ic">${svg(ICON[s.icon] || ICON.star, 20)}</span><span class="grow"><span class="t">${esc(s.name)}</span><span class="s">${esc(sceneSummary(s.values))}</span></span>`;
-    html += m.can_edit
-      ? `<button class="list-row" data-act="scene-edit" data-id="${s.id}" data-fid="e-${s.id}">${inner}${svg('M9 5l7 7-7 7', 18, 2)}</button>`
-      : `<div class="list-row">${inner}</div>`;
-  }
-  if (m.can_edit) html += `<button class="list-row add-row" data-act="scene-new" data-fid="e-new">${svg('M12 5v14M5 12h14', 20, 2)}<span class="t">Ny scene</span></button>`;
-  html += `</div>${m.can_edit ? '' : '<p class="note">Scenene er satt av utleier.</p>'}</section>`;
+  html += `<section><h2 class="group-title">Rekkefølge – enheter</h2><div class="list">`;
+  m.entities.forEach((e, i) => {
+    const kind = e.kind === 'light' ? 'Lys' : e.kind === 'heat' ? 'Varme' : e.kind === 'vent' ? 'Ventilasjon' : 'Varmepumpe';
+    html += `<div class="list-row order-row"><span class="grow"><span class="t">${esc(e.label)}</span><span class="s">${kind}</span></span>
+      <button class="tool-btn" data-act="ent-move" data-key="${e.key}" data-dir="-1" aria-label="Flytt ${esc(e.label)} opp" ${i === 0 ? 'disabled' : ''}>${svg(UI.up, 18, 2)}</button>
+      <button class="tool-btn" data-act="ent-move" data-key="${e.key}" data-dir="1" aria-label="Flytt ${esc(e.label)} ned" ${i === m.entities.length - 1 ? 'disabled' : ''}>${svg(UI.down, 18, 2)}</button></div>`;
+  });
+  html += `</div></section>`;
 
-  if (m.can_edit) {
-    html += `<section><h2 class="group-title">Automasjoner</h2><div class="list">`;
-    for (const a of m.automations) {
-      html += `<div class="list-row auto-row">
-        <button class="grow plain" data-act="auto-edit" data-id="${a.id}" data-fid="a-${a.id}">
-          <span class="t">${esc(autoWhat(a.action))}</span>
-          <span class="s">${esc(autoWhen(a.trigger))} · ${esc(autoDays(a.days))}</span>
-        </button>
-        <button class="switch teal" role="switch" aria-checked="${a.enabled}" aria-label="Automasjon på" data-act="auto-toggle" data-id="${a.id}" data-fid="at-${a.id}"></button>
-      </div>`;
-    }
-    html += `<button class="list-row add-row" data-act="auto-new" data-fid="a-new">${svg('M12 5v14M5 12h14', 20, 2)}<span class="t">Ny automasjon</span></button></div>
-      <p class="note" style="margin-top:8px">F.eks. «Kos ved solnedgang» eller «Slå av alle lys kl. 23 på hverdager».</p></section>`;
+  if (m.scenes.length > 1) {
+    html += `<section><h2 class="group-title">Rekkefølge – scener</h2><div class="list">`;
+    m.scenes.forEach((s, i) => {
+      html += `<div class="list-row order-row"><span class="row-ic">${svg(ICON[s.icon] || ICON.star, 20)}</span><span class="grow"><span class="t">${esc(s.name)}</span></span>
+        <button class="tool-btn" data-act="scene-move" data-id="${s.id}" data-dir="-1" aria-label="Flytt ${esc(s.name)} opp" ${i === 0 ? 'disabled' : ''}>${svg(UI.up, 18, 2)}</button>
+        <button class="tool-btn" data-act="scene-move" data-id="${s.id}" data-dir="1" aria-label="Flytt ${esc(s.name)} ned" ${i === m.scenes.length - 1 ? 'disabled' : ''}>${svg(UI.down, 18, 2)}</button></div>`;
+    });
+    html += `</div></section>`;
   }
 
   const hasVent = m.entities.some((e) => e.kind === 'vent');
@@ -343,14 +475,39 @@ function settingsHTML() {
   }
 
   html += `<section><h2 class="group-title">Grenser satt av utleier</h2><div class="list soft">`;
-  for (const e of m.entities.filter((x) => x.kind === 'heat')) {
-    html += `<div class="list-row"><span class="t" style="font-weight:500">${esc(e.label)}</span><span class="t">${m.limits.heat_min}–${m.limits.heat_max}°</span></div>`;
+  for (const e of m.entities.filter((x) => x.kind === 'heat' || x.kind === 'climate')) {
+    html += `<div class="list-row"><span class="t" style="font-weight:500">${esc(e.label)}</span><span class="t">${e.min}–${e.max}°</span></div>`;
   }
   if (hasVent) {
     html += `<div class="list-row"><span class="t" style="font-weight:500">Høy ventilasjon</span><span class="t">Maks ${m.limits.boost_max_minutes} min</span></div>`;
     html += `<div class="list-row"><span class="t" style="font-weight:500">Bortemodus på ventilasjon</span><span class="t">${m.limits.vent_allow_away ? 'Tillatt' : 'Ikke tillatt'}</span></div>`;
   }
   html += `</div><p class="note" style="margin-top:8px">Grensene beskytter gulv, fukt og inneklima. Ta kontakt med utleier hvis noe ikke passer.</p></section>`;
+  return html;
+}
+
+// Velg enheter og verdier – brukes både av scener og automasjoner.
+function pickerHTML(t) {
+  let html = '';
+  for (const e of S.m.entities) {
+    const inc = t.include[e.key];
+    const v = t.values[e.key];
+    let ctl = '';
+    if (inc) {
+      if (e.kind === 'light') ctl = lightRow(e, v ?? 0, 'draft');
+      else if (e.kind === 'heat') ctl = `<div class="draft-heat"><span class="status">Temperatur</span>${stepper(e, v, 'draft')}</div>`;
+      else if (e.kind === 'vent') ctl = ventButtons(e, v, 'draft');
+      else ctl = climateControls(e, v, 'draft');
+    }
+    const kind = e.kind === 'light' ? 'Lys' : e.kind === 'heat' ? 'Varme' : e.kind === 'vent' ? 'Ventilasjon' : 'Varmepumpe';
+    html += `<section class="card pick ${inc ? 'on' : ''}">
+      <div class="row">
+        <span><span class="name">${esc(e.label)}</span><span class="status">${kind}${inc ? '' : ' · ikke med'}</span></span>
+        <button class="check" role="checkbox" aria-checked="${!!inc}" aria-label="Ta med ${esc(e.label)}" data-act="include" data-key="${e.key}" data-fid="inc-${e.key}">${inc ? svg(UI.check, 18, 2.6) : ''}</button>
+      </div>
+      ${inc ? `<div class="pick-ctl">${ctl}</div>` : ''}
+    </section>`;
+  }
   return html;
 }
 
@@ -364,33 +521,9 @@ function sceneEditorHTML() {
     <span class="field-label">Ikon</span>
     <div class="icons">${m.icons.map((i) => `<button class="icon-pick" aria-pressed="${d.icon === i}" aria-label="Ikon ${i}" data-act="icon" data-icon="${i}">${svg(ICON[i], 20)}</button>`).join('')}</div>
   </section>`;
-
   html += `<p class="intro">Velg hva scenen skal styre. Det du ikke tar med, blir som det er.</p>`;
-  for (const e of m.entities) {
-    const inc = d.include[e.key];
-    const v = d.values[e.key];
-    let ctl = '';
-    if (inc) {
-      if (e.kind === 'light') {
-        const on = (v ?? 0) > 0;
-        ctl = `<div class="draft-light">
-          <span class="status" data-status="${e.key}">${on ? (e.dimmable ? `På · ${v} %` : 'På') : 'Av'}</span>
-          <button class="switch" role="switch" aria-checked="${on}" aria-label="${esc(e.label)} på eller av" data-act="toggle" data-key="${e.key}" data-mode="draft" data-fid="t-draft-${e.key}"></button>
-        </div>
-        ${on && e.dimmable ? `<input class="range" type="range" min="1" max="100" step="1" value="${v}" aria-label="Lysstyrke ${esc(e.label)}" data-key="${e.key}" data-mode="draft" data-fid="r-draft-${e.key}">` : ''}`;
-      } else if (e.kind === 'heat') ctl = `<div class="draft-heat"><span class="status">Temperatur</span>${heatControl(e, v, 'draft')}</div>`;
-      else ctl = ventButtons(e, v, 'draft');
-    }
-    const kind = e.kind === 'light' ? 'Lys' : e.kind === 'heat' ? 'Varme' : 'Ventilasjon';
-    html += `<section class="card pick ${inc ? 'on' : ''}">
-      <div class="row">
-        <span><span class="name">${esc(e.label)}</span><span class="status">${kind}${inc ? '' : ' · ikke med'}</span></span>
-        <button class="check" role="checkbox" aria-checked="${!!inc}" aria-label="Ta med ${esc(e.label)}" data-act="include" data-key="${e.key}" data-fid="inc-${e.key}">${inc ? svg('M5 12l5 5 9-10', 18, 2.6) : ''}</button>
-      </div>
-      ${inc ? `<div class="pick-ctl">${ctl}</div>` : ''}
-    </section>`;
-  }
-  html += `<button class="btn ghost big" data-act="scene-from-now" style="width:100%">Hent det som er på nå</button>`;
+  html += pickerHTML(d);
+  html += `<button class="btn ghost big" data-act="from-now" style="width:100%">Hent det som er på nå</button>`;
   html += `<div class="actions">
     ${d.id ? `<button class="btn ghost big danger-text" data-act="scene-delete">${S.confirmDelete ? 'Trykk igjen for å slette' : 'Slett'}</button>` : ''}
     <button class="btn primary big" data-act="scene-save" data-fid="scene-save">Lagre</button>
@@ -402,19 +535,41 @@ function autoEditorHTML() {
   const m = S.m;
   const a = S.adraft;
   const t = a.trigger;
+  const lights = m.entities.filter((e) => e.kind === 'light');
+  const vents = m.entities.filter((e) => e.kind === 'vent' && e.humidity != null);
+  const types = [['time', 'Klokke'], ['sunset', 'Sol ned'], ['sunrise', 'Sol opp']];
+  if (lights.length) types.push(['light', 'Lys']);
+  if (vents.length) types.push(['humidity', 'Fukt']);
   let html = subHTML(a.id ? 'Rediger automasjon' : 'Ny automasjon', 'Automasjon') + toastHTML();
 
-  const sunTime = t.type === 'sunset' ? m.sun.sunset : t.type === 'sunrise' ? m.sun.sunrise : null;
-  html += `<section class="card form">
-    <span class="field-label">Når</span>
-    <div class="seg" style="grid-template-columns: repeat(3, minmax(0, 1fr))">
-      ${[['time', 'Klokkeslett'], ['sunset', 'Solnedgang'], ['sunrise', 'Soloppgang']].map(([k, l]) => `<button aria-pressed="${t.type === k}" data-act="trig" data-v="${k}">${l}</button>`).join('')}
-    </div>
-    ${t.type === 'time'
-      ? `<input class="input time" type="time" value="${esc(t.at)}" data-field="auto-time" aria-label="Klokkeslett">`
-      : `<div class="seg offsets">${[[-60, '1 t før'], [-30, '30 min før'], [0, 'Akkurat'], [30, '30 min etter'], [60, '1 t etter']].map(([o, l]) => `<button aria-pressed="${(t.offset || 0) === o}" data-act="offset" data-v="${o}">${l}</button>`).join('')}</div>
-         ${sunTime ? `<span class="note">${t.type === 'sunset' ? 'Solnedgang' : 'Soloppgang'} i dag: kl. ${clock(sunTime)}</span>` : ''}`}
-    <span class="field-label">Dager</span>
+  html += `<section class="card form"><span class="field-label">Når</span>
+    <div class="seg" style="grid-template-columns: repeat(${types.length}, minmax(0, 1fr))">
+      ${types.map(([k, l]) => `<button aria-pressed="${t.type === k}" data-act="trig" data-v="${k}">${l}</button>`).join('')}
+    </div>`;
+  if (t.type === 'time') {
+    html += `<input class="input time" type="time" value="${esc(t.at)}" data-field="auto-time" aria-label="Klokkeslett">`;
+  } else if (t.type === 'sunset' || t.type === 'sunrise') {
+    const sunTime = t.type === 'sunset' ? m.sun.sunset : m.sun.sunrise;
+    html += `<div class="seg offsets">${[[-60, '1 t før'], [-30, '30 min før'], [0, 'Akkurat'], [30, '30 min etter'], [60, '1 t etter']].map(([o, l]) => `<button aria-pressed="${(t.offset || 0) === o}" data-act="offset" data-v="${o}">${l}</button>`).join('')}</div>
+      ${sunTime ? `<span class="note">${t.type === 'sunset' ? 'Solnedgang' : 'Soloppgang'} i dag: kl. ${clock(sunTime)}</span>` : ''}`;
+  } else if (t.type === 'light') {
+    html += `<div class="chips">${lights.map((e) => `<button class="chip" aria-pressed="${t.entity === e.key}" data-act="trig-entity" data-key="${e.key}">${esc(e.label)}</button>`).join('')}</div>
+      <div class="seg" style="grid-template-columns: repeat(2, minmax(0, 1fr))">
+        <button aria-pressed="${t.to === 'on'}" data-act="trig-to" data-v="on">slås på</button>
+        <button aria-pressed="${t.to === 'off'}" data-act="trig-to" data-v="off">slås av</button>
+      </div>`;
+  } else if (t.type === 'humidity') {
+    html += `<div class="row between"><span class="status">Luftfuktighet over</span><span class="stepper">
+        <button data-act="hum" data-dir="-5" aria-label="Senk" ${t.above <= 30 ? 'disabled' : ''}>−</button><output>${t.above} %</output>
+        <button data-act="hum" data-dir="5" aria-label="Øk" ${t.above >= 95 ? 'disabled' : ''}>+</button></span></div>
+      ${vents[0]?.humidity != null ? `<span class="note">Nå: ${Math.round(vents[0].humidity)} %</span>` : ''}`;
+  }
+  if (t.type === 'light' || t.type === 'humidity') {
+    html += `<div class="row between"><span class="status">Bare i et tidsrom</span>
+        <button class="switch teal" role="switch" aria-checked="${!!a.window}" aria-label="Bare i et tidsrom" data-act="window"></button></div>
+      ${a.window ? `<div class="window"><input class="input time sm" type="time" value="${esc(a.window.from)}" data-field="win-from" aria-label="Fra"><span>til</span><input class="input time sm" type="time" value="${esc(a.window.to)}" data-field="win-to" aria-label="Til"></div>` : ''}`;
+  }
+  html += `<span class="field-label">Dager</span>
     <div class="days">${DAYS.map((dn, i) => `<button class="day" aria-pressed="${a.days.includes(i + 1)}" data-act="day" data-v="${i + 1}">${dn}</button>`).join('')}</div>
     <div class="quick">
       <button class="chip-btn" data-act="days" data-v="1,2,3,4,5,6,7">Hver dag</button>
@@ -427,24 +582,25 @@ function autoEditorHTML() {
   html += `<section><h2 class="group-title">Gjør dette</h2><div class="list">`;
   for (const s of m.scenes) {
     html += `<button class="list-row" role="radio" aria-checked="${act.type === 'scene' && act.scene_id === s.id}" data-act="action" data-type="scene" data-id="${s.id}">
-      <span class="row-ic">${svg(ICON[s.icon] || ICON.star, 20)}</span><span class="grow"><span class="t">${esc(s.name)}</span><span class="s">${esc(sceneSummary(s.values))}</span></span><span class="radio"></span></button>`;
+      <span class="row-ic">${svg(ICON[s.icon] || ICON.star, 20)}</span><span class="grow"><span class="t">${esc(s.name)}</span><span class="s">${esc(valuesSummary(s.values))}</span></span><span class="radio"></span></button>`;
   }
   html += `<button class="list-row" role="radio" aria-checked="${act.type === 'lights_off'}" data-act="action" data-type="lights_off">
-      <span class="row-ic">${svg('M9 18h6M10 21h4M12 3a6 6 0 0 0-3.6 10.8c.7.5 1.1 1.3 1.1 2.2h5c0-.9.4-1.7 1.1-2.2A6 6 0 0 0 12 3zM3 3l18 18', 20)}</span><span class="grow"><span class="t">Slå av alle lys</span></span><span class="radio"></span></button>`;
-  const heatEnt = m.entities.find((e) => e.kind === 'heat');
-  if (heatEnt) {
-    html += `<button class="list-row" role="radio" aria-checked="${act.type === 'heat'}" data-act="action" data-type="heat">
-      <span class="row-ic">${svg('M12 3c2 3 5 5 5 9a5 5 0 0 1-10 0c0-2 1-3.5 2-4.5.5 1.5 1.5 2.5 3 2.5-1-2-1-4.5 0-7z', 20)}</span><span class="grow"><span class="t">Sett ${esc(heatEnt.label.toLowerCase())}</span></span><span class="radio"></span></button>`;
-    if (act.type === 'heat') {
-      html += `<div class="list-row"><span class="t" style="font-weight:500">Temperatur</span><span class="stepper">
-        <button data-act="auto-heat" data-dir="-1" aria-label="Senk" ${act.value <= m.limits.heat_min ? 'disabled' : ''}>−</button><output>${deg(act.value)}</output>
-        <button data-act="auto-heat" data-dir="1" aria-label="Øk" ${act.value >= m.limits.heat_max ? 'disabled' : ''}>+</button></span></div>`;
-    }
-  }
+      <span class="row-ic">${svg(UI.bulb, 20)}</span><span class="grow"><span class="t">Slå av alle lys</span></span><span class="radio"></span></button>
+    <button class="list-row" role="radio" aria-checked="${act.type === 'set'}" data-act="action" data-type="set">
+      <span class="row-ic">${svg(UI.spark, 20)}</span><span class="grow"><span class="t">Velg enheter selv</span><span class="s">Lys, varme, luft – akkurat det du vil</span></span><span class="radio"></span></button>`;
   html += `</div></section>`;
+  if (act.type === 'set') html += pickerHTML(a.set);
+
+  html += `<section class="card form"><span class="field-label">Gjør om etter</span>
+    <div class="seg" style="grid-template-columns: repeat(4, minmax(0, 1fr))">
+      ${m.revert_options.map((o) => `<button aria-pressed="${a.revert_after === o}" data-act="revert" data-v="${o}">${revertLabel(o)}</button>`).join('')}
+    </div>
+    <span class="note">Setter enhetene tilbake slik de var før automasjonen kjørte.</span>
+  </section>`;
 
   html += `<div class="actions">
-    ${a.id ? `<button class="btn ghost big danger-text" data-act="auto-delete">${S.confirmDelete ? 'Trykk igjen for å slette' : 'Slett'}</button>` : ''}
+    ${a.id ? `<button class="btn ghost big danger-text" data-act="auto-delete">${S.confirmDelete ? 'Trykk igjen' : 'Slett'}</button>` : ''}
+    ${a.id ? `<button class="btn ghost big" data-act="auto-run">Test nå</button>` : ''}
     <button class="btn primary big" data-act="auto-save">Lagre</button>
   </div>`;
   return html;
@@ -465,14 +621,13 @@ function render() {
     return;
   }
   if (!S.m) return;
-  // Ikke tegn på nytt mens man skriver – det ville flyttet markøren.
   const ae = document.activeElement;
   if (ae && ae.matches?.('input[type="text"], input[type="time"]') && $app.contains(ae)) return;
   if (S.view === 'scene' && !S.draft) S.view = 'settings';
-  if (S.view === 'auto' && !S.adraft) S.view = 'settings';
+  if (S.view === 'auto' && !S.adraft) S.view = 'tabs';
   const fid = ae?.dataset?.fid;
-  const html = S.view === 'settings' ? settingsHTML() : S.view === 'scene' ? sceneEditorHTML() : S.view === 'auto' ? autoEditorHTML() : mainHTML();
-  $app.innerHTML = html;
+  $app.classList.toggle('has-tabs', S.view === 'tabs');
+  $app.innerHTML = S.view === 'settings' ? settingsHTML() : S.view === 'scene' ? sceneEditorHTML() : S.view === 'auto' ? autoEditorHTML() : tabsHTML();
   if (fid) $app.querySelector(`[data-fid="${CSS.escape(fid)}"]`)?.focus({ preventScroll: true });
 }
 
@@ -480,44 +635,56 @@ function render() {
 
 function go(view) {
   S.view = view;
-  S.toast = null;
   S.confirmDelete = false;
+  S.toast = null;
   window.scrollTo(0, 0);
   render();
 }
 
-function currentValues(keys) {
-  const out = {};
-  for (const e of S.m.entities) {
-    if (keys && !keys.includes(e.key)) continue;
-    const v = valueOf(e);
-    if (v != null) out[e.key] = e.kind === 'heat' ? Math.round(v) : v;
+function defaultValue(e) {
+  const v = valueOf(e);
+  if (e.kind === 'light') return v > 0 ? v : 60;
+  if (e.kind === 'heat') return v != null ? Math.round(v) : Math.round((e.min + e.max) / 2);
+  if (e.kind === 'vent') return v || 'normal';
+  if (e.kind === 'climate') {
+    const on = v && v.mode !== 'off' ? v : { mode: e.modes.find((x) => x !== 'off') || 'heat', temp: v?.temp ?? Math.round((e.min + e.max) / 2), fan: v?.fan ?? e.fans[0] };
+    return { ...on, temp: on.temp != null ? Math.round(on.temp) : undefined };
   }
-  return out;
+  return v;
+}
+
+function newSet(values) {
+  const include = {};
+  const vals = {};
+  for (const e of S.m.entities) vals[e.key] = defaultValue(e);
+  for (const [k, v] of Object.entries(values || {})) { include[k] = true; vals[k] = v; }
+  return { include, values: vals };
 }
 
 function openScene(id) {
   const s = id ? sceneById(id) : null;
-  const now = currentValues();
-  const include = {};
-  const values = { ...now };
-  if (s) for (const [k, v] of Object.entries(s.values)) { include[k] = true; values[k] = v; }
-  for (const e of S.m.entities) {
-    if (values[e.key] == null) values[e.key] = e.kind === 'light' ? 60 : e.kind === 'heat' ? S.m.limits.heat_min + 5 : 'normal';
-    if (e.kind === 'light' && !include[e.key] && !s && values[e.key] === 0) values[e.key] = 60;
-  }
-  S.draft = { id: s?.id || null, name: s?.name || '', icon: s?.icon || 'star', include, values };
+  S.draft = { id: s?.id || null, name: s?.name || '', icon: s?.icon || 'star', ...newSet(s?.values) };
   go('scene');
 }
 
 function openAuto(id) {
   const a = id ? S.m.automations.find((x) => x.id === id) : null;
   const firstScene = S.m.scenes[0];
-  S.adraft = a
-    ? JSON.parse(JSON.stringify({ id: a.id, trigger: a.trigger, days: a.days, action: a.action }))
-    : { id: null, trigger: { type: 'time', at: '22:00', offset: 0 }, days: [1, 2, 3, 4, 5, 6, 7], action: firstScene ? { type: 'scene', scene_id: firstScene.id } : { type: 'lights_off' } };
-  if (S.adraft.action.type === 'heat' && S.adraft.action.value == null) S.adraft.action.value = 21;
+  if (a) {
+    S.adraft = JSON.parse(JSON.stringify({ id: a.id, trigger: a.trigger, window: a.window, days: a.days, action: a.action, revert_after: a.revert_after || 0 }));
+  } else {
+    S.adraft = { id: null, trigger: { type: 'time', at: '22:00', offset: 0 }, window: null, days: [1, 2, 3, 4, 5, 6, 7], action: firstScene ? { type: 'scene', scene_id: firstScene.id } : { type: 'lights_off' }, revert_after: 0 };
+  }
+  S.adraft.set = newSet(S.adraft.action.type === 'set' ? S.adraft.action.values : null);
   go('auto');
+}
+
+function setValueFor(e, next, draft, later = false) {
+  if (draft) target().values[e.key] = next;
+  else {
+    setPending(e.key, next);
+    (later ? sendLater : sendSet)(e.key, next);
+  }
 }
 
 function act(a, ds) {
@@ -528,12 +695,17 @@ function act(a, ds) {
     case 'relogin':
       location.reload();
       return;
+    case 'tab':
+      S.tab = ds.id;
+      store.set('hybel-tab', ds.id);
+      window.scrollTo(0, 0);
+      return render();
     case 'settings':
       return go('settings');
     case 'back':
-      if (S.view === 'scene') S.draft = null;
+      if (S.view === 'scene') { S.draft = null; return go(S.tab === 'scener' ? 'tabs' : 'settings'); }
       if (S.view === 'auto') S.adraft = null;
-      return go(S.view === 'settings' ? 'main' : S.view === 'main' ? 'main' : 'settings');
+      return go('tabs');
     case 'scene': {
       const s = sceneById(ds.id);
       if (!s) return;
@@ -547,15 +719,28 @@ function act(a, ds) {
       return openScene(null);
     case 'scene-edit':
       return openScene(ds.id);
+    case 'scene-move':
+    case 'ent-move': {
+      const list = a === 'scene-move' ? m.scenes : m.entities;
+      const i = list.findIndex((x) => (a === 'scene-move' ? x.id === ds.id : x.key === ds.key));
+      const j = i + Number(ds.dir);
+      if (i < 0 || j < 0 || j >= list.length) return;
+      [list[i], list[j]] = [list[j], list[i]];
+      render();
+      cmd(a === 'scene-move' ? { type: 'scene_move', id: ds.id, dir: Number(ds.dir) } : { type: 'entity_move', key: ds.key, dir: Number(ds.dir) });
+      return;
+    }
     case 'icon':
       S.draft.icon = ds.icon;
       return render();
-    case 'include':
-      S.draft.include[ds.key] = !S.draft.include[ds.key];
+    case 'include': {
+      const t = target();
+      t.include[ds.key] = !t.include[ds.key];
       return render();
-    case 'scene-from-now': {
-      const now = currentValues();
-      for (const k of Object.keys(S.draft.include)) if (S.draft.include[k] && now[k] !== undefined) S.draft.values[k] = now[k];
+    }
+    case 'from-now': {
+      const t = target();
+      for (const e of m.entities) if (t.include[e.key] && valueOf(e) != null) t.values[e.key] = e.kind === 'heat' ? Math.round(valueOf(e)) : JSON.parse(JSON.stringify(valueOf(e)));
       showToast('Hentet verdiene som er på nå');
       return;
     }
@@ -565,14 +750,15 @@ function act(a, ds) {
       cmd({ type: 'scene_save', scene: { id: d.id, name: d.name.trim(), icon: d.icon, values } }).then((r) => {
         if (!r.ok) return;
         S.draft = null;
-        go('settings');
+        S.tab = 'scener';
+        go('tabs');
         showToast(`${d.name.trim()} er lagret`);
       });
       return;
     }
     case 'scene-delete':
       if (!S.confirmDelete) { S.confirmDelete = true; return render(); }
-      cmd({ type: 'scene_delete', id: S.draft.id }).then((r) => { if (r.ok) { S.draft = null; go('settings'); showToast('Scenen er slettet'); } });
+      cmd({ type: 'scene_delete', id: S.draft.id }).then((r) => { if (r.ok) { S.draft = null; go('tabs'); showToast('Scenen er slettet'); } });
       return;
     case 'auto-new':
       return openAuto(null);
@@ -586,9 +772,26 @@ function act(a, ds) {
       cmd({ type: 'auto_toggle', id: x.id, enabled: x.enabled });
       return;
     }
-    case 'trig':
-      S.adraft.trigger.type = ds.v;
-      if (ds.v === 'time' && !S.adraft.trigger.at) S.adraft.trigger.at = '22:00';
+    case 'trig': {
+      const t = S.adraft.trigger;
+      t.type = ds.v;
+      if (ds.v === 'time' && !t.at) t.at = '22:00';
+      if (ds.v === 'light') { t.entity = t.entity && entity(t.entity)?.kind === 'light' ? t.entity : m.entities.find((e) => e.kind === 'light')?.key; t.to = t.to || 'on'; }
+      if (ds.v === 'humidity') { t.entity = m.entities.find((e) => e.kind === 'vent')?.key; t.above = t.above || 70; }
+      if (ds.v !== 'light' && ds.v !== 'humidity') S.adraft.window = null;
+      return render();
+    }
+    case 'trig-entity':
+      S.adraft.trigger.entity = ds.key;
+      return render();
+    case 'trig-to':
+      S.adraft.trigger.to = ds.v;
+      return render();
+    case 'hum':
+      S.adraft.trigger.above = Math.min(95, Math.max(30, (S.adraft.trigger.above || 70) + Number(ds.dir)));
+      return render();
+    case 'window':
+      S.adraft.window = S.adraft.window ? null : { from: '07:00', to: '23:00' };
       return render();
     case 'offset':
       S.adraft.trigger.offset = Number(ds.v);
@@ -603,39 +806,44 @@ function act(a, ds) {
       S.adraft.days = ds.v.split(',').map(Number);
       return render();
     case 'action':
-      S.adraft.action = ds.type === 'scene' ? { type: 'scene', scene_id: ds.id } : ds.type === 'heat' ? { type: 'heat', value: S.adraft.action.value ?? Math.min(m.limits.heat_max, 21) } : { type: 'lights_off' };
+      S.adraft.action = ds.type === 'scene' ? { type: 'scene', scene_id: ds.id } : { type: ds.type };
       return render();
-    case 'auto-heat': {
-      const v = Math.round(S.adraft.action.value ?? 21) + Number(ds.dir);
-      S.adraft.action.value = Math.min(m.limits.heat_max, Math.max(m.limits.heat_min, v));
+    case 'revert':
+      S.adraft.revert_after = Number(ds.v);
       return render();
-    }
     case 'auto-save': {
       const ad = S.adraft;
-      const body = { id: ad.id, trigger: ad.trigger.type === 'time' ? { type: 'time', at: ad.trigger.at } : { type: ad.trigger.type, offset: ad.trigger.offset || 0 }, days: ad.days, action: ad.action };
-      cmd({ type: 'auto_save', automation: body }).then((r) => {
+      const t = ad.trigger;
+      const trigger = t.type === 'time' ? { type: 'time', at: t.at }
+        : t.type === 'light' ? { type: 'light', entity: t.entity, to: t.to }
+        : t.type === 'humidity' ? { type: 'humidity', entity: t.entity, above: t.above }
+        : { type: t.type, offset: t.offset || 0 };
+      const action = ad.action.type === 'set'
+        ? { type: 'set', values: Object.fromEntries(Object.keys(ad.set.include).filter((k) => ad.set.include[k]).map((k) => [k, ad.set.values[k]])) }
+        : ad.action;
+      cmd({ type: 'auto_save', automation: { id: ad.id, trigger, window: ad.window, days: ad.days, action, revert_after: ad.revert_after } }).then((r) => {
         if (!r.ok) return;
         S.adraft = null;
-        go('settings');
+        S.tab = 'auto';
+        go('tabs');
         showToast('Automasjonen er lagret');
       });
       return;
     }
+    case 'auto-run':
+      cmd({ type: 'auto_run', id: S.adraft.id }).then((r) => r.ok && showToast('Automasjonen kjørte'));
+      return;
     case 'auto-delete':
       if (!S.confirmDelete) { S.confirmDelete = true; return render(); }
-      cmd({ type: 'auto_delete', id: S.adraft.id }).then((r) => { if (r.ok) { S.adraft = null; go('settings'); showToast('Automasjonen er slettet'); } });
+      cmd({ type: 'auto_delete', id: S.adraft.id }).then((r) => { if (r.ok) { S.adraft = null; go('tabs'); showToast('Automasjonen er slettet'); } });
       return;
     case 'toggle': {
       const e = entity(ds.key);
       if (!e) return;
-      const cur = draft ? S.draft.values[e.key] ?? 0 : valueOf(e) ?? 0;
+      const cur = draft ? target().values[e.key] ?? 0 : valueOf(e) ?? 0;
       const next = cur > 0 ? 0 : S.lastBri[e.key] || (e.dimmable ? 60 : 100);
       if (cur > 0) S.lastBri[e.key] = cur;
-      if (draft) S.draft.values[e.key] = next;
-      else {
-        setPending(e.key, next);
-        sendSet(e.key, next);
-      }
+      setValueFor(e, next, draft);
       return render();
     }
     case 'all-off':
@@ -649,24 +857,35 @@ function act(a, ds) {
     case 'heat': {
       const e = entity(ds.key);
       if (!e) return;
-      const cur = (draft ? S.draft.values[e.key] : valueOf(e)) ?? m.limits.heat_min;
-      const base = Math.round(Math.min(m.limits.heat_max, Math.max(m.limits.heat_min, Number(cur) || m.limits.heat_min)));
-      const next = Math.min(m.limits.heat_max, Math.max(m.limits.heat_min, base + Number(ds.dir)));
-      if (draft) S.draft.values[e.key] = next;
-      else {
-        setPending(e.key, next);
-        sendLater(e.key, next);
-      }
+      const cur = (draft ? target().values[e.key] : valueOf(e)) ?? e.min;
+      const base = Math.round(Math.min(e.max, Math.max(e.min, Number(cur) || e.min)));
+      setValueFor(e, Math.min(e.max, Math.max(e.min, base + Number(ds.dir))), draft, true);
       return render();
     }
     case 'fan': {
       const e = entity(ds.key);
+      if (e) setValueFor(e, ds.v, draft);
+      return render();
+    }
+    case 'cl-power':
+    case 'cl-mode':
+    case 'cl-temp':
+    case 'cl-fan': {
+      const e = entity(ds.key);
       if (!e) return;
-      if (draft) S.draft.values[e.key] = ds.v;
+      const cur = { ...((draft ? target().values[e.key] : valueOf(e)) || { mode: 'off' }) };
+      let next = cur;
+      if (a === 'cl-power') {
+        if (cur.mode !== 'off') { S.lastMode[e.key] = cur.mode; next = { ...cur, mode: 'off' }; }
+        else next = { ...cur, mode: S.lastMode[e.key] || e.modes.find((x) => x !== 'off') || 'heat' };
+      } else if (a === 'cl-mode') next = { ...cur, mode: ds.v };
+      else if (a === 'cl-fan') next = { ...cur, fan: ds.v };
       else {
-        setPending(e.key, ds.v);
-        sendSet(e.key, ds.v);
+        const base = Math.round(Math.min(e.max, Math.max(e.min, Number(cur.temp) || e.min)));
+        next = { ...cur, temp: Math.min(e.max, Math.max(e.min, base + Number(ds.dir))) };
       }
+      if (next.temp != null) next.temp = Math.round(next.temp);
+      setValueFor(e, next, draft, a === 'cl-temp');
       return render();
     }
     case 'boost':
@@ -694,8 +913,11 @@ function endDrag() {
 
 $app.addEventListener('input', (ev) => {
   const t = ev.target;
-  if (t.dataset.field === 'scene-name') { S.draft.name = t.value; return; }
-  if (t.dataset.field === 'auto-time') { S.adraft.trigger.at = t.value; return; }
+  const f = t.dataset.field;
+  if (f === 'scene-name') { S.draft.name = t.value; return; }
+  if (f === 'auto-time') { S.adraft.trigger.at = t.value; return; }
+  if (f === 'win-from') { S.adraft.window.from = t.value; return; }
+  if (f === 'win-to') { S.adraft.window.to = t.value; return; }
   const r = t.closest('input.range[data-key]');
   if (!r) return;
   const key = r.dataset.key;
@@ -704,7 +926,7 @@ $app.addEventListener('input', (ev) => {
   clearTimeout(dragTimer);
   dragTimer = setTimeout(endDrag, 1500);
   S.lastBri[key] = v;
-  if (r.dataset.mode === 'draft') S.draft.values[key] = v;
+  if (r.dataset.mode === 'draft') target().values[key] = v;
   else {
     setPending(key, v);
     sendSet(key, v);
@@ -716,7 +938,6 @@ $app.addEventListener('input', (ev) => {
 $app.addEventListener('change', (ev) => {
   if (ev.target.closest('input.range[data-key]')) endDrag();
 });
-// Når man forlater et tekstfelt, tegnes siden på nytt med siste data.
 $app.addEventListener('focusout', (ev) => {
   if (ev.target.matches?.('input[type="text"], input[type="time"]')) setTimeout(render, 0);
 });

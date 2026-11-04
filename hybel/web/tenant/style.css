@@ -133,3 +133,46 @@ button, .range, .switch { touch-action: manipulation; }
 .draft-light, .draft-heat { display: flex; justify-content: space-between; align-items: center; gap: 12px; }
 .pick-ctl .status { font-size: 14px; color: var(--muted); }
 .pick-ctl .range { margin: 6px 0 2px; }
+
+/* Faner */
+.app.has-tabs { padding-bottom: calc(96px + env(safe-area-inset-bottom)); }
+.tabbar { position: fixed; left: 0; right: 0; bottom: 0; z-index: 10; display: grid; gap: 4px; padding: 8px max(12px, calc((100vw - 520px) / 2 + 12px)) calc(10px + env(safe-area-inset-bottom)); background: rgba(250, 247, 242, .94); backdrop-filter: blur(14px); -webkit-backdrop-filter: blur(14px); border-top: 1px solid #E8DFD2; }
+.tab { min-height: 56px; border: 0; border-radius: 14px; background: transparent; color: #8A7F72; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 3px; font-size: 12px; font-weight: 600; touch-action: manipulation; }
+.tab[aria-current="page"] { color: var(--brown); background: #F1E7DA; }
+
+/* Scener som rutenett */
+.scene-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
+.scene-card { position: relative; border-radius: 22px; background: #fff; box-shadow: var(--shadow); min-height: 118px; display: flex; }
+.scene-card.active { background: var(--brown); box-shadow: 0 8px 20px rgba(142,78,23,.25); }
+.scene-main { flex: 1; border: 0; background: transparent; padding: 14px; display: flex; flex-direction: column; align-items: flex-start; justify-content: space-between; gap: 6px; text-align: left; color: var(--ink); border-radius: 22px; touch-action: manipulation; }
+.scene-main .ic { width: 40px; height: 40px; border-radius: 13px; background: var(--bg); color: #9A5518; display: flex; align-items: center; justify-content: center; }
+.scene-main .name { font-family: var(--serif); font-size: 19px; font-weight: 600; }
+.scene-main .sum { font-size: 12.5px; color: var(--muted); line-height: 1.3; }
+.scene-card.active .scene-main { color: #fff; }
+.scene-card.active .ic { background: rgba(255,255,255,.16); color: #fff; }
+.scene-card.active .sum { color: #F7E3CC; }
+.scene-edit { position: absolute; top: 8px; right: 8px; width: 36px; height: 36px; border-radius: 12px; border: 0; background: var(--bg); color: #7A6A58; display: flex; align-items: center; justify-content: center; }
+.scene-card.active .scene-edit { background: rgba(255,255,255,.16); color: #fff; }
+.scene-card.add { border: 1.5px dashed #D3C6B4; background: transparent; box-shadow: none; flex-direction: column; align-items: center; justify-content: center; gap: 6px; color: var(--muted); font-weight: 600; }
+
+/* Rekkefølge */
+.order-row { gap: 8px; min-height: 58px; }
+.tool-btn { width: 40px; height: 40px; border-radius: 12px; border: 0; background: var(--bg); color: var(--ink); display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
+
+/* Varmepumpe */
+.climate { gap: 12px; }
+.climate-power, .climate-temp, .row.between { display: flex; justify-content: space-between; align-items: center; gap: 12px; }
+.climate .status, .row.between .status { font-size: 14px; color: var(--muted); }
+.fans-seg button { font-size: 13px; }
+.pick-ctl .seg { margin-top: 2px; }
+
+/* Automasjoner */
+.chips { display: flex; flex-wrap: wrap; gap: 6px; }
+.chip { min-height: 40px; padding: 0 14px; border-radius: 12px; border: 0; background: var(--bg); font-size: 14px; font-weight: 600; color: var(--muted); }
+.chip[aria-pressed="true"] { background: var(--brown); color: #fff; }
+.window { display: flex; align-items: center; gap: 8px; }
+.window span { color: var(--muted); font-size: 14px; }
+.input.time.sm { font-size: 18px; min-height: 44px; }
+.actions .btn.ghost { flex: 1; }
+
+.window .input.time { flex: 1; min-width: 0; padding: 0 8px; }

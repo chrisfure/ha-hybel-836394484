@@ -16,6 +16,9 @@ export function defaultData() {
     alerts: { notify_service: '', entities: [] },
     last_tenant_activity: null,
     auto_runs: {},
+    auto_last: {},
+    reverts: [],
+    tenant_order: [],
     sun_cache: {}
   };
 }
@@ -39,6 +42,9 @@ export class Store {
         entities: migrated.entities || [],
         automations: migrated.automations || [],
         auto_runs: migrated.auto_runs || {},
+        auto_last: migrated.auto_last || {},
+        reverts: migrated.reverts || [],
+        tenant_order: migrated.tenant_order || [],
         sun_cache: migrated.sun_cache || {}
       };
       if (raw.version !== 2) this.save();

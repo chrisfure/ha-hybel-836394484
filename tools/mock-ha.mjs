@@ -14,6 +14,7 @@ const HYBEL = [
     st('light.demo_ute', 'on', { friendly_name: 'Demo inngang ute', brightness: 89, supported_color_modes: ['brightness'] }),
     st('climate.demo_gulvvarme', 'heat', { friendly_name: 'Demo gulvvarme', hvac_modes: ['off', 'heat'], min_temp: 5, max_temp: 35, temperature: 21, current_temperature: 20.5, hvac_action: 'idle', preset_modes: ['none', 'away'] }),
     st('climate.demo_ventilasjon', 'fan_only', { friendly_name: 'Demo ventilasjon', hvac_modes: ['auto', 'fan_only'], fan_modes: ['low', 'medium', 'high'], fan_mode: 'medium', preset_modes: ['none', 'away', 'boost'], preset_mode: 'none', current_temperature: 19.5, current_humidity: 45 }),
+    st('climate.demo_hybel_varmepumpe', 'heat', { friendly_name: 'Demo hybel varmepumpe', hvac_modes: ['off', 'heat', 'cool', 'auto', 'dry', 'fan_only'], fan_modes: ['auto', 'low', 'medium', 'high'], fan_mode: 'auto', min_temp: 16, max_temp: 30, temperature: 21, current_temperature: 19.5, hvac_action: 'heating', target_temp_step: 1 }),
     st('binary_sensor.demo_filter_alarm', 'off', { friendly_name: 'Demo filteralarm' }),
     st('light.demo_kjokken_hovedhus', 'on', { friendly_name: 'Demo kjøkken (hovedhus)', brightness: 255, supported_color_modes: ['brightness'] })
 ];
@@ -71,9 +72,10 @@ function callService(domain, service, data) {
     else if (domain === 'music_assistant' && service === 'play_media') setState(id, 'playing', { media_title: data.media_id });
     else if (domain === 'media_player' && service === 'media_stop') setState(id, 'idle', { media_title: null });
     else if (domain === 'media_player' && service === 'volume_set') setState(id, states.get(id).state, { volume_level: data.volume_level });
-    else if (domain === 'climate' && service === 'set_temperature') setState(id, data.hvac_mode || cur.state, { temperature: data.temperature });
-    else if (domain === 'climate' && service === 'set_fan_mode') setState(id, cur.state, { fan_mode: data.fan_mode });
-    else if (domain === 'climate' && service === 'set_preset_mode') setState(id, cur.state, { preset_mode: data.preset_mode });
+    else if (domain === 'climate' && service === 'set_temperature') setState(id, data.hvac_mode || states.get(id).state, { temperature: data.temperature });
+    else if (domain === 'climate' && service === 'set_hvac_mode') setState(id, data.hvac_mode, {});
+    else if (domain === 'climate' && service === 'set_fan_mode') setState(id, states.get(id).state, { fan_mode: data.fan_mode });
+    else if (domain === 'climate' && service === 'set_preset_mode') setState(id, states.get(id).state, { preset_mode: data.preset_mode });
     else if (domain === 'test' && service === 'set') setState(id, data.state, data.attributes || {});
   }, delay);
 }
