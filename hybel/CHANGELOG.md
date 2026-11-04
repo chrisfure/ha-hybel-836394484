@@ -1,5 +1,12 @@
 # Endringslogg
 
+## 0.4.0
+
+- Ny fane **Info** for leietaker: wifi med QR-kode, kontakt til utleier, status fra røykvarslere/sensorer, søppel, husregler og nødinfo.
+- **Strøm**: leietaker leser av måleren, får kWh, beløp og forbruk per periode. Fast kWh-pris settes på utleiersiden; utleier markerer perioder som betalt.
+- **Meld fra**: leietaker sender melding om feil (f.eks. tett avløp) med kategori og «haster». Utleier får varsel, kan sette status og svare.
+- Lys kan holdes utenfor «Slå av alle» (f.eks. utelys).
+
 ## 0.3.5
 
 - «Nå»-temperaturen for termostater og varmepumper kan hentes fra en valgfri føler (f.eks. gulvføleren) – velges på utleiersiden.

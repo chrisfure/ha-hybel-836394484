@@ -70,7 +70,17 @@ export function startAdminServer({ engine, ha, webRoot, port, tenantHub, devOpen
       temp_sensors.push({ entity_id: id, name: a.friendly_name || id, state: st.state });
     }
     temp_sensors.sort((x, y) => x.name.localeCompare(y.name, 'nb'));
-    return { entities: list, notify_services: notify, temp_sensors };
+    // Sikkerhet: røykvarslere, lekkasje, batterinivå o.l.
+    const safety = [];
+    for (const [id, st] of ha.states) {
+      const a = st.attributes || {};
+      const ok = (id.startsWith('binary_sensor.') && ['smoke', 'moisture', 'gas', 'carbon_monoxide', 'safety', 'problem', 'heat'].includes(a.device_class))
+        || (id.startsWith('sensor.') && a.device_class === 'battery')
+        || /røyk|smoke|lekk|leak/i.test(id + ' ' + (a.friendly_name || ''));
+      if (ok && /^(binary_sensor|sensor)\./.test(id)) safety.push({ entity_id: id, name: a.friendly_name || id, state: st.state });
+    }
+    safety.sort((x, y) => x.name.localeCompare(y.name, 'nb'));
+    return { entities: list, notify_services: notify, temp_sensors, safety };
   }
 
   const server = http.createServer(async (req, res) => {
@@ -91,6 +101,27 @@ export function startAdminServer({ engine, ha, webRoot, port, tenantHub, devOpen
         const body = await readJson(req, 256 * 1024);
         const errors = engine.saveAdmin(body);
         return sendJson(res, errors.length ? 400 : 200, { ok: !errors.length, errors, state: engine.adminView({ tenant_clients: tenantHub.size }) });
+      }
+      if (p === '/api/admin/report' && req.method === 'POST') {
+        const body = await readJson(req);
+        try {
+          engine.extras.adminUpdateReport(body);
+          engine.changed();
+          return sendJson(res, 200, { ok: true, state: engine.adminView({ tenant_clients: tenantHub.size }) });
+        } catch (err) {
+          return sendJson(res, 400, { ok: false, error: err.message });
+        }
+      }
+      if (p === '/api/admin/reading' && req.method === 'POST') {
+        const body = await readJson(req);
+        try {
+          if (body.delete) engine.extras.deleteLastReading(body.id, true);
+          else engine.extras.setPaid(body.id, body.paid);
+          engine.changed();
+          return sendJson(res, 200, { ok: true, state: engine.adminView({ tenant_clients: tenantHub.size }) });
+        } catch (err) {
+          return sendJson(res, 400, { ok: false, error: err.message });
+        }
       }
       if (p === '/api/admin/tenant-reset' && req.method === 'POST') {
         engine.resetTenant();

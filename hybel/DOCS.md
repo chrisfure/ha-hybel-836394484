@@ -60,6 +60,13 @@ Slå av **Krev Cloudflare Access** og aktiver port `8100` under **Nettverk** i a
 - Du kan låse scener og automasjoner, slik at leietakeren bare kan bruke dem som finnes.
 - **Leietakerbytte** sletter leietakerens scener og automasjoner og lager nye forslag. Husk å oppdatere e-postlisten i Cloudflare Access.
 
+## Info, strøm og meldinger
+
+- **Info** fylles ut på utleiersiden under «Info til leietaker» (wifi, kontakt, søppel, regler, nødinfo og sikkerhetsfølere).
+- **Strøm**: sett pris per kWh. Leietaker legger inn målerstand, og appen regner ut forbruk og beløp per periode. Prisen lagres på hver avlesning.
+- **Meldinger**: nye meldinger sendes til varslingstjenesten under «Varsle meg». Svar og status vises for leietaker.
+- Ved «Klargjør for ny leietaker» arkiveres avlesninger og meldinger.
+
 ## Personvern
 
 Innstillinger, navn og e-postadresser lagres i `/data` i appen og aldri i koden.

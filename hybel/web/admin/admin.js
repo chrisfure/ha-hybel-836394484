@@ -20,6 +20,8 @@ const A = {
   picker: null,       // 'entity' | 'alarm' | null
   q: '',
   resetScenes: false,
+  replies: {},
+  confirmDel: null,
   confirmScenes: false,
   confirmReset: false
 };
@@ -35,10 +37,12 @@ async function api(path, opts = {}) {
 
 function pickCfg(st) {
   return JSON.parse(JSON.stringify({
-    entities: st.entities.map(({ entity_id, label, kind, enabled, min_pct, max_pct, min_temp, max_temp, now_sensor }) => ({ entity_id, label, kind, enabled, ...(now_sensor ? { now_sensor } : {}), ...(kind === 'light' ? { min_pct: min_pct ?? 1, max_pct: max_pct ?? 100 } : {}), ...(kind === 'heat' || kind === 'climate' ? { min_temp: min_temp ?? st.limits.heat_min, max_temp: max_temp ?? st.limits.heat_max } : {}) })),
+    entities: st.entities.map(({ entity_id, label, kind, enabled, min_pct, max_pct, min_temp, max_temp, now_sensor, all_off }) => ({ entity_id, label, kind, enabled, ...(now_sensor ? { now_sensor } : {}), ...(all_off === false ? { all_off: false } : {}), ...(kind === 'light' ? { min_pct: min_pct ?? 1, max_pct: max_pct ?? 100 } : {}), ...(kind === 'heat' || kind === 'climate' ? { min_temp: min_temp ?? st.limits.heat_min, max_temp: max_temp ?? st.limits.heat_max } : {}) })),
     limits: st.limits,
     tenant_can_edit_scenes: st.tenant_can_edit_scenes,
-    alerts: st.alerts
+    alerts: st.alerts,
+    info: st.extras.info,
+    electricity: { price_per_kwh: st.extras.electricity.price, note: st.extras.electricity.note }
   }));
 }
 
@@ -113,7 +117,8 @@ function entitiesPanel() {
               ${sensorSelect(e, i)}` : ''}`
           : `<span class="range-pair"><span style="font-size:14px;font-weight:600">Lys</span>
               <label>Lavest <input class="input num-in" type="number" min="1" max="99" value="${e.min_pct ?? 1}" data-field="min_pct" data-i="${i}" aria-label="Laveste ekte lysstyrke for ${esc(e.label)}">%</label>
-              <label>Høyest <input class="input num-in" type="number" min="2" max="100" value="${e.max_pct ?? 100}" data-field="max_pct" data-i="${i}" aria-label="Høyeste ekte lysstyrke for ${esc(e.label)}">%</label></span>`}
+              <label>Høyest <input class="input num-in" type="number" min="2" max="100" value="${e.max_pct ?? 100}" data-field="max_pct" data-i="${i}" aria-label="Høyeste ekte lysstyrke for ${esc(e.label)}">%</label></span>
+              <label class="sensor-pick"><input type="checkbox" ${e.all_off === false ? '' : 'checked'} data-field="all_off" data-i="${i}"> Med i «Slå av alle»</label>`}
         <span class="mono">${esc(e.entity_id)}${now ? ` · ${esc(now)}` : ''}${l && !l.available ? ' · utilgjengelig' : ''}</span>
       </div>
       <div class="tools">
@@ -204,6 +209,74 @@ function alertsPanel() {
   </section>`;
 }
 
+
+const STATUS_LABEL = { new: 'Mottatt', in_progress: 'Under arbeid', done: 'Løst' };
+const fmtDate = (d) => new Date(d).toLocaleDateString('nb-NO', { day: 'numeric', month: 'short', year: 'numeric' });
+const kr = (n) => (n == null ? '–' : n.toLocaleString('nb-NO', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + ' kr');
+
+function reportsPanel() {
+  const reps = A.st.extras.reports;
+  const open = reps.filter((r) => r.status !== 'done');
+  let h = `<section class="panel"><div class="panel-head"><h2>Meldinger fra leietaker</h2><span>${open.length ? `${open.length} åpne` : 'Ingen åpne'}</span></div>`;
+  if (!reps.length) return h + `<p class="help">Ingen meldinger ennå. Du får varsel når leietakeren melder fra.</p></section>`;
+  for (const r of reps.slice(0, 15)) {
+    h += `<div class="report-a ${r.status}">
+      <div class="report-head"><strong>${esc(r.category)}${r.urgent ? ' · <span class="urgent">haster</span>' : ''}</strong><span class="help">${esc(fmtDate(r.created))}</span></div>
+      <p class="pre">${esc(r.text)}</p>
+      ${r.updates.length ? `<div class="thread">${r.updates.map((u) => `<div class="tmsg ${u.from}${u.status ? ' sys' : ''}">${esc(u.text)} <small>${u.from === 'landlord' ? 'Du' : 'Leietaker'} · ${esc(fmtDate(u.at))}</small></div>`).join('')}</div>` : ''}
+      <div class="row-btns">
+        ${['new', 'in_progress', 'done'].map((s) => `<button class="sbtn ${r.status === s ? 'on' : ''}" data-act="report-status" data-id="${r.id}" data-v="${s}">${STATUS_LABEL[s]}</button>`).join('')}
+        <button class="sbtn" data-act="report-delete" data-id="${r.id}">${A.confirmDel === r.id ? 'Bekreft sletting' : 'Slett'}</button>
+      </div>
+      <div class="reply-a"><textarea class="input area" rows="2" placeholder="Svar til leietaker …" data-field="admin-reply" data-id="${r.id}">${esc(A.replies[r.id] || '')}</textarea><button class="sbtn" data-act="report-reply" data-id="${r.id}">Send svar</button></div>
+    </div>`;
+  }
+  return h + `</section>`;
+}
+
+function electricityPanel() {
+  const e = A.st.extras.electricity;
+  const c = A.cfg.electricity;
+  let h = `<section class="panel"><div class="panel-head"><h2>Strøm</h2><span>Til betaling: <strong>${esc(kr(e.unpaid))}</strong></span></div>
+    <div class="form-grid">
+      <label class="lbl-col">Pris per kWh (kr)<input class="input" type="text" inputmode="decimal" placeholder="F.eks. 1,50" value="${c.price_per_kwh ?? ''}" data-field="el.price"></label>
+      <label class="lbl-col">Merknad til leietaker<input class="input" type="text" maxlength="300" placeholder="F.eks. Betales sammen med husleien" value="${esc(c.note || '')}" data-field="el.note"></label>
+    </div>
+    <p class="help">Prisen lagres på hver avlesning, så gamle perioder beholder prisen de ble lest av med.</p>`;
+  if (!e.periods.length) h += `<p class="help">${e.last ? `Startavlesning: ${e.last.value} kWh (${esc(fmtDate(e.last.date))}). Perioder vises når neste avlesning kommer.` : 'Ingen avlesninger ennå.'}</p>`;
+  else {
+    h += `<table class="tbl"><thead><tr><th>Periode</th><th>kWh</th><th>Beløp</th><th>Betalt</th></tr></thead><tbody>
+      ${e.periods.map((p, i) => `<tr><td>${esc(fmtDate(p.from))} – ${esc(fmtDate(p.to))}<br><span class="help">${p.start} → ${p.end}</span></td><td>${p.kwh.toLocaleString('nb-NO')}</td><td>${esc(kr(p.amount))}</td>
+        <td><button class="sbtn ${p.paid ? 'on' : ''}" data-act="reading-paid" data-id="${p.id}" data-v="${p.paid ? '0' : '1'}">${p.paid ? 'Betalt' : 'Marker betalt'}</button>
+        ${i === 0 ? `<button class="sbtn" data-act="reading-delete" data-id="${p.id}">${A.confirmDel === p.id ? 'Bekreft' : 'Slett'}</button>` : ''}</td></tr>`).join('')}
+    </tbody></table>`;
+  }
+  return h + `</section>`;
+}
+
+function infoPanel() {
+  const i = A.cfg.info;
+  const names = new Map((A.cand?.safety || []).map((c) => [c.entity_id, c.name]));
+  const field = (k, label, ph = '', type = 'text') => `<label class="lbl-col">${label}<input class="input" type="${type}" value="${esc(i[k] || '')}" placeholder="${esc(ph)}" data-field="info.${k}"></label>`;
+  const area = (k, label, ph) => `<label class="lbl-col">${label}<textarea class="input area" rows="3" placeholder="${esc(ph)}" data-field="info.${k}">${esc(i[k] || '')}</textarea></label>`;
+  const avail = (A.cand?.safety || []).filter((c) => !(i.safety || []).includes(c.entity_id));
+  return `<section class="panel"><div class="panel-head"><h2>Info til leietaker</h2><span>Vises under Info i appen</span></div>
+    <div class="form-grid">
+      ${field('wifi_ssid', 'Wifi-navn')}${field('wifi_password', 'Wifi-passord')}
+      ${field('contact_name', 'Kontaktperson')}${field('contact_phone', 'Telefon', '', 'tel')}
+      ${field('contact_email', 'E-post', '', 'email')}
+    </div>
+    ${area('garbage', 'Søppel og henting', 'F.eks. Restavfall hver tirsdag, papir annenhver torsdag')}
+    ${area('rules', 'Husregler', 'F.eks. Ro etter kl. 23')}
+    ${area('emergency', 'Ved nødstilfeller', 'F.eks. Hovedkran for vann er i vaskerommet. Sikringsskap i gangen.')}
+    ${area('other', 'Annet')}
+    <span class="help">Sikkerhet (vises med status, f.eks. røykvarsler og batteri):</span>
+    <div class="chips">${(i.safety || []).map((id) => `<span class="chip">${esc(names.get(id) || id)}<button data-act="safety-remove" data-id="${esc(id)}" aria-label="Fjern">×</button></span>`).join('') || '<span class="help">Ingen valgt.</span>'}</div>
+    ${A.picker === 'safety' ? `<div class="picker"><div class="picker-list">${avail.map((c) => `<button class="pick" data-act="safety-add" data-id="${esc(c.entity_id)}"><span><span class="n">${esc(c.name)}</span><span class="mono">${esc(c.entity_id)}</span></span><span class="a">${esc(c.state)}</span></button>`).join('') || '<p class="help">Fant ingen.</p>'}</div><button class="sbtn" data-act="close-picker">Lukk</button></div>` : `<button class="add" data-act="open-picker" data-kind="safety">+ Legg til sikkerhetsføler</button>`}
+    <p class="help">Husk «Lagre endringer» øverst.</p>
+  </section>`;
+}
+
 function resetPanel() {
   return `<section class="panel soft"><h2>Leietakerbytte</h2>
     <p class="help">Sletter leietakerens scener og automasjoner og lager nye forslag. Husk å fjerne forrige leietaker i Cloudflare Access og legge inn den nye.</p>
@@ -217,7 +290,7 @@ function resetPanel() {
 function render() {
   if (!A.cfg) return;
   const focusId = document.activeElement?.id || (document.activeElement?.dataset?.field === 'q' ? '__q' : null);
-  $('main').innerHTML = `<div class="col-main">${entitiesPanel()}${scenesPanel()}</div><div class="col-side">${limitsPanel()}${alertsPanel()}${resetPanel()}</div>`;
+  $('main').innerHTML = `<div class="col-main">${reportsPanel()}${entitiesPanel()}${scenesPanel()}${electricityPanel()}${infoPanel()}</div><div class="col-side">${limitsPanel()}${alertsPanel()}${resetPanel()}</div>`;
   if (focusId === '__q') {
     const q = document.querySelector('[data-field="q"]');
     if (q) { q.focus(); q.setSelectionRange(q.value.length, q.value.length); }
@@ -260,6 +333,34 @@ document.addEventListener('click', async (ev) => {
       else A.cfg.alerts.entities.push(c.entity_id);
       A.picker = null;
       setDirty();
+      break;
+    }
+    case 'safety-add': A.cfg.info.safety = [...(A.cfg.info.safety || []), d.id]; A.picker = null; setDirty(); break;
+    case 'safety-remove': A.cfg.info.safety = A.cfg.info.safety.filter((x) => x !== d.id); setDirty(); break;
+    case 'report-status':
+    case 'report-reply':
+    case 'report-delete': {
+      const body = { id: d.id };
+      if (d.act === 'report-status') body.status = d.v;
+      if (d.act === 'report-reply') { body.reply = (A.replies[d.id] || '').trim(); if (!body.reply) return; }
+      if (d.act === 'report-delete') { if (A.confirmDel !== d.id) { A.confirmDel = d.id; break; } body.delete = true; }
+      try {
+        const r = await api('api/admin/report', { method: 'POST', body: JSON.stringify(body) });
+        if (!r.ok) { message(esc(r.error), true); return; }
+        A.st = r.state; A.replies[d.id] = ''; A.confirmDel = null;
+        message(d.act === 'report-reply' ? 'Svaret er sendt til leietaker.' : 'Oppdatert.');
+      } catch (e) { message(esc(e.message), true); }
+      break;
+    }
+    case 'reading-paid':
+    case 'reading-delete': {
+      const body = d.act === 'reading-paid' ? { id: d.id, paid: d.v === '1' } : { id: d.id, delete: true };
+      if (d.act === 'reading-delete' && A.confirmDel !== d.id) { A.confirmDel = d.id; break; }
+      try {
+        const r = await api('api/admin/reading', { method: 'POST', body: JSON.stringify(body) });
+        if (!r.ok) { message(esc(r.error), true); return; }
+        A.st = r.state; A.confirmDel = null;
+      } catch (e) { message(esc(e.message), true); }
       break;
     }
     case 'alarm-remove': A.cfg.alerts.entities = A.cfg.alerts.entities.filter((x) => x !== d.id); setDirty(); break;
@@ -306,6 +407,11 @@ document.addEventListener('input', (ev) => {
   if (!f || !A.cfg) return;
   if (f === 'label') { A.cfg.entities[Number(el.dataset.i)].label = el.value; setDirty(); }
   else if (['min_pct', 'max_pct', 'min_temp', 'max_temp'].includes(f)) { A.cfg.entities[Number(el.dataset.i)][f] = Number(el.value); setDirty(); }
+  else if (f === 'all_off') { const ent = A.cfg.entities[Number(el.dataset.i)]; if (el.checked) delete ent.all_off; else ent.all_off = false; setDirty(); }
+  else if (f.startsWith('info.')) { A.cfg.info[f.slice(5)] = el.value; setDirty(); }
+  else if (f === 'el.price') { A.cfg.electricity.price_per_kwh = el.value.trim() === '' ? null : el.value; setDirty(); }
+  else if (f === 'el.note') { A.cfg.electricity.note = el.value; setDirty(); }
+  else if (f === 'admin-reply') { A.replies[el.dataset.id] = el.value; }
   else if (f === 'notify') { A.cfg.alerts.notify_service = el.value.trim(); setDirty(); }
   else if (f === 'q') { A.q = el.value; render(); }
 });

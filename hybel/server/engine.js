@@ -3,6 +3,7 @@ import { EventEmitter } from 'node:events';
 import { createHash, randomBytes } from 'node:crypto';
 import { defaultData } from './store.js';
 import { log } from './log.js';
+import { Extras } from './extras.js';
 
 export const KINDS = ['light', 'heat', 'vent', 'climate', 'button'];
 export const VENT_MODES = ['away', 'low', 'normal', 'high'];
@@ -57,6 +58,7 @@ export class Engine extends EventEmitter {
     this.updateTimer = null;
     this.lastTemp = new Map();
     this.dimLoops = new Map(); // auto_id -> { timer, until, prefix }
+    this.extras = new Extras(this);
     ha.on('state', (id, n, o) => this.onState(id, n, o));
     ha.on('status', () => this.changed());
     ha.on('ready', () => { this.recordSun(); this.ensureScenes(); });
@@ -528,7 +530,8 @@ export class Engine extends EventEmitter {
 
   actionEntities(action) {
     if (action.type === 'scene') return Object.keys(this.ensureScenes().find((s) => s.id === action.scene_id)?.values || {});
-    if (action.type === 'lights_off') return this.enabled().filter((e) => e.kind === 'light').map((e) => e.entity_id);
+    // «Slå av alle» hopper over lys utleier har tatt ut (f.eks. utelys).
+    if (action.type === 'lights_off') return this.enabled().filter((e) => e.kind === 'light' && e.all_off !== false).map((e) => e.entity_id);
     if (action.type === 'set') return Object.keys(action.values || {});
     if (action.type === 'dim') return action.entities || [];
     if (action.type === 'heat') return this.enabled().filter((e) => e.kind === 'heat').map((e) => e.entity_id);
@@ -715,7 +718,7 @@ export class Engine extends EventEmitter {
         break;
       }
       case 'all_off':
-        await this.applyValues(Object.fromEntries(this.enabled().filter((e) => e.kind === 'light').map((e) => [e.entity_id, 0])));
+        await this.applyValues(Object.fromEntries(this.actionEntities({ type: 'lights_off' }).map((id) => [id, 0])));
         break;
       case 'scene':
         await this.activateScene(cmd.id);
@@ -771,7 +774,7 @@ export class Engine extends EventEmitter {
         break;
       }
       default:
-        throw new Error('Ukjent kommando');
+        if (!(await this.extras.handleTenant(cmd))) throw new Error('Ukjent kommando');
     }
     this.changed();
   }
@@ -804,6 +807,7 @@ export class Engine extends EventEmitter {
       prefs: { boost_minutes: Math.min(d.tenant_prefs.boost_minutes || 30, d.limits.boost_max_minutes) },
       boost_options: [15, 30, 60, 90, 120].filter((m) => m <= d.limits.boost_max_minutes),
       boost: d.boost ? { key: keyOf(d.boost.entity_id), until: d.boost.until, return_to: d.boost.return_to } : null,
+      ...this.extras.tenantView(),
       entities: this.ordered().map((e) => {
         const st = this.state(e);
         const a = st?.attributes || {};
@@ -815,6 +819,7 @@ export class Engine extends EventEmitter {
         if (e.kind === 'light') {
           const modes = a.supported_color_modes || [];
           base.dimmable = !(modes.length === 1 && modes[0] === 'onoff');
+          base.in_all_off = e.all_off !== false;
         } else if (e.kind === 'heat') {
           [base.min, base.max] = this.tempRange(e);
           base.current = cur;
@@ -853,6 +858,7 @@ export class Engine extends EventEmitter {
       scenes: this.ensureScenes().map((s) => ({ id: s.id, name: s.name, icon: s.icon, parts: Object.keys(this.cleanValues(s.values)).map((id) => labels.get(id) || id) })),
       automations: d.automations.map((a) => ({ id: a.id, enabled: a.enabled, label: this.describeAutomation(a), days: a.days })),
       alerts: d.alerts,
+      extras: this.extras.adminView(),
       status: {
         ha_connected: this.ha.connected,
         active_scenes: this.ensureScenes().filter((s) => this.sceneMatches(this.cleanValues(s.values))).map((s) => s.name),
@@ -876,6 +882,7 @@ export class Engine extends EventEmitter {
         seen.add(id);
         const ent = { entity_id: id, label: String(e.label || '').trim().slice(0, 40) || id, kind, enabled: e.enabled !== false };
         if (kind === 'light') {
+          if (e.all_off === false) ent.all_off = false;
           const lo = Math.round(Number(e.min_pct ?? 1));
           const hi = Math.round(Number(e.max_pct ?? 100));
           if (!(lo >= 1 && lo <= 99 && hi >= 2 && hi <= 100 && hi > lo)) errors.push(`${ent.label}: laveste må være lavere enn høyeste (1–100 %)`);
@@ -912,6 +919,7 @@ export class Engine extends EventEmitter {
         d.alerts.entities = [...new Set(body.alerts.entities.map(String).filter((id) => /^binary_sensor\.[a-z0-9_]+$/.test(id)))];
       }
     }
+    this.extras.saveInfo(body, errors);
     if (body.reset_scenes === true) {
       d.scenes = null;
       d.automations = d.automations.filter((a) => a.action.type !== 'scene');
@@ -935,6 +943,12 @@ export class Engine extends EventEmitter {
     d.tenant_prefs = base.tenant_prefs;
     d.boost = null;
     d.last_tenant_activity = null;
+    // Ta vare på forrige leietakers strøm og meldinger i et arkiv.
+    if (d.readings?.length || d.reports?.length) {
+      d.archive = [...(d.archive || []), { at: new Date().toISOString(), readings: d.readings || [], reports: d.reports || [] }].slice(-10);
+    }
+    d.readings = [];
+    d.reports = [];
     this.ensureScenes();
     this.store.save();
     this.changed();
@@ -945,6 +959,7 @@ export class Engine extends EventEmitter {
   onState(entityId, newState, oldState) {
     if (entityId === 'sun.sun') this.recordSun();
     if (this.data.entities.some((e) => e.enabled && e.now_sensor === entityId)) this.changed();
+    if (this.data.info?.safety?.includes(entityId)) this.changed();
     if (this.data.entities.some((e) => e.enabled && e.entity_id === entityId)) {
       this.changed();
       this.checkStateTriggers(entityId, newState, oldState);

@@ -1,4 +1,6 @@
 // Leietakersiden – ren JavaScript, ingen rammeverk.
+import { qrSvg, wifiString } from './qr.js';
+
 const $app = document.getElementById('app');
 
 // Sperr zoom (iOS Safari ignorerer user-scalable=no). Knapper og felt beskyttes med touch-action i CSS.
@@ -32,8 +34,13 @@ const S = {
   fails: 0,
   dragging: null,
   deferred: false,
-  confirmDelete: false
+  confirmDelete: false,
+  infoSub: 'info',      // info | strom | meld
+  report: { category: null, text: '', urgent: false },
+  reply: {},
+  reading: { date: new Date().toISOString().slice(0, 10), value: '' }
 };
+const TYPING = 'input[type="text"], input[type="time"], input[type="number"], input[type="date"], textarea';
 
 const ICON = {
   home: 'M3 11l9-7 9 7v9a1 1 0 0 1-1 1h-5v-6h-6v6H4a1 1 0 0 1-1-1z',
@@ -75,7 +82,8 @@ const TABS = [
   { id: 'scener', label: 'Scener', icon: ICON.star },
   { id: 'lys', label: 'Lys', icon: UI.bulb },
   { id: 'klima', label: 'Klima', icon: UI.flame },
-  { id: 'auto', label: 'Automasjoner', short: 'Auto', icon: UI.clock }
+  { id: 'auto', label: 'Automasjoner', short: 'Auto', icon: UI.clock },
+  { id: 'info', label: 'Info', icon: 'M12 8h.01M11 12h1v4h1M21 12a9 9 0 1 1-18 0 9 9 0 0 1 18 0z' }
 ];
 
 const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -269,6 +277,7 @@ function tabs() {
     if (t.id === 'lys') return m.entities.some((e) => e.kind === 'light');
     if (t.id === 'klima') return m.entities.some((e) => ['heat', 'vent', 'climate'].includes(e.kind));
     if (t.id === 'auto') return m.can_edit || m.automations.length;
+    if (t.id === 'info') return true;
     return true;
   });
 }
@@ -296,7 +305,7 @@ function subHTML(kick, title) {
 function navHTML() {
   const list = tabs();
   return `<nav class="tabbar" style="grid-template-columns: repeat(${list.length}, minmax(0, 1fr))" aria-label="Faner">
-    ${list.map((t) => `<button class="tab" aria-current="${S.tab === t.id ? 'page' : 'false'}" data-act="tab" data-id="${t.id}" data-fid="tab-${t.id}">${svg(t.icon, 22)}<span>${t.short || t.label}</span></button>`).join('')}
+    ${list.map((t) => `<button class="tab" aria-current="${S.tab === t.id ? 'page' : 'false'}" data-act="tab" data-id="${t.id}" data-fid="tab-${t.id}">${svg(t.icon, 22)}<span>${t.short || t.label}</span>${t.id === 'info' && infoBadge() ? '<i class="badge-dot" aria-label="Nytt"></i>' : ''}</button>`).join('')}
   </nav>`;
 }
 
@@ -443,6 +452,142 @@ function autoTab() {
   return h + `</div>`;
 }
 
+
+// ---------- info, strøm og meldinger ----------
+
+const nok = (n) => (n == null ? '–' : n.toLocaleString('nb-NO', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + ' kr');
+const kwhFmt = (n) => (n == null ? '–' : n.toLocaleString('nb-NO', { maximumFractionDigits: 1 }) + ' kWh');
+const dateFmt = (d) => new Date(d).toLocaleDateString('nb-NO', { day: 'numeric', month: 'short', year: 'numeric' });
+const STATUS = { new: ['Mottatt', 'st-new'], in_progress: ['Under arbeid', 'st-work'], done: ['Løst', 'st-done'] };
+
+function infoBadge() {
+  const m = S.m;
+  return (m.reports || []).some((r) => r.unread) || (m.electricity && m.electricity.remind);
+}
+
+function infoTab() {
+  const m = S.m;
+  const unread = (m.reports || []).filter((r) => r.unread).length;
+  const subs = [['info', 'Info'], ['strom', 'Strøm'], ['meld', `Meld fra${unread ? ` (${unread})` : ''}`]];
+  let h = `<div class="seg subnav" style="grid-template-columns: repeat(3, minmax(0, 1fr))">${subs.map(([k, l]) => `<button aria-pressed="${S.infoSub === k}" data-act="info-sub" data-v="${k}">${esc(l)}${k === 'strom' && m.electricity.remind ? ' •' : ''}</button>`).join('')}</div>`;
+  if (S.infoSub === 'strom') h += stromHTML();
+  else if (S.infoSub === 'meld') h += meldHTML();
+  else h += infoHTML();
+  return h;
+}
+
+function textCard(title, text) {
+  if (!text) return '';
+  return `<section class="card info-card"><h2>${esc(title)}</h2><p class="pre">${esc(text)}</p></section>`;
+}
+
+function infoHTML() {
+  const i = S.m.info;
+  let h = '';
+  if (i.wifi_ssid) {
+    let qr = '';
+    try { qr = qrSvg(wifiString(i.wifi_ssid, i.wifi_password), { label: 'QR-kode for wifi' }); } catch {}
+    h += `<section class="card info-card wifi">
+      <h2>Wifi</h2>
+      <div class="wifi-row">
+        <div class="wifi-text">
+          <span class="field-label">Nettverk</span><span class="big">${esc(i.wifi_ssid)}</span>
+          ${i.wifi_password ? `<span class="field-label">Passord</span><span class="big mono-ish">${esc(i.wifi_password)}</span>
+          <button class="chip-btn" data-act="copy" data-v="${esc(i.wifi_password)}">Kopier passord</button>` : ''}
+        </div>
+        ${qr ? `<div class="qr">${qr}<span class="note">Skann med kameraet</span></div>` : ''}
+      </div>
+    </section>`;
+  }
+  if (i.contact_name || i.contact_phone || i.contact_email) {
+    h += `<section class="card info-card"><h2>Kontakt utleier</h2>
+      ${i.contact_name ? `<span class="big">${esc(i.contact_name)}</span>` : ''}
+      <div class="contact-btns">
+        ${i.contact_phone ? `<a class="btn" href="tel:${esc(i.contact_phone.replace(/\s/g, ''))}">Ring ${esc(i.contact_phone)}</a><a class="btn" href="sms:${esc(i.contact_phone.replace(/\s/g, ''))}">Send SMS</a>` : ''}
+        ${i.contact_email ? `<a class="btn" href="mailto:${esc(i.contact_email)}">E-post</a>` : ''}
+      </div>
+      <button class="btn ghost" data-act="info-sub" data-v="meld" style="margin-top:8px">Meld fra om et problem</button>
+    </section>`;
+  }
+  if (i.safety && i.safety.length) {
+    h += `<section class="card info-card"><h2>Sikkerhet</h2><div class="safety">${i.safety.map((s) => `<div class="safety-row"><span>${esc(s.name)}</span><span class="pill lvl-${s.level}">${esc(s.text)}</span></div>`).join('')}</div></section>`;
+  }
+  h += textCard('Søppel og henting', i.garbage) + textCard('Husregler', i.rules) + textCard('Ved nødstilfeller', i.emergency) + textCard('Annet', i.other);
+  if (!h) h = `<p class="intro">Utleier har ikke lagt inn informasjon ennå.</p>`;
+  return h;
+}
+
+function chartHTML(periods) {
+  const list = periods.slice(0, 12).reverse();
+  if (list.length < 2) return '';
+  const max = Math.max(...list.map((p) => p.kwh), 1);
+  const w = 100 / list.length;
+  const bars = list.map((p, i) => {
+    const hgt = Math.max(2, (p.kwh / max) * 100);
+    const label = new Date(p.to).toLocaleDateString('nb-NO', { month: 'short' }).replace('.', '');
+    return `<g><rect x="${i * w + w * 0.18}" y="${100 - hgt}" width="${w * 0.64}" height="${hgt}" rx="1.5" class="${p.paid ? 'bar-paid' : 'bar'}"><title>${esc(dateFmt(p.from))}–${esc(dateFmt(p.to))}: ${esc(kwhFmt(p.kwh))}</title></rect>
+      <text x="${i * w + w / 2}" y="112" text-anchor="middle" class="bar-label">${esc(label)}</text></g>`;
+  }).join('');
+  return `<section class="card info-card"><h2>Forbruk per periode</h2>
+    <svg class="chart" viewBox="0 0 100 116" preserveAspectRatio="none" role="img" aria-label="Strømforbruk per periode">${bars}</svg>
+    <span class="note">Høyeste: ${esc(kwhFmt(max))}</span></section>`;
+}
+
+function stromHTML() {
+  const e = S.m.electricity;
+  let h = '';
+  if (e.remind) h += `<div class="notice-soft">Det er snart månedsslutt – husk å lese av strømmåleren.</div>`;
+  h += `<section class="card info-card"><h2>Les av måleren</h2>
+    ${e.last ? `<span class="note">Forrige: ${esc(kwhFmt(e.last.value))} den ${esc(dateFmt(e.last.date))}</span>` : `<span class="note">Første avlesning blir startpunktet.</span>`}
+    <div class="reading-form">
+      <label class="field"><span class="field-label">Målerstand (kWh)</span><input class="input" type="number" inputmode="decimal" step="0.1" min="0" placeholder="F.eks. 12345" value="${esc(S.reading.value)}" data-field="reading-value"></label>
+      <label class="field"><span class="field-label">Dato</span><input class="input" type="date" value="${esc(S.reading.date)}" data-field="reading-date"></label>
+    </div>
+    <button class="btn primary big" data-act="reading-add">Lagre avlesning</button>
+    ${e.last && e.last.deletable ? `<button class="btn ghost" data-act="reading-delete" data-id="${e.last.id}">${S.confirmDelete ? 'Trykk igjen for å slette siste' : 'Slett siste avlesning'}</button>` : ''}
+    ${e.note ? `<p class="note pre">${esc(e.note)}</p>` : ''}
+  </section>`;
+  h += `<div class="stat-row">
+    <div class="card stat"><span class="field-label">Til betaling</span><span class="big">${esc(nok(e.unpaid))}</span></div>
+    <div class="card stat"><span class="field-label">Pris</span><span class="big">${e.price != null ? esc(nok(e.price)) + '<small>/kWh</small>' : 'Ikke satt'}</span></div>
+  </div>`;
+  h += chartHTML(e.periods);
+  if (e.periods.length) {
+    h += `<section><h2 class="group-title">Perioder</h2><div class="list">${e.periods.map((p) => `<div class="list-row period">
+      <span class="grow"><span class="t">${esc(dateFmt(p.from))} – ${esc(dateFmt(p.to))}</span><span class="s">${esc(kwhFmt(p.kwh))} · ${p.days} dager · ${esc(kwhFmt(p.per_day))}/dag</span></span>
+      <span class="amt"><span class="t">${esc(nok(p.amount))}</span><span class="pill ${p.paid ? 'lvl-ok' : 'lvl-warn'}">${p.paid ? 'Betalt' : 'Ikke betalt'}</span></span>
+    </div>`).join('')}</div></section>`;
+  }
+  return h;
+}
+
+function meldHTML() {
+  const m = S.m;
+  const f = S.report;
+  let h = `<section class="card info-card"><h2>Ny melding til utleier</h2>
+    <span class="field-label">Hva gjelder det?</span>
+    <div class="chips">${m.report_categories.map((c) => `<button class="chip" aria-pressed="${f.category === c}" data-act="report-cat" data-v="${esc(c)}">${esc(c)}</button>`).join('')}</div>
+    <label class="field"><span class="field-label">Beskriv problemet</span><textarea class="input area" rows="4" maxlength="2000" placeholder="F.eks. vasken på badet renner sakte unna" data-field="report-text">${esc(f.text)}</textarea></label>
+    <div class="row between"><span class="status">Haster</span><button class="switch" role="switch" aria-checked="${f.urgent}" aria-label="Haster" data-act="report-urgent"></button></div>
+    <button class="btn primary big" data-act="report-send">Send til utleier</button>
+  </section>`;
+  if (m.reports.length) {
+    h += `<section><h2 class="group-title">Dine meldinger</h2>`;
+    for (const r of m.reports) {
+      const [label, cls] = STATUS[r.status] || STATUS.new;
+      h += `<article class="card report ${r.unread ? 'unread' : ''}">
+        <div class="row between"><span class="t">${esc(r.category)}${r.urgent ? ' · <span class="urgent">haster</span>' : ''}</span><span class="pill ${cls}">${label}</span></div>
+        <span class="note">${esc(dateFmt(r.created))}</span>
+        <p class="pre">${esc(r.text)}</p>
+        ${r.updates.length ? `<div class="thread">${r.updates.map((u) => `<div class="msg ${u.from} ${u.status ? 'sys' : ''}"><span>${esc(u.text)}</span><small>${u.from === 'landlord' ? 'Utleier' : 'Deg'} · ${esc(dateFmt(u.at))}</small></div>`).join('')}</div>` : ''}
+        ${r.status !== 'done' ? `<div class="reply"><textarea class="input area" rows="2" maxlength="1000" placeholder="Skriv et svar …" data-field="reply" data-id="${r.id}">${esc(S.reply[r.id] || '')}</textarea><button class="chip-btn" data-act="report-reply" data-id="${r.id}">Send</button></div>` : ''}
+      </article>`;
+    }
+    h += `</section>`;
+  }
+  return h;
+}
+
 function tabsHTML() {
   const list = tabs();
   if (!list.some((t) => t.id === S.tab)) S.tab = list[0].id;
@@ -453,7 +598,9 @@ function tabsHTML() {
   else if (S.tab === 'scener') body = scenesTab();
   else if (S.tab === 'lys') body = lightsTab();
   else if (S.tab === 'klima') body = climateTab();
+  else if (S.tab === 'info') body = infoTab();
   else body = autoTab();
+  if (S.tab === 'info' && !S.m.entities.length) body = infoTab();
   return topHTML(title) + toastHTML() + body + navHTML();
 }
 
@@ -663,7 +810,7 @@ function render() {
   }
   if (!S.m) return;
   const ae = document.activeElement;
-  if (ae && ae.matches?.('input[type="text"], input[type="time"]') && $app.contains(ae)) return;
+  if (ae && ae.matches?.(TYPING) && $app.contains(ae)) return;
   if (S.view === 'scene' && !S.draft) S.view = 'settings';
   if (S.view === 'auto' && !S.adraft) S.view = 'tabs';
   const fid = ae?.dataset?.fid;
@@ -741,11 +888,58 @@ function setValueFor(e, next, draft, later = false) {
 function act(a, ds) {
   const m = S.m;
   const draft = ds.mode === 'draft';
-  if (a !== 'scene-delete' && a !== 'auto-delete') S.confirmDelete = false;
+  if (!['scene-delete', 'auto-delete', 'reading-delete'].includes(a)) S.confirmDelete = false;
   switch (a) {
     case 'relogin':
       location.reload();
       return;
+    case 'info-sub':
+      S.infoSub = ds.v;
+      if (ds.v === 'meld' && (S.m.reports || []).some((r) => r.unread)) {
+        S.m.reports.forEach((r) => { r.unread = false; });
+        cmd({ type: 'report_seen' });
+      }
+      if (S.tab !== 'info') { S.tab = 'info'; store.set('hybel-tab', 'info'); }
+      window.scrollTo(0, 0);
+      return render();
+    case 'copy':
+      try { navigator.clipboard.writeText(ds.v).then(() => showToast('Passordet er kopiert'), () => showToast('Kunne ikke kopiere', true)); } catch { showToast('Kunne ikke kopiere', true); }
+      return;
+    case 'report-cat':
+      S.report.category = ds.v;
+      return render();
+    case 'report-urgent':
+      S.report.urgent = !S.report.urgent;
+      return render();
+    case 'report-send': {
+      const f = S.report;
+      if (!f.category) return showToast('Velg hva det gjelder', true);
+      cmd({ type: 'report_create', category: f.category, text: f.text, urgent: f.urgent }).then((r) => {
+        if (!r.ok) return;
+        S.report = { category: null, text: '', urgent: false };
+        showToast('Meldingen er sendt til utleier');
+      });
+      return;
+    }
+    case 'report-reply': {
+      const text = (S.reply[ds.id] || '').trim();
+      if (!text) return;
+      cmd({ type: 'report_reply', id: ds.id, text }).then((r) => { if (r.ok) { S.reply[ds.id] = ''; showToast('Svaret er sendt'); } });
+      return;
+    }
+    case 'reading-add':
+      cmd({ type: 'reading_add', date: S.reading.date, value: S.reading.value }).then((r) => {
+        if (!r.ok) return;
+        S.reading = { date: new Date().toISOString().slice(0, 10), value: '' };
+        showToast('Avlesningen er lagret');
+      });
+      return;
+    case 'reading-delete':
+      if (!S.confirmDelete) { S.confirmDelete = true; return render(); }
+      S.confirmDelete = false;
+      cmd({ type: 'reading_delete', id: ds.id }).then((r) => r.ok && showToast('Siste avlesning er slettet'));
+      return;
+
     case 'tab':
       S.tab = ds.id;
       store.set('hybel-tab', ds.id);
@@ -923,7 +1117,7 @@ function act(a, ds) {
       return render();
     }
     case 'all-off':
-      for (const e of m.entities.filter((x) => x.kind === 'light')) {
+      for (const e of m.entities.filter((x) => x.kind === 'light' && x.in_all_off !== false)) {
         const cur = valueOf(e);
         if (cur > 0) S.lastBri[e.key] = cur;
         setPending(e.key, 0);
@@ -991,6 +1185,10 @@ $app.addEventListener('input', (ev) => {
   const t = ev.target;
   const f = t.dataset.field;
   if (f === 'scene-name') { S.draft.name = t.value; return; }
+  if (f === 'report-text') { S.report.text = t.value; return; }
+  if (f === 'reply') { S.reply[t.dataset.id] = t.value; return; }
+  if (f === 'reading-value') { S.reading.value = t.value; return; }
+  if (f === 'reading-date') { S.reading.date = t.value; return; }
   if (f === 'auto-time') { S.adraft.trigger.at = t.value; return; }
   if (f === 'win-from') { S.adraft.window.from = t.value; return; }
   if (f === 'win-to') { S.adraft.window.to = t.value; return; }
@@ -1015,7 +1213,7 @@ $app.addEventListener('change', (ev) => {
   if (ev.target.closest('input.range[data-key]')) endDrag();
 });
 $app.addEventListener('focusout', (ev) => {
-  if (ev.target.matches?.('input[type="text"], input[type="time"]')) setTimeout(render, 0);
+  if (ev.target.matches?.(TYPING)) setTimeout(render, 0);
 });
 
 connect();

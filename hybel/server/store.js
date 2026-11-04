@@ -2,6 +2,7 @@
 import { readFileSync, writeFileSync, renameSync, mkdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { log } from './log.js';
+import { defaultExtras } from './extras.js';
 
 export function defaultData() {
   return {
@@ -19,7 +20,8 @@ export function defaultData() {
     auto_last: {},
     reverts: [],
     tenant_order: [],
-    sun_cache: {}
+    sun_cache: {},
+    ...defaultExtras()
   };
 }
 
@@ -45,7 +47,11 @@ export class Store {
         auto_last: migrated.auto_last || {},
         reverts: migrated.reverts || [],
         tenant_order: migrated.tenant_order || [],
-        sun_cache: migrated.sun_cache || {}
+        sun_cache: migrated.sun_cache || {},
+        info: { ...base.info, ...(migrated.info || {}) },
+        electricity: { ...base.electricity, ...(migrated.electricity || {}) },
+        reports: migrated.reports || [],
+        readings: migrated.readings || []
       };
       if (raw.version !== 2) this.save();
     } catch (err) {
