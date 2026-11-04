@@ -718,6 +718,7 @@ window.addEventListener('beforeunload', (e) => {
 async function refresh(full = false) {
   try {
     const st = await api('api/admin/state');
+    if (A.st && A.st.build && st.build && st.build !== A.st.build && !A.dirty) { location.reload(); return; }
     A.st = st;
     if (full || !A.cfg || !A.dirty) {
       const first = !A.cfg;

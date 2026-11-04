@@ -1,5 +1,10 @@
 # Endringslogg
 
+## 0.6.2
+
+- Åpne sider (også appen på Hjem-skjermen) laster seg automatisk inn på nytt når appen er oppdatert, så nye funksjoner vises uten å lukke appen.
+- Første husleie forfaller på innflyttingsdagen når den er etter vanlig forfallsdag.
+
 ## 0.6.1
 
 - «Send testvarsel» under «Varsle meg» på utleiersiden viser om varselet kom fram til telefonen og til bjella i Home Assistant.

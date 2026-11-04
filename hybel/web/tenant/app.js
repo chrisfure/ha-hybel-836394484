@@ -107,7 +107,13 @@ function connect() {
   es.onmessage = (e) => {
     S.fails = 0;
     S.conn = 'ok';
-    S.m = JSON.parse(e.data);
+    const next = JSON.parse(e.data);
+    // Appen er oppdatert på serveren: last inn ny versjon (vent hvis noen skriver).
+    if (S.m && S.m.build && next.build && next.build !== S.m.build) {
+      const ae = document.activeElement;
+      if (!(ae && ae.matches?.(TYPING))) { location.reload(); return; }
+    }
+    S.m = next;
     prunePending();
     render();
   };

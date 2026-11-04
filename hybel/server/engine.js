@@ -4,6 +4,21 @@ import { createHash, randomBytes } from 'node:crypto';
 import { defaultData } from './store.js';
 import { log } from './log.js';
 import { Extras } from './extras.js';
+import { readdirSync, readFileSync as readF } from 'node:fs';
+import { join as pjoin, dirname as pdir } from 'node:path';
+import { fileURLToPath as f2p } from 'node:url';
+
+// Fingeravtrykk av nettsidene: endres ved hver oppdatering, så åpne sider kan laste seg inn på nytt.
+const BUILD = (() => {
+  const h = createHash('sha1');
+  const root = process.env.WEB_ROOT || pjoin(pdir(f2p(import.meta.url)), '..', 'web');
+  try {
+    for (const dir of ['tenant', 'admin', 'shared']) {
+      for (const f of readdirSync(pjoin(root, dir)).sort()) if (/\.(js|css|html)$/.test(f)) h.update(readF(pjoin(root, dir, f)));
+    }
+  } catch {}
+  return h.digest('hex').slice(0, 10);
+})();
 
 export const KINDS = ['light', 'heat', 'vent', 'climate', 'button'];
 export const VENT_MODES = ['away', 'low', 'normal', 'high'];
@@ -793,6 +808,7 @@ export class Engine extends EventEmitter {
     const d = this.data;
     const sunToday = d.sun_cache[dateKey(new Date())] || {};
     return {
+      build: BUILD,
       connected: this.ha.connected,
       can_edit: d.tenant_can_edit_scenes,
       icons: ICONS,
@@ -849,6 +865,7 @@ export class Engine extends EventEmitter {
     const d = this.data;
     const labels = new Map(d.entities.map((e) => [e.entity_id, e.label]));
     return {
+      build: BUILD,
       entities: d.entities.map((e) => {
         const st = this.state(e);
         return { ...e, available: !unavailable(st), value: e.enabled ? this.currentValue(e) : null, friendly_name: st?.attributes?.friendly_name || e.entity_id };

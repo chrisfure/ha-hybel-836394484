@@ -89,7 +89,12 @@ export class Lease {
     const months = [];
     for (let m = first, i = 0; m <= last && i < 240; m = addMonths(m, 1), i++) months.push(m);
     if (!months.length) return [];
-    const rows = months.map((m) => ({ month: m, due: dueDate(m, l.due_day), rent: null, electricity: [] }));
+    // Første husleie forfaller ved innflytting hvis det er etter vanlig forfallsdag den måneden.
+    const rows = months.map((m) => {
+      let due = dueDate(m, l.due_day);
+      if (l.start && m === monthKey(l.start) && l.start > due) due = l.start;
+      return { month: m, due, rent: null, electricity: [] };
+    });
     for (const p of periods) {
       const row = rows.find((r) => r.due > p.to) || rows[rows.length - 1];
       if (row.due < p.to && !(l.end && p.to >= l.end)) continue; // avlest etter siste forfall – kommer med neste måned
