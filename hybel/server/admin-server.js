@@ -80,7 +80,16 @@ export function startAdminServer({ engine, ha, webRoot, port, tenantHub, devOpen
       if (ok && /^(binary_sensor|sensor)\./.test(id)) safety.push({ entity_id: id, name: a.friendly_name || id, state: st.state });
     }
     safety.sort((x, y) => x.name.localeCompare(y.name, 'nb'));
-    return { entities: list, notify_services: notify, temp_sensors, safety };
+    // Strømmålere (kWh totalt) for automatisk avlesning.
+    const meters = [];
+    for (const [id, st] of ha.states) {
+      const a = st.attributes || {};
+      if (id.startsWith('sensor.') && a.device_class === 'energy' && ['kWh', 'Wh', 'MWh'].includes(a.unit_of_measurement) && a.state_class !== 'measurement') {
+        meters.push({ entity_id: id, name: a.friendly_name || id, state: `${st.state} ${a.unit_of_measurement}` });
+      }
+    }
+    meters.sort((x, y) => x.name.localeCompare(y.name, 'nb'));
+    return { entities: list, notify_services: notify, temp_sensors, safety, meters };
   }
 
   const server = http.createServer(async (req, res) => {
@@ -106,6 +115,16 @@ export function startAdminServer({ engine, ha, webRoot, port, tenantHub, devOpen
         const body = await readJson(req);
         try {
           engine.extras.adminUpdateReport(body);
+          engine.changed();
+          return sendJson(res, 200, { ok: true, state: engine.adminView({ tenant_clients: tenantHub.size }) });
+        } catch (err) {
+          return sendJson(res, 400, { ok: false, error: err.message });
+        }
+      }
+      if (p === '/api/admin/payment' && req.method === 'POST') {
+        const body = await readJson(req);
+        try {
+          engine.extras.lease.setPaid(body.month, body.paid);
           engine.changed();
           return sendJson(res, 200, { ok: true, state: engine.adminView({ tenant_clients: tenantHub.size }) });
         } catch (err) {
@@ -144,7 +163,7 @@ export function startAdminServer({ engine, ha, webRoot, port, tenantHub, devOpen
       if (p === '/api/admin/reading' && req.method === 'POST') {
         const body = await readJson(req);
         try {
-          if (body.add) engine.extras.addReading(body.add, true);
+          if (body.add) engine.extras.addReading(body.add, 'landlord');
           else if (body.delete) engine.extras.deleteLastReading(body.id, true);
           else engine.extras.setPaid(body.id, body.paid);
           engine.changed();

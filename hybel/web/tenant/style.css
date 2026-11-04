@@ -259,3 +259,21 @@ button, .range, .switch { touch-action: manipulation; }
 .cl-row.ok .t { color: var(--muted); }
 .mail-to { display: flex; align-items: center; justify-content: space-between; gap: 10px; background: var(--bg); border-radius: 14px; padding: 8px 8px 8px 14px; font-size: 14px; overflow-wrap: anywhere; }
 .mail-card .btn.ghost { text-align: center; text-decoration: none; display: flex; align-items: center; justify-content: center; }
+
+/* ---------- leieforhold ---------- */
+.notice-soft.bad { background: #FBE3DA; border-color: #E7B9A6; color: #7A2A12; }
+.pill.lvl-bad { background: #FBE3DA; color: #7A2A12; }
+.next-pay { gap: 6px; }
+.pay-total { font-family: var(--serif); font-size: 34px; font-weight: 600; letter-spacing: -.01em; }
+.pay-lines { display: flex; flex-direction: column; border-top: 1px solid var(--line); margin-top: 2px; }
+.pay-line { display: flex; justify-content: space-between; gap: 12px; padding: 8px 0; border-bottom: 1px solid var(--line); font-size: 14.5px; }
+.pay-line small { display: block; font-size: 12.5px; color: var(--muted); }
+.pay-line > span:last-child { font-weight: 600; white-space: nowrap; font-variant-numeric: tabular-nums; }
+.lease-left { display: flex; flex-direction: column; gap: 6px; padding: 12px 14px; background: var(--teal-soft); border-radius: 16px; margin-bottom: 6px; }
+.lease-left.warn { background: var(--amber-soft); }
+.lease-left .big { font-size: 20px; }
+.kv { display: flex; flex-direction: column; }
+.kv-row { display: flex; justify-content: space-between; gap: 12px; padding: 9px 0; border-bottom: 1px solid var(--line); font-size: 14.5px; align-items: center; }
+.kv-row:last-child { border-bottom: 0; }
+.kv-row > span:first-child { color: var(--muted); flex: none; }
+.kv-row > span:last-child { text-align: right; font-weight: 500; }

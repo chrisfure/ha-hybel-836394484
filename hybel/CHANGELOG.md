@@ -1,5 +1,13 @@
 # Endringslogg
 
+## 0.6.0
+
+- **Leieforhold**: husleie, forfallsdag, kontonummer, depositum, innflytting, kontraktsslutt, oppsigelsestid og hva som er inkludert – settes på utleiersiden.
+- Leietaker får fanen **Leie** (tidligere Strøm) med neste betaling (husleie + strøm på etterskudd), betalingshistorikk, nedtelling til kontraktsslutt og frist for oppsigelse.
+- Utleier markerer måneder som betalt; strømperiodene i måneden følger med.
+- Påminnelse til leietaker før forfall, og varsel til begge 90 og 30 dager før kontrakten utløper.
+- Valgfri **automatisk strømavlesning** fra en kWh-måler i Home Assistant siste dag i måneden.
+
 ## 0.5.1
 
 - Sjekklisten kan lastes ned som **PDF** med alle merknader, bilder, tidspunkter og hvem som sendte inn, pluss et fingeravtrykk av innholdet.

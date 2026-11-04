@@ -945,12 +945,15 @@ export class Engine extends EventEmitter {
     d.boost = null;
     d.last_tenant_activity = null;
     // Ta vare på forrige leietakers strøm og meldinger i et arkiv.
-    if (d.readings?.length || d.reports?.length || d.checklists?.length) {
-      d.archive = [...(d.archive || []), { at: new Date().toISOString(), readings: d.readings || [], reports: d.reports || [], checklists: d.checklists || [] }].slice(-10);
+    if (d.readings?.length || d.reports?.length || d.checklists?.length || Object.keys(d.payments || {}).length) {
+      d.archive = [...(d.archive || []), { at: new Date().toISOString(), readings: d.readings || [], reports: d.reports || [], checklists: d.checklists || [], payments: d.payments || {}, lease: d.lease ? { ...d.lease } : null }].slice(-10);
     }
     d.readings = [];
     d.reports = [];
     d.checklists = [];
+    d.payments = {};
+    d.lease_flags = {};
+    if (d.lease) { d.lease.start = ''; d.lease.end = ''; }
     d.push_subs = []; // forrige leietakers telefoner skal ikke få varsler
     this.ensureScenes();
     this.store.save();

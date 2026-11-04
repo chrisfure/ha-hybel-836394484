@@ -5,6 +5,7 @@ import { join } from 'node:path';
 import { log } from './log.js';
 import { loadVapid, sendPush } from './webpush.js';
 import { Checklists, DEFAULT_TEMPLATE, parseTemplate, templateToText } from './checklist.js';
+import { Lease, defaultLease } from './lease.js';
 
 export const REPORT_CATEGORIES = ['Vann og rør', 'Elektrisk', 'Varme og ventilasjon', 'Hvitevarer', 'Dører, vinduer og lås', 'Annet'];
 export const REPORT_STATUS = ['new', 'in_progress', 'done'];
@@ -27,7 +28,10 @@ export function defaultExtras() {
     push_reminded: '',
     checklists: [],
     checklist_template: null,
-    photo_pending: {}
+    photo_pending: {},
+    lease: defaultLease(),
+    payments: {},
+    lease_flags: {}
   };
 }
 
@@ -39,6 +43,7 @@ export class Extras {
     try { mkdirSync(this.photoDir, { recursive: true }); } catch {}
     try { this.vapid = loadVapid(this.dir); } catch (err) { log.warn('Pushvarsler er ikke tilgjengelige:', err.message); }
     this.checklists = new Checklists(this);
+    this.lease = new Lease(this);
   }
 
   save() {
@@ -138,6 +143,7 @@ export class Extras {
       }
     }
     if (ch) this.save();
+    this.lease.tick();
   }
 
   get d() {
@@ -166,6 +172,7 @@ export class Extras {
   }
 
   saveInfo(body, errors) {
+    this.lease.save(body, errors);
     if (!body.info) return;
     const i = body.info;
     const info = this.d.info;
@@ -267,7 +274,8 @@ export class Extras {
 
   // ---------- strøm ----------
 
-  addReading(cmd, admin = false) {
+  addReading(cmd, by = 'tenant') {
+    if (by === true) by = 'landlord';
     const date = isDate(cmd.date) ? cmd.date : new Date().toISOString().slice(0, 10);
     const value = Math.round(Number(String(cmd.value).replace(',', '.')) * 10) / 10;
     if (!Number.isFinite(value) || value < 0 || value > 10_000_000) throw new Error('Ugyldig målerstand');
@@ -279,10 +287,10 @@ export class Extras {
       if (value - prev.value > 20000) throw new Error('Forbruket ser urimelig høyt ut – sjekk tallet');
     }
     const reading = { id: newId(), date, value, price: this.d.electricity.price_per_kwh, paid: false, at: new Date().toISOString() };
-    if (admin) reading.by = 'landlord';
+    if (by !== 'tenant') reading.by = by;
     list.push(reading);
     this.engine.store.save();
-    if (admin) return;
+    if (by === 'landlord') return;
     const p = this.d.electricity.price_per_kwh;
     const fmtD = (x) => x.split('-').reverse().join('.');
     let msg;
@@ -293,7 +301,7 @@ export class Extras {
       msg = `Første avlesning: ${String(value).replace('.', ',')} kWh (${fmtD(date)}).`;
     }
     const id = list[list.length - 1].id;
-    this.engine.notify(msg, { title: 'Strøm lest av i hybelen', inbox: true, id: `strom_${id}`, event: 'strom' }).catch((e) => log.warn('Varsling feilet:', e.message));
+    this.engine.notify(msg, { title: by === 'auto' ? 'Strøm lest av automatisk' : 'Strøm lest av i hybelen', inbox: true, id: `strom_${id}`, event: 'strom' }).catch((e) => log.warn('Varsling feilet:', e.message));
   }
 
   deleteLastReading(id, admin = false) {
@@ -339,7 +347,7 @@ export class Extras {
     return {
       price: this.d.electricity.price_per_kwh,
       note: this.d.electricity.note,
-      last: last ? { id: last.id, date: last.date, value: last.value, by: last.by || 'tenant', deletable: last.by !== 'landlord' && !last.paid && Date.now() - new Date(last.at).getTime() < 7 * 86400000 } : null,
+      last: last ? { id: last.id, date: last.date, value: last.value, by: last.by || 'tenant', deletable: !last.by && !last.paid && Date.now() - new Date(last.at).getTime() < 7 * 86400000 } : null,
       periods,
       unpaid: Math.round(periods.filter((p) => !p.paid && p.amount != null).reduce((s, p) => s + p.amount, 0) * 100) / 100,
       remind
@@ -354,6 +362,7 @@ export class Extras {
       report_categories: REPORT_CATEGORIES,
       electricity: this.electricityView(),
       checklists: this.checklists.view(),
+      lease: this.lease.view(),
       push: { key: this.vapid?.publicKey || null, devices: this.d.push_subs.length }
     };
   }
@@ -364,6 +373,7 @@ export class Extras {
       reports: this.d.reports,
       electricity: { ...this.electricityView(), readings: this.d.readings },
       checklists: this.checklists.view(),
+      lease: { ...this.lease.view(), settings: this.d.lease },
       checklist_template: templateToText(this.d.checklist_template?.length ? this.d.checklist_template : DEFAULT_TEMPLATE),
       push_devices: this.d.push_subs.map((x) => ({ device: x.device, created: x.created }))
     };

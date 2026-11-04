@@ -473,10 +473,10 @@ function infoTab() {
   const m = S.m;
   const unread = (m.reports || []).filter((r) => r.unread).length;
   const cls = m.checklists || [];
-  const subs = [['info', 'Info'], ['strom', 'Strøm'], ['meld', 'Meldinger']];
+  const subs = [['info', 'Info'], ['strom', 'Leie'], ['meld', 'Meldinger']];
   if (cls.length) subs.push(['sjekk', 'Sjekkliste']);
   if (S.infoSub === 'sjekk' && !cls.length) S.infoSub = 'info';
-  const dot = (k) => (k === 'strom' && m.electricity.remind) || (k === 'meld' && unread > 0) || (k === 'sjekk' && cls.some((c) => c.status === 'open' || c.unread));
+  const dot = (k) => (k === 'strom' && (m.electricity.remind || (m.lease && m.lease.overdue.length))) || (k === 'meld' && unread > 0) || (k === 'sjekk' && cls.some((c) => c.status === 'open' || c.unread));
   let h = `<div class="seg subnav ${subs.length > 3 ? 'four' : ''}" style="grid-template-columns: repeat(${subs.length}, minmax(0, 1fr))">${subs.map(([k, l]) => `<button aria-pressed="${S.infoSub === k}" data-act="info-sub" data-v="${k}">${esc(l)}${dot(k) ? ' •' : ''}</button>`).join('')}</div>`;
   if (S.infoSub === 'strom') h += stromHTML();
   else if (S.infoSub === 'meld') h += meldHTML();
@@ -544,29 +544,91 @@ function chartHTML(periods) {
     <span class="note">Høyeste: ${esc(kwhFmt(max))}</span></section>`;
 }
 
+const LSTAT = { paid: ['Betalt', 'lvl-ok'], overdue: ['Forfalt', 'lvl-bad'], soon: ['Snart', 'lvl-warn'], upcoming: ['Kommende', ''] };
+const longDate = (d) => new Date(d).toLocaleDateString('nb-NO', { day: 'numeric', month: 'long', year: 'numeric' });
+const elSum = (r) => r.electricity.reduce((s, p) => s + (p.amount || 0), 0);
+
+function payLines(r) {
+  let h = '';
+  if (r.rent) h += `<div class="pay-line"><span>Husleie ${esc(r.label.split(' ')[0])}</span><span>${esc(nok(r.rent))}</span></div>`;
+  for (const p of r.electricity) h += `<div class="pay-line"><span>Strøm ${esc(dateFmt(p.from))} – ${esc(dateFmt(p.to))}<small>${esc(kwhFmt(p.kwh))}${p.price != null ? ` × ${esc(nok(p.price))}` : ''}</small></span><span>${esc(nok(p.amount))}</span></div>`;
+  return h;
+}
+
+function contractHTML(c) {
+  const rows = [];
+  if (c.start) rows.push(['Innflytting', longDate(c.start)]);
+  rows.push(['Kontrakt til', c.end ? longDate(c.end) : 'Tidsubestemt']);
+  if (c.notice_months) rows.push(['Oppsigelsestid', `${c.notice_months} måned${c.notice_months === 1 ? '' : 'er'}`]);
+  if (c.rent) rows.push(['Husleie', `${nok(c.rent)} per måned, forfall den ${c.due_day}.`]);
+  if (c.deposit) rows.push(['Depositum', `${nok(c.deposit)}${c.deposit_note ? ` – ${c.deposit_note}` : ''}`]);
+  if (c.account) rows.push(['Kontonummer', c.account]);
+  let h = `<section class="card info-card"><h2>Leieforholdet</h2>`;
+  if (c.end && c.days_left != null) {
+    const total = c.start ? Math.max(1, c.days_in + c.days_left) : null;
+    const pct = total ? Math.min(100, Math.round((c.days_in / total) * 100)) : null;
+    h += `<div class="lease-left ${c.days_left <= 90 ? 'warn' : ''}"><span class="big">${c.days_left >= 0 ? `${c.days_left} dager igjen` : 'Kontrakten er utløpt'}</span>
+      ${pct != null ? `<div class="progress"><span style="width:${pct}%"></span></div>` : ''}
+      ${c.notice_by && c.days_left >= 0 ? `<span class="note">Si fra innen ${esc(longDate(c.notice_by))} om du vil flytte eller forlenge (${c.notice_months} mnd oppsigelse).</span>` : ''}</div>`;
+  }
+  h += `<div class="kv">${rows.map(([k, v]) => `<div class="kv-row"><span>${esc(k)}</span><span>${esc(v)}${k === 'Kontonummer' ? ` <button class="chip-btn" data-act="copy" data-v="${esc(v.replace(/\s/g, ''))}" data-msg="Kontonummeret er kopiert">Kopier</button>` : ''}</span></div>`).join('')}</div>`;
+  if (c.includes) h += `<span class="field-label">Inkludert i leien</span><p class="pre">${esc(c.includes)}</p>`;
+  if (c.note) h += `<p class="pre note">${esc(c.note)}</p>`;
+  return h + `</section>`;
+}
+
 function stromHTML() {
   const e = S.m.electricity;
+  const L = S.m.lease;
+  const c = L && L.contract;
   let h = '';
-  if (e.remind) h += `<div class="notice-soft">Det er snart månedsslutt – husk å lese av strømmåleren.</div>`;
-  h += `<section class="card info-card"><h2>Les av måleren</h2>
-    ${e.last ? `<span class="note">${e.last.by === 'landlord' ? 'Startavlesning (lagt inn av utleier)' : 'Forrige'}: ${esc(kwhFmt(e.last.value))} den ${esc(dateFmt(e.last.date))}</span>` : `<span class="note">Første avlesning blir startpunktet.</span>`}
-    <div class="reading-form">
-      <label class="field"><span class="field-label">Målerstand (kWh)</span><input class="input" type="number" inputmode="decimal" step="0.1" min="0" placeholder="F.eks. 12345" value="${esc(S.reading.value)}" data-field="reading-value"></label>
-      <label class="field"><span class="field-label">Dato</span><input class="input" type="date" value="${esc(S.reading.date)}" data-field="reading-date"></label>
-    </div>
-    <button class="btn primary big" data-act="reading-add">Lagre avlesning</button>
-    ${e.last && e.last.deletable ? `<button class="btn ghost" data-act="reading-delete" data-id="${e.last.id}">${S.confirmDelete ? 'Trykk igjen for å slette siste' : 'Slett siste avlesning'}</button>` : ''}
-    ${e.note ? `<p class="note pre">${esc(e.note)}</p>` : ''}
-  </section>`;
-  h += `<div class="stat-row">
-    <div class="card stat"><span class="field-label">Til betaling</span><span class="big">${esc(nok(e.unpaid))}</span></div>
-    <div class="card stat"><span class="field-label">Pris</span><span class="big">${e.price != null ? esc(nok(e.price)) + '<small>/kWh</small>' : 'Ikke satt'}</span></div>
-  </div>`;
+  if (L && L.overdue.length) h += `<div class="notice-soft bad">Ikke registrert betalt: ${L.overdue.map((o) => `${esc(o.label)} (${esc(nok(o.total))})`).join(', ')}. Har du betalt, kan utleier markere det.</div>`;
+  if (e.remind && !(c && c.auto_meter)) h += `<div class="notice-soft">Det er snart månedsslutt – husk å lese av strømmåleren.</div>`;
+  if (L && L.next) {
+    const n = L.next;
+    const days = Math.round((new Date(n.due) - new Date(new Date().toDateString())) / 86400000);
+    h += `<section class="card info-card next-pay"><span class="field-label">Neste betaling · ${esc(longDate(n.due))}${days >= 0 ? ` (${days === 0 ? 'i dag' : `om ${days} dag${days === 1 ? '' : 'er'}`})` : ''}</span>
+      <span class="pay-total">${esc(nok(n.total))}</span>
+      <div class="pay-lines">${payLines(n)}</div>
+      ${c.rent && !n.electricity.length && e.price != null ? `<p class="note">Strøm for siste periode kommer i tillegg når måleren er lest av.</p>` : ''}
+      ${c.account ? `<div class="mail-to"><span>Kontonr. <strong>${esc(c.account)}</strong></span><button class="chip-btn" data-act="copy" data-v="${esc(c.account.replace(/\s/g, ''))}" data-msg="Kontonummeret er kopiert">Kopier</button></div>` : ''}
+    </section>`;
+  }
+  if (c && c.auto_meter) {
+    h += `<section class="card info-card"><h2>Strømmåler</h2><p class="note">Måleren leses av automatisk siste dag i hver måned.${e.last ? ` Siste avlesning: ${esc(kwhFmt(e.last.value))} den ${esc(dateFmt(e.last.date))}.` : ''}</p>${e.note ? `<p class="note pre">${esc(e.note)}</p>` : ''}</section>`;
+  } else {
+    h += `<section class="card info-card"><h2>Les av måleren</h2>
+      ${e.last ? `<span class="note">${e.last.by === 'landlord' ? 'Startavlesning (lagt inn av utleier)' : 'Forrige'}: ${esc(kwhFmt(e.last.value))} den ${esc(dateFmt(e.last.date))}</span>` : `<span class="note">Første avlesning blir startpunktet.</span>`}
+      <div class="reading-form">
+        <label class="field"><span class="field-label">Målerstand (kWh)</span><input class="input" type="number" inputmode="decimal" step="0.1" min="0" placeholder="F.eks. 12345" value="${esc(S.reading.value)}" data-field="reading-value"></label>
+        <label class="field"><span class="field-label">Dato</span><input class="input" type="date" value="${esc(S.reading.date)}" data-field="reading-date"></label>
+      </div>
+      <button class="btn primary big" data-act="reading-add">Lagre avlesning</button>
+      ${e.last && e.last.deletable ? `<button class="btn ghost" data-act="reading-delete" data-id="${e.last.id}">${S.confirmDelete ? 'Trykk igjen for å slette siste' : 'Slett siste avlesning'}</button>` : ''}
+      ${e.note ? `<p class="note pre">${esc(e.note)}</p>` : ''}
+    </section>`;
+  }
+  if (c && (c.start || c.end || c.rent || c.deposit)) h += contractHTML(c);
+  if (L && L.ledger.length && c.rent) {
+    h += `<section><h2 class="group-title">Betalinger${L.year_total ? ` <span class="gt-count">Betalt i år: ${esc(nok(L.year_total))}</span>` : ''}</h2><div class="list">${L.ledger.map((r) => {
+      const [lab, cls] = LSTAT[r.status];
+      const el = elSum(r);
+      return `<div class="list-row period">
+        <span class="grow"><span class="t">${esc(r.label.charAt(0).toUpperCase() + r.label.slice(1))}</span><span class="s">Forfall ${esc(dateFmt(r.due))}${r.rent ? ` · leie ${esc(nok(r.rent))}` : ''}${el ? ` · strøm ${esc(nok(el))}` : ''}</span></span>
+        <span class="amt"><span class="t">${esc(nok(r.total))}</span><span class="pill ${cls}">${lab}</span></span>
+      </div>`;
+    }).join('')}</div></section>`;
+  } else {
+    h += `<div class="stat-row">
+      <div class="card stat"><span class="field-label">Til betaling</span><span class="big">${esc(nok(e.unpaid))}</span></div>
+      <div class="card stat"><span class="field-label">Pris</span><span class="big">${e.price != null ? esc(nok(e.price)) + '<small>/kWh</small>' : 'Ikke satt'}</span></div>
+    </div>`;
+  }
   h += chartHTML(e.periods);
   if (e.periods.length) {
-    h += `<section><h2 class="group-title">Perioder</h2><div class="list">${e.periods.map((p) => `<div class="list-row period">
+    h += `<section><h2 class="group-title">Strømforbruk</h2><div class="list">${e.periods.map((p) => `<div class="list-row period">
       <span class="grow"><span class="t">${esc(dateFmt(p.from))} – ${esc(dateFmt(p.to))}</span><span class="s">${esc(kwhFmt(p.kwh))} · ${p.days} dager · ${esc(kwhFmt(p.per_day))}/dag</span></span>
-      <span class="amt"><span class="t">${esc(nok(p.amount))}</span><span class="pill ${p.paid ? 'lvl-ok' : 'lvl-warn'}">${p.paid ? 'Betalt' : 'Ikke betalt'}</span></span>
+      <span class="amt"><span class="t">${esc(nok(p.amount))}</span>${c && c.rent ? '' : `<span class="pill ${p.paid ? 'lvl-ok' : 'lvl-warn'}">${p.paid ? 'Betalt' : 'Ikke betalt'}</span>`}</span>
     </div>`).join('')}</div></section>`;
   }
   return h;

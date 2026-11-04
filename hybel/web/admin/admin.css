@@ -149,3 +149,4 @@
 .mono-area { font-family: var(--mono); font-size: 13px; }
 .sbtn:disabled { opacity: .45; cursor: default; }
 a.sbtn { display: inline-flex; align-items: center; text-decoration: none; color: inherit; }
+.pill2.bad { background: #FBE3DA; color: #7A2A12; }
