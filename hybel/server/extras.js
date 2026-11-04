@@ -81,7 +81,7 @@ export class Extras {
     const r = { id: newId(), created: new Date().toISOString(), category, text, urgent: Boolean(cmd.urgent), status: 'new', updates: [], tenant_unread: false };
     this.d.reports.unshift(r);
     this.engine.store.save();
-    this.engine.notify(`${r.urgent ? 'HASTER – ' : ''}Ny melding fra hybel (${category}): ${text.slice(0, 140)}`).catch((e) => log.warn('Varsling feilet:', e.message));
+    this.engine.notify(`${category}: ${text.slice(0, 300)}`, { title: r.urgent ? 'HASTER – melding fra hybel' : 'Melding fra hybel', inbox: true, id: `melding_${r.id}`, event: 'melding' }).catch((e) => log.warn('Varsling feilet:', e.message));
   }
 
   tenantReply(cmd) {
@@ -92,7 +92,7 @@ export class Extras {
     r.updates.push({ from: 'tenant', text, at: new Date().toISOString() });
     if (r.status === 'done') r.status = 'new';
     this.engine.store.save();
-    this.engine.notify(`Svar fra hybel (${r.category}): ${text.slice(0, 140)}`).catch(() => {});
+    this.engine.notify(`${r.category} – «${r.text.slice(0, 60)}»\n\nLeietaker svarer: ${text.slice(0, 300)}`, { title: 'Svar fra hybel', inbox: true, id: `melding_${r.id}`, event: 'svar' }).catch(() => {});
   }
 
   markSeen() {
@@ -106,6 +106,7 @@ export class Extras {
     if (!r) throw new Error('Meldingen finnes ikke');
     if (body.delete === true) {
       this.d.reports = this.d.reports.filter((x) => x.id !== r.id);
+      this.engine.dismissNotice(`melding_${r.id}`);
       this.engine.store.save();
       return;
     }
@@ -114,6 +115,7 @@ export class Extras {
       r.updates.push({ from: 'landlord', text: `Status: ${STATUS_LABEL[body.status]}`, at: new Date().toISOString(), status: true });
       r.tenant_unread = true;
     }
+    if (r.status !== 'new') this.engine.dismissNotice(`melding_${r.id}`);
     const text = str(body.reply, 1000);
     if (text) {
       r.updates.push({ from: 'landlord', text, at: new Date().toISOString() });
@@ -137,11 +139,17 @@ export class Extras {
     }
     list.push({ id: newId(), date, value, price: this.d.electricity.price_per_kwh, paid: false, at: new Date().toISOString() });
     this.engine.store.save();
+    const p = this.d.electricity.price_per_kwh;
+    const fmtD = (x) => x.split('-').reverse().join('.');
+    let msg;
     if (prev) {
       const kwh = Math.round((value - prev.value) * 10) / 10;
-      const p = this.d.electricity.price_per_kwh;
-      this.engine.notify(`Strøm lest av i hybelen: ${kwh} kWh siden ${prev.date}${p != null ? ` = ${(kwh * p).toFixed(2).replace('.', ',')} kr` : ''}`).catch(() => {});
+      msg = `Målerstand ${String(value).replace('.', ',')} kWh (${fmtD(date)}).\nForbruk ${String(kwh).replace('.', ',')} kWh siden ${fmtD(prev.date)}${p != null ? ` = ${(kwh * p).toFixed(2).replace('.', ',')} kr` : ''}.`;
+    } else {
+      msg = `Første avlesning: ${String(value).replace('.', ',')} kWh (${fmtD(date)}).`;
     }
+    const id = list[list.length - 1].id;
+    this.engine.notify(msg, { title: 'Strøm lest av i hybelen', inbox: true, id: `strom_${id}`, event: 'strom' }).catch((e) => log.warn('Varsling feilet:', e.message));
   }
 
   deleteLastReading(id, admin = false) {
@@ -151,6 +159,7 @@ export class Extras {
     if (!admin && last.paid) throw new Error('Avlesningen er markert som betalt');
     if (!admin && Date.now() - new Date(last.at).getTime() > 7 * 86400000) throw new Error('Avlesninger eldre enn en uke kan bare slettes av utleier');
     list.pop();
+    this.engine.dismissNotice(`strom_${last.id}`);
     this.engine.store.save();
   }
 
@@ -158,6 +167,7 @@ export class Extras {
     const r = this.d.readings.find((x) => x.id === id);
     if (!r) throw new Error('Finner ikke avlesningen');
     r.paid = Boolean(paid);
+    if (r.paid) this.engine.dismissNotice(`strom_${r.id}`);
     this.engine.store.save();
   }
 

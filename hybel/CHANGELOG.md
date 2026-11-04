@@ -1,5 +1,11 @@
 # Endringslogg
 
+## 0.4.1
+
+- Nye meldinger, svar fra leietaker og strømavlesninger havner nå alltid som varsel i Home Assistant (bjella), også når push til telefon er satt opp.
+- Varselet forsvinner av seg selv når du setter status på meldingen eller markerer strømmen som betalt.
+- Hendelsen `hybel_varsel` (type `melding`, `svar` eller `strom`) fyres, så du kan lage egne automasjoner på den.
+
 ## 0.4.0
 
 - Ny fane **Info** for leietaker: wifi med QR-kode, kontakt til utleier, status fra røykvarslere/sensorer, søppel, husregler og nødinfo.

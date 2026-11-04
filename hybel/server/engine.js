@@ -969,14 +969,30 @@ export class Engine extends EventEmitter {
     }
   }
 
-  async notify(message) {
+  // Varsel til utleier. Med inbox=true havner det alltid også i Home Assistant (bjella), i tillegg til
+  // eventuell push-tjeneste, og det fyres en hendelse «hybel_varsel» som kan brukes i egne automasjoner.
+  async notify(message, opts = {}) {
     const svc = this.data.alerts.notify_service;
     log.info('Varsel:', message);
+    const title = opts.title || 'Hybel';
+    const jobs = [];
     if (svc) {
       const [domain, service] = svc.split('.');
-      return this.ha.callService(domain, service, { title: 'Hybel', message });
+      jobs.push(this.ha.callService(domain, service, { title, message }));
     }
-    return this.ha.callService('persistent_notification', 'create', { title: 'Hybel', message });
+    if (!svc || opts.inbox) {
+      const data = { title, message };
+      if (opts.id) data.notification_id = `hybel_${opts.id}`;
+      jobs.push(this.ha.callService('persistent_notification', 'create', data));
+    }
+    if (opts.event) jobs.push(this.ha.send({ type: 'fire_event', event_type: 'hybel_varsel', event_data: { type: opts.event, title, message } }).catch(() => {}));
+    const res = await Promise.allSettled(jobs);
+    const bad = res.find((r) => r.status === 'rejected');
+    if (bad) throw bad.reason;
+  }
+
+  dismissNotice(id) {
+    this.ha.callService('persistent_notification', 'dismiss', { notification_id: `hybel_${id}` }).catch(() => {});
   }
 
   async tick() {

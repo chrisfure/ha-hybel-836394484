@@ -89,7 +89,8 @@ function handle(c, msg) {
     case 'ping': return c.send({ id: msg.id, type: 'pong' });
     case 'get_states': return ok([...states.values()]);
     case 'subscribe_events': c.subId = msg.id; return ok();
-    case 'call_service': callService(msg.domain, msg.service, msg.service_data || {}); return ok({ context: {} });
+    case 'fire_event': console.log('[mock] event', msg.event_type, JSON.stringify(msg.event_data)); return ok();
+    case 'call_service': if (msg.domain === 'persistent_notification' || msg.domain === 'notify') console.log('[mock]', msg.domain + '.' + msg.service, JSON.stringify(msg.service_data)); callService(msg.domain, msg.service, msg.service_data || {}); return ok({ context: {} });
     case 'config/area_registry/list': return ok([{ area_id: 'hybel', name: 'Hybel' }, { area_id: 'kjokken', name: 'Kjøkken' }]);
     case 'config/device_registry/list': return ok([]);
     case 'config/entity_registry/list': return ok([...states.keys()].map((id) => ({ entity_id: id, area_id: id.includes('hovedhus') || id.includes('benk') ? 'kjokken' : 'hybel' })));
