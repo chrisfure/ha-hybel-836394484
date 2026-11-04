@@ -1,5 +1,9 @@
 # Endringslogg
 
+## 0.3.3
+
+- Ny automasjonshandling **«Dim lys»**: lysere eller mørkere i trinn på 5, 10 eller 20 %. Koblet til «hold» på en knapp fortsetter dimmingen til knappen slippes (maks 8 sek).
+
 ## 0.3.2
 
 - **Trådløse knapper** (event-entiteter, f.eks. Namron-fjernkontroll) kan legges til på utleiersiden og brukes som utløser i leietakerens automasjoner: velg knapp og trykk/hold, eventuelt bare i et tidsrom.

@@ -56,6 +56,7 @@ export class Engine extends EventEmitter {
     this.store = store;
     this.updateTimer = null;
     this.lastTemp = new Map();
+    this.dimLoops = new Map(); // auto_id -> { timer, until, prefix }
     ha.on('state', (id, n, o) => this.onState(id, n, o));
     ha.on('status', () => this.changed());
     ha.on('ready', () => { this.recordSun(); this.ensureScenes(); });
@@ -446,7 +447,14 @@ export class Engine extends EventEmitter {
       if (!this.ensureScenes().some((s) => s.id === a.scene_id)) throw new Error('Velg en scene');
       action = { type: 'scene', scene_id: a.scene_id };
     } else if (a.type === 'lights_off') action = { type: 'lights_off' };
-    else if (a.type === 'set') {
+    else if (a.type === 'dim') {
+      const ids = [...new Set((a.entities || []).map((k) => this.byKey(k)).filter((e) => e && e.kind === 'light').map((e) => e.entity_id))];
+      if (!ids.length) throw new Error('Velg minst ett lys å dimme');
+      if (!['up', 'down'].includes(a.dir)) throw new Error('Velg lysere eller mørkere');
+      const step = Number(a.step);
+      if (![5, 10, 20].includes(step)) throw new Error('Ugyldig trinn');
+      action = { type: 'dim', entities: ids, dir: a.dir, step };
+    } else if (a.type === 'set') {
       const values = this.valuesFromKeys(a.values);
       if (!Object.keys(values).length) throw new Error('Velg minst én enhet automasjonen skal styre');
       action = { type: 'set', values };
@@ -522,6 +530,7 @@ export class Engine extends EventEmitter {
     if (action.type === 'scene') return Object.keys(this.ensureScenes().find((s) => s.id === action.scene_id)?.values || {});
     if (action.type === 'lights_off') return this.enabled().filter((e) => e.kind === 'light').map((e) => e.entity_id);
     if (action.type === 'set') return Object.keys(action.values || {});
+    if (action.type === 'dim') return action.entities || [];
     if (action.type === 'heat') return this.enabled().filter((e) => e.kind === 'heat').map((e) => e.entity_id);
     return [];
   }
@@ -545,6 +554,7 @@ export class Engine extends EventEmitter {
     if (a.type === 'scene') return this.activateScene(a.scene_id);
     if (a.type === 'lights_off') return this.applyValues(Object.fromEntries(this.actionEntities(a).map((id) => [id, 0])));
     if (a.type === 'set') return this.applyValues(this.cleanValues(a.values));
+    if (a.type === 'dim') return this.startDim(auto);
     if (a.type === 'heat') return this.applyValues(Object.fromEntries(this.actionEntities(a).map((id) => [id, a.value])));
   }
 
@@ -561,8 +571,51 @@ export class Engine extends EventEmitter {
     const what = a.type === 'scene' ? `scene ${this.ensureScenes().find((s) => s.id === a.scene_id)?.name || '(slettet)'}`
       : a.type === 'lights_off' ? 'slå av alle lys'
       : a.type === 'set' ? `styr ${Object.keys(a.values).map(label).join(', ')}`
+      : a.type === 'dim' ? `dim ${a.entities.map(label).join(', ')} ${a.dir === 'up' ? 'opp' : 'ned'}`
       : `varme ${a.value}°`;
     return `${when}: ${what}${auto.revert_after ? ` (gjør om etter ${auto.revert_after} min)` : ''}`;
+  }
+
+  // Ett dimmetrinn for hvert lys. Holdes knappen inne, gjentas trinnet til knappen slippes (maks 8 sek).
+  async startDim(auto) {
+    const a = auto.action;
+    const t = auto.trigger;
+    this.stopDim(auto.id);
+    const levels = new Map();
+    for (const id of a.entities) {
+      const e = this.byId(id);
+      if (e) levels.set(id, this.currentValue(e) ?? 0);
+    }
+    const step = async () => {
+      const values = {};
+      for (const [id, cur] of levels) {
+        if (a.dir === 'down' && cur <= 0) continue; // ikke slå på et lys som er av ved nedtrinn
+        const next = a.dir === 'up' ? Math.min(100, (cur || 0) + a.step) : Math.max(1, cur - a.step);
+        levels.set(id, next);
+        values[id] = next;
+      }
+      if (Object.keys(values).length) await this.applyValues(values).catch(() => {});
+    };
+    await step();
+    const hold = t.type === 'button' && /hold|long/i.test(t.event || '');
+    if (!hold) return;
+    const prefix = t.event.replace(/_?(hold|long_press|long)$/i, '');
+    const loop = { entity: t.entity_id, prefix, until: Date.now() + 8000, busy: false };
+    loop.timer = setInterval(async () => {
+      if (Date.now() > loop.until) return this.stopDim(auto.id);
+      if (loop.busy) return;
+      loop.busy = true;
+      await step();
+      loop.busy = false;
+    }, 450);
+    this.dimLoops.set(auto.id, loop);
+  }
+
+  stopDim(id) {
+    const loop = this.dimLoops.get(id);
+    if (!loop) return;
+    clearInterval(loop.timer);
+    this.dimLoops.delete(id);
   }
 
   async fire(auto, reason) {
@@ -594,6 +647,12 @@ export class Engine extends EventEmitter {
   checkStateTriggers(entityId, newState, oldState) {
     const d = this.data;
     const now = new Date();
+    // Slipp av en knapp stopper pågående dimming fra samme knapp.
+    const ev = newState?.attributes?.event_type;
+    if (ev && /release/i.test(ev) && newState.state !== oldState?.state) {
+      const prefix = ev.replace(/_?(short_|long_)?release$/i, '');
+      for (const [id, loop] of this.dimLoops) if (loop.entity === entityId && loop.prefix === prefix) this.stopDim(id);
+    }
     for (const auto of d.automations) {
       const t = auto.trigger;
       if (!auto.enabled || t.entity_id !== entityId) continue;
@@ -720,7 +779,8 @@ export class Engine extends EventEmitter {
   publicAutomation(a) {
     const t = { ...a.trigger };
     if (t.entity_id) { t.entity = keyOf(t.entity_id); delete t.entity_id; }
-    const action = a.action.type === 'set' ? { type: 'set', values: this.toKeys(a.action.values) } : a.action.type === 'heat'
+    const action = a.action.type === 'dim' ? { ...a.action, entities: a.action.entities.map(keyOf) }
+      : a.action.type === 'set' ? { type: 'set', values: this.toKeys(a.action.values) } : a.action.type === 'heat'
       ? { type: 'set', values: this.toKeys(Object.fromEntries(this.actionEntities(a.action).map((id) => [id, a.action.value]))) }
       : { ...a.action };
     return { id: a.id, enabled: a.enabled, trigger: t, window: a.window || null, days: a.days, action, revert_after: a.revert_after || 0 };

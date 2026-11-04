@@ -239,6 +239,7 @@ function autoWhat(a) {
   if (a.type === 'scene') return sceneById(a.scene_id)?.name || '(slettet scene)';
   if (a.type === 'lights_off') return 'Slå av alle lys';
   if (a.type === 'set') return valuesSummary(a.values) || 'Styr enheter';
+  if (a.type === 'dim') return `Dim ${(a.entities || []).map((k) => entity(k)?.label || '').filter(Boolean).join(', ').toLowerCase()} ${a.dir === 'up' ? 'opp' : 'ned'}`;
   return '';
 }
 // «button_2_up_press» → «Knapp 2 opp – trykk»
@@ -609,10 +610,27 @@ function autoEditorHTML() {
   }
   html += `<button class="list-row" role="radio" aria-checked="${act.type === 'lights_off'}" data-act="action" data-type="lights_off">
       <span class="row-ic">${svg(UI.bulb, 20)}</span><span class="grow"><span class="t">Slå av alle lys</span></span><span class="radio"></span></button>
+    ${lights.some((e) => e.dimmable) ? `<button class="list-row" role="radio" aria-checked="${act.type === 'dim'}" data-act="action" data-type="dim">
+      <span class="row-ic">${svg('M12 3v18M5 10l7-7 7 7M5 14l7 7 7-7', 20)}</span><span class="grow"><span class="t">Dim lys</span><span class="s">Lysere eller mørkere – fortsetter så lenge knappen holdes</span></span><span class="radio"></span></button>` : ''}
     <button class="list-row" role="radio" aria-checked="${act.type === 'set'}" data-act="action" data-type="set">
       <span class="row-ic">${svg(UI.spark, 20)}</span><span class="grow"><span class="t">Velg enheter selv</span><span class="s">Lys, varme, luft – akkurat det du vil</span></span><span class="radio"></span></button>`;
   html += `</div></section>`;
   if (act.type === 'set') html += pickerHTML(a.set);
+  if (act.type === 'dim') {
+    html += `<section class="card form"><span class="field-label">Hvilke lys</span>
+      <div class="chips">${lights.filter((e) => e.dimmable).map((e) => `<button class="chip" aria-pressed="${(act.entities || []).includes(e.key)}" data-act="dim-light" data-key="${e.key}">${esc(e.label)}</button>`).join('')}</div>
+      <span class="field-label">Retning</span>
+      <div class="seg" style="grid-template-columns: repeat(2, minmax(0, 1fr))">
+        <button aria-pressed="${act.dir === 'up'}" data-act="dim-dir" data-v="up">Lysere</button>
+        <button aria-pressed="${act.dir === 'down'}" data-act="dim-dir" data-v="down">Mørkere</button>
+      </div>
+      <span class="field-label">Trinn</span>
+      <div class="seg" style="grid-template-columns: repeat(3, minmax(0, 1fr))">
+        ${[5, 10, 20].map((n) => `<button aria-pressed="${act.step === n}" data-act="dim-step" data-v="${n}">${n} %</button>`).join('')}
+      </div>
+      ${t.type === 'button' && /hold|long/i.test(t.event || '') ? '<span class="note">Dimmer videre så lenge knappen holdes inne.</span>' : '<span class="note">Tips: koble til «hold» på en knapp, så dimmer den så lenge du holder.</span>'}
+    </section>`;
+  }
 
   html += `<section class="card form"><span class="field-label">Gjør om etter</span>
     <div class="seg" style="grid-template-columns: repeat(4, minmax(0, 1fr))">
@@ -845,8 +863,25 @@ function act(a, ds) {
     case 'days':
       S.adraft.days = ds.v.split(',').map(Number);
       return render();
-    case 'action':
-      S.adraft.action = ds.type === 'scene' ? { type: 'scene', scene_id: ds.id } : { type: ds.type };
+    case 'action': {
+      const t = S.adraft.trigger;
+      if (ds.type === 'dim') {
+        const first = m.entities.find((e) => e.kind === 'light' && e.dimmable);
+        const dir = t.type === 'button' && /_down_|_off_/i.test(t.event || '') ? 'down' : 'up';
+        S.adraft.action = { type: 'dim', entities: first ? [first.key] : [], dir, step: 10 };
+      } else S.adraft.action = ds.type === 'scene' ? { type: 'scene', scene_id: ds.id } : { type: ds.type };
+      return render();
+    }
+    case 'dim-light': {
+      const list = S.adraft.action.entities || [];
+      S.adraft.action.entities = list.includes(ds.key) ? list.filter((k) => k !== ds.key) : [...list, ds.key];
+      return render();
+    }
+    case 'dim-dir':
+      S.adraft.action.dir = ds.v;
+      return render();
+    case 'dim-step':
+      S.adraft.action.step = Number(ds.v);
       return render();
     case 'revert':
       S.adraft.revert_after = Number(ds.v);
