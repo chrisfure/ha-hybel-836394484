@@ -109,6 +109,13 @@ const server = http.createServer((req, res) => {
     req.on('end', () => { const j = JSON.parse(b); setState(j.entity_id, j.state, j.attributes || {}); res.end('ok'); });
     return;
   }
+  const sm = req.url.match(/^\/api\/states\/([a-z_]+\.[a-z0-9_]+)$/);
+  if (sm && req.method === 'POST') {
+    let b = '';
+    req.on('data', (c) => (b += c));
+    req.on('end', () => { const j = JSON.parse(b); console.log('[mock] state', sm[1], j.state, JSON.stringify(j.attributes)); setState(sm[1], j.state, j.attributes || {}); res.writeHead(201); res.end('{}'); });
+    return;
+  }
   res.writeHead(404); res.end();
 });
 

@@ -44,7 +44,47 @@ export class Extras {
     try { this.vapid = loadVapid(this.dir); } catch (err) { log.warn('Pushvarsler er ikke tilgjengelige:', err.message); }
     this.checklists = new Checklists(this);
     this.lease = new Lease(this);
+    // Sensor i Home Assistant som viser om leietaker venter på svar (for kort i dashbordet).
+    this.attnLast = null;
+    engine.on('update', () => this.publishAttention());
+    engine.ha.on('status', (up) => { if (up) { this.attnLast = null; this.publishAttention(); } });
+    setInterval(() => { this.attnLast = null; this.publishAttention(); }, 10 * 60000).unref();
   }
+
+  attentionItems() {
+    const items = [];
+    for (const r of this.d.reports) {
+      const waiting = r.landlord_unread || (r.origin !== 'landlord' && r.status === 'new' && !r.updates.some((u) => u.from === 'landlord'));
+      if (!waiting) continue;
+      const last = [...r.updates].reverse().find((u) => u.from === 'tenant');
+      items.push({ type: last ? 'svar' : 'melding', title: r.origin === 'landlord' ? 'Svar på meldingen din' : `${r.category}${r.urgent ? ' (haster)' : ''}`, urgent: Boolean(r.urgent), since: last ? last.at : r.created });
+    }
+    for (const c of this.checklists.list) {
+      if (c.status === 'submitted') items.push({ type: 'sjekkliste', title: `${c.type === 'out' ? 'Utflyttings' : 'Innflyttings'}sjekkliste til godkjenning`, urgent: false, since: c.submitted_at });
+    }
+    return items;
+  }
+
+  publishAttention() {
+    const ha = this.engine.ha;
+    if (!ha.connected) return;
+    const items = this.attentionItems();
+    const n = items.length;
+    const text = !n ? 'Ingenting venter' : n === 1 ? items[0].title : `${n} ting venter på svar`;
+    const attrs = {
+      friendly_name: 'Hybel – leietaker venter',
+      icon: n ? (items.some((i) => i.urgent) ? 'mdi:home-alert' : 'mdi:message-alert') : 'mdi:home-check',
+      text,
+      urgent: items.some((i) => i.urgent),
+      items: items.map((i) => i.title),
+      oldest: n ? items.map((i) => i.since).sort()[0] : null
+    };
+    const key = JSON.stringify([n, attrs]);
+    if (key === this.attnLast) return;
+    this.attnLast = key;
+    ha.setState('sensor.hybel_leietaker_venter', n, attrs).catch((err) => { this.attnLast = null; log.warn('Kunne ikke oppdatere sensoren for dashbordet:', err.message); });
+  }
+
 
   save() {
     this.engine.store.save();
@@ -202,7 +242,7 @@ export class Extras {
     if (open >= MAX_OPEN_REPORTS) throw new Error('Det er mange åpne meldinger – vent til utleier har svart');
     const photos = (Array.isArray(cmd.photos) ? cmd.photos : []).slice(0, MAX_REPORT_PHOTOS);
     for (const p of photos) this.claimPhoto(p);
-    const r = { id: newId(), created: new Date().toISOString(), category, text, urgent: Boolean(cmd.urgent), status: 'new', updates: [], tenant_unread: false, photos };
+    const r = { id: newId(), created: new Date().toISOString(), category, text, urgent: Boolean(cmd.urgent), status: 'new', updates: [], tenant_unread: false, landlord_unread: true, photos };
     this.d.reports.unshift(r);
     this.engine.store.save();
     this.engine.notify(`${category}: ${text.slice(0, 300)}`, { title: r.urgent ? 'HASTER – melding fra hybel' : 'Melding fra hybel', inbox: true, id: `melding_${r.id}`, event: 'melding' }).catch((e) => log.warn('Varsling feilet:', e.message));

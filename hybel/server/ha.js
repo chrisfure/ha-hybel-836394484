@@ -157,6 +157,18 @@ export class HAClient extends EventEmitter {
     });
   }
 
+  // Setter tilstanden til en enhet via REST-API-et (brukes for appens egne sensorer).
+  async setState(entityId, state, attributes) {
+    const base = process.env.HA_REST_URL || (this.url.startsWith('ws://supervisor') ? 'http://supervisor/core/api' : this.url.replace(/^ws/, 'http').replace(/\/websocket$/, ''));
+    const r = await fetch(`${base}/states/${entityId}`, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${this.token}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ state: String(state), attributes }),
+      signal: AbortSignal.timeout(10000)
+    });
+    if (!r.ok) throw new Error(`HTTP ${r.status}`);
+  }
+
   callService(domain, service, data) {
     log.debug('Tjenestekall', `${domain}.${service}`, data);
     return this.send({ type: 'call_service', domain, service, service_data: data });

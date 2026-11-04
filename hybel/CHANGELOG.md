@@ -1,5 +1,9 @@
 # Endringslogg
 
+## 0.7.0
+
+- Ny sensor i Home Assistant: `sensor.hybel_leietaker_venter` viser hvor mange meldinger, svar og sjekklister fra leietaker som venter på deg (0 når alt er besvart). Kan brukes til et kort i dashbordet som bare vises når noe venter.
+
 ## 0.6.4
 
 - Scener er tonet ned: vises som en kompakt liste, og fanen ligger etter Lys og Klima. Appen åpner på Lys.
