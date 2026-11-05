@@ -336,32 +336,46 @@ const LSTAT_A = { paid: ['Betalt', 'ok'], overdue: ['Forfalt', 'bad'], soon: ['F
 
 function leasePanel() {
   const l = A.cfg.lease;
-  const L = A.st.extras.lease;
-  if (!A.cand) loadCandidates();
+  const c = A.st.extras.lease.contract;
   const f = (k, label, ph = '', type = 'text', extra = '') => `<label class="lbl-col">${label}<input class="input" type="${type}" ${extra} value="${esc(l[k] ?? '')}" placeholder="${esc(ph)}" data-field="lease.${k}"></label>`;
-  const due = L.overdue.length ? `${L.overdue.length} forfalt` : L.next ? `Neste: ${kr(L.next.total)} ${fmtDate(L.next.due)}` : 'Husleie, kontrakt og betalinger';
-  let h = `<section class="panel"><div class="panel-head"><h2>Leieforhold</h2><span>${esc(due)}</span></div>
+  const head = c.end ? (c.days_left >= 0 ? `${c.days_left} dager igjen` : 'Utløpt') : c.start ? 'Tidsubestemt' : 'Kontrakt og depositum';
+  return `<section class="panel"><div class="panel-head"><h2>Leieforhold</h2><span>${esc(head)}</span></div>
+    ${c.end && c.notice_by && c.days_left >= 0 ? `<p class="help">Kontrakten løper til ${esc(fmtDate(c.end))}. Frist for oppsigelse ved kontraktsslutt: ${esc(fmtDate(c.notice_by))}.</p>` : ''}
     <div class="form-grid">
-      ${f('rent', 'Husleie per måned (kr)', 'F.eks. 8500', 'text', 'inputmode="decimal"')}
-      ${f('due_day', 'Forfallsdag (1–28)', '1', 'number', 'min="1" max="28"')}
-      ${f('account', 'Kontonummer for betaling', '1234 56 78901')}
       ${f('start', 'Innflytting', '', 'date')}
       ${f('end', 'Kontrakt til (tom = tidsubestemt)', '', 'date')}
       ${f('notice_months', 'Oppsigelsestid (måneder)', '3', 'number', 'min="0" max="12"')}
       ${f('deposit', 'Depositum (kr)', 'F.eks. 25500', 'text', 'inputmode="decimal"')}
       ${f('deposit_note', 'Om depositumet', 'F.eks. Depositumskonto i banken')}
-      ${f('remind_days', 'Påminnelse til leietaker (dager før forfall, 0 = av)', '3', 'number', 'min="0" max="14"')}
     </div>
     <label class="lbl-col">Inkludert i leien<textarea class="input area" rows="2" data-field="lease.includes" placeholder="F.eks. Internett, vann og avløp, kommunale avgifter">${esc(l.includes || '')}</textarea></label>
     <label class="lbl-col">Annet om leieforholdet<textarea class="input area" rows="2" data-field="lease.note" placeholder="F.eks. Husleien justeres etter KPI hver januar">${esc(l.note || '')}</textarea></label>
-    <label class="lbl-col">Automatisk strømavlesning (valgfritt)
-      <select class="select" data-field="lease.meter_sensor"><option value="">Av – leietaker leser av selv</option>
-      ${(A.cand?.meters || []).map((m) => `<option value="${esc(m.entity_id)}" ${l.meter_sensor === m.entity_id ? 'selected' : ''}>${esc(m.name)} (${esc(m.state)})</option>`).join('')}
-      ${l.meter_sensor && !(A.cand?.meters || []).some((m) => m.entity_id === l.meter_sensor) ? `<option value="${esc(l.meter_sensor)}" selected>${esc(l.meter_sensor)}</option>` : ''}</select>
-      <span class="help">Har hybelen egen strømmåler i Home Assistant (kWh totalt), leses den av automatisk kl. 23:45 siste dag i måneden.</span></label>
-    <p class="help">Husleie betales forskuddsvis, og første og siste måned avregnes per dag hvis leieforholdet ikke starter den 1. eller slutter siste dag i måneden. Strøm legges til på første forfall etter hver avlesning. Leietaker får påminnelse før forfall, og både du og leietaker får varsel 90 og 30 dager før kontrakten utløper. Husk «Lagre endringer» øverst.</p>`;
-  if (L.ledger.length) {
-    h += `<table class="tbl"><thead><tr><th>Måned</th><th>Husleie</th><th>Strøm</th><th>Sum</th><th></th></tr></thead><tbody>
+    <p class="help">Du og leietaker får varsel 90 og 30 dager før kontrakten utløper. Husk «Lagre endringer» øverst.</p>
+  </section>`;
+}
+
+// Økonomi: husleie og strøm samlet – oversikt, betalinger, avlesninger og innstillinger.
+function economyPanel() {
+  const l = A.cfg.lease;
+  const c = A.cfg.electricity;
+  const L = A.st.extras.lease;
+  const e = A.st.extras.electricity;
+  if (!A.cand) loadCandidates();
+  const hasRent = Boolean(A.st.extras.lease.settings.rent);
+  const outstanding = hasRent ? L.overdue.reduce((a, o) => a + o.total, 0) : e.unpaid;
+  const head = L.overdue.length ? `${kr(outstanding)} utestående` : L.next ? `Neste: ${kr(L.next.total)} ${fmtDate(L.next.due)}` : 'Husleie og strøm';
+  let h = `<section class="panel"><div class="panel-head"><h2>Økonomi</h2><span>${esc(head)}</span></div>
+    <div class="eco-tiles">
+      <div class="eco-tile ${outstanding > 0 ? 'bad' : ''}"><span>Utestående</span><strong>${esc(kr(outstanding))}</strong>${L.overdue.length ? `<small>${L.overdue.map((o) => esc(o.label)).join(', ')}</small>` : ''}</div>
+      <div class="eco-tile"><span>Neste forfall</span><strong>${L.next ? esc(kr(L.next.total)) : '–'}</strong>${L.next ? `<small>${esc(fmtDate(L.next.due))}</small>` : ''}</div>
+      <div class="eco-tile"><span>Betalt i år</span><strong>${esc(kr(L.year_total || 0))}</strong></div>
+      <div class="eco-tile"><span>Strømpris</span><strong>${e.price != null ? `${esc(kr(e.price))}` : 'Ikke satt'}</strong>${e.price != null ? '<small>per kWh</small>' : ''}</div>
+    </div>`;
+  if (L.overdue.length > 1) h += `<div class="row-btns"><button class="sbtn" data-act="pay-all-overdue">Marker alle forfalte som betalt (${L.overdue.length})</button></div>`;
+
+  // Betalinger per måned (husleie + strøm)
+  if (L.ledger.length && hasRent) {
+    h += `<h3 class="sub-h">Betalinger</h3><table class="tbl"><thead><tr><th>Måned</th><th>Husleie</th><th>Strøm</th><th>Sum</th><th></th></tr></thead><tbody>
       ${L.ledger.map((r) => {
         const el = r.electricity.reduce((a, p) => a + (p.amount || 0), 0);
         const [lab, cls] = LSTAT_A[r.status];
@@ -371,41 +385,45 @@ function leasePanel() {
           <td><button class="sbtn ${r.paid ? 'on' : ''}" data-act="month-paid" data-v="${r.month}" data-paid="${r.paid ? '0' : '1'}">${r.paid ? 'Betalt ✓' : 'Marker betalt'}</button></td></tr>`;
       }).join('')}
     </tbody></table>`;
-  } else h += `<p class="help">Betalinger vises her når husleie er lagt inn og lagret.</p>`;
-  return h + `</section>`;
-}
+  }
 
-function electricityPanel() {
-  const e = A.st.extras.electricity;
-  const c = A.cfg.electricity;
-  let h = `<section class="panel"><div class="panel-head"><h2>Strøm</h2><span>Til betaling: <strong>${esc(kr(e.unpaid))}</strong></span></div>
-    <div class="form-grid">
-      <label class="lbl-col">Pris per kWh (kr)<input class="input" type="text" inputmode="decimal" placeholder="F.eks. 1,50" value="${c.price_per_kwh ?? ''}" data-field="el.price"></label>
-      <label class="lbl-col">Merknad til leietaker<input class="input" type="text" maxlength="300" placeholder="F.eks. Betales sammen med husleien" value="${esc(c.note || '')}" data-field="el.note"></label>
-    </div>
-    <p class="help">Prisen lagres på hver avlesning, så gamle perioder beholder prisen de ble lest av med.</p>`;
+  // Strøm: avlesning og perioder
   const nr = A.newReading;
   const today = new Date().toISOString().slice(0, 10);
-  h += `<div class="start-reading">
-      <strong>${e.last ? 'Legg inn avlesning' : 'Startavlesning før innflytting'}</strong>
-      <span class="help">${e.last ? 'F.eks. ved utflytting, eller hvis leietaker har glemt å lese av. Leietaker får ikke varsel.' : 'Målerstanden når leietaker flytter inn. Første periode regnes fra denne.'}</span>
-      <div class="form-grid">
-        <label class="lbl-col">Målerstand (kWh)<input class="input" type="text" inputmode="decimal" placeholder="F.eks. 12345,6" value="${esc(nr.value)}" data-field="nr.value"></label>
-        <label class="lbl-col">Dato<input class="input" type="date" value="${esc(nr.date || today)}" max="${today}" data-field="nr.date"></label>
-      </div>
-      <button class="sbtn on" data-act="reading-add">Lagre ${e.last ? 'avlesning' : 'startavlesning'}</button>
+  h += `<h3 class="sub-h">Strøm</h3>
+    <p class="help">${L.contract.auto_meter ? 'Leses av automatisk siste dag i måneden. ' : ''}${e.last ? `Siste avlesning: <strong>${e.last.value.toLocaleString('nb-NO')} kWh</strong> ${esc(fmtDate(e.last.date))}${e.last.by === 'landlord' ? ' (lagt inn av deg)' : e.last.by === 'auto' ? ' (automatisk)' : ''}.` : 'Ingen avlesninger ennå – legg inn målerstanden ved innflytting.'}</p>
+    <div class="reading-inline">
+      <input class="input" type="text" inputmode="decimal" placeholder="${e.last ? 'Målerstand (kWh)' : 'Startavlesning (kWh)'}" value="${esc(nr.value)}" data-field="nr.value">
+      <input class="input" type="date" value="${esc(nr.date || today)}" max="${today}" data-field="nr.date">
+      <button class="sbtn on" data-act="reading-add">${e.last ? 'Legg inn' : 'Lagre start'}</button>
     </div>`;
-  if (!e.periods.length) h += e.last
-    ? `<p class="help">Startavlesning: <strong>${e.last.value} kWh</strong> (${esc(fmtDate(e.last.date))})${e.last.by === 'landlord' ? ', lagt inn av deg' : ''}. Perioder vises når neste avlesning kommer.
-        <button class="sbtn" data-act="reading-delete" data-id="${e.last.id}">${A.confirmDel === e.last.id ? 'Bekreft sletting' : 'Slett'}</button></p>`
-    : '<p class="help">Ingen avlesninger ennå.</p>';
-  else {
-    h += `<table class="tbl"><thead><tr><th>Periode</th><th>kWh</th><th>Beløp</th><th>Betalt</th></tr></thead><tbody>
-      ${e.periods.map((p, i) => `<tr><td>${esc(fmtDate(p.from))} – ${esc(fmtDate(p.to))}<br><span class="help">${p.start} → ${p.end}${p.by === 'landlord' ? ' · lagt inn av deg' : ''}</span></td><td>${p.kwh.toLocaleString('nb-NO')}</td><td>${esc(kr(p.amount))}</td>
-        <td><button class="sbtn ${p.paid ? 'on' : ''}" data-act="reading-paid" data-id="${p.id}" data-v="${p.paid ? '0' : '1'}">${p.paid ? 'Betalt' : 'Marker betalt'}</button>
+  if (e.periods.length) {
+    h += `<table class="tbl"><thead><tr><th>Periode</th><th>kWh</th><th>Beløp</th><th></th></tr></thead><tbody>
+      ${e.periods.map((p, i) => `<tr><td>${esc(fmtDate(p.from))} – ${esc(fmtDate(p.to))}<br><span class="help">${p.start} → ${p.end}${p.by === 'landlord' ? ' · lagt inn av deg' : p.by === 'auto' ? ' · automatisk' : ''}</span></td><td>${p.kwh.toLocaleString('nb-NO')}<br><span class="help">${p.per_day.toLocaleString('nb-NO')}/dag</span></td><td>${esc(kr(p.amount))}</td>
+        <td>${hasRent ? `<span class="pill2 ${p.paid ? 'ok' : ''}">${p.paid ? 'Betalt' : 'Med i husleien'}</span>` : `<button class="sbtn ${p.paid ? 'on' : ''}" data-act="reading-paid" data-id="${p.id}" data-v="${p.paid ? '0' : '1'}">${p.paid ? 'Betalt' : 'Marker betalt'}</button>`}
         ${i === 0 ? `<button class="sbtn" data-act="reading-delete" data-id="${p.id}">${A.confirmDel === p.id ? 'Bekreft' : 'Slett'}</button>` : ''}</td></tr>`).join('')}
     </tbody></table>`;
+  } else if (e.last) {
+    h += `<p class="help">Perioder vises når neste avlesning kommer. <button class="sbtn" data-act="reading-delete" data-id="${e.last.id}">${A.confirmDel === e.last.id ? 'Bekreft sletting' : 'Slett startavlesning'}</button></p>`;
   }
+
+  // Innstillinger
+  const f = (k, label, ph = '', type = 'text', extra = '') => `<label class="lbl-col">${label}<input class="input" type="${type}" ${extra} value="${esc(l[k] ?? '')}" placeholder="${esc(ph)}" data-field="lease.${k}"></label>`;
+  h += `<details class="eco-set" ${hasRent && e.price != null ? '' : 'open'}><summary>Innstillinger for husleie og strøm</summary>
+    <div class="form-grid">
+      ${f('rent', 'Husleie per måned (kr)', 'F.eks. 8500', 'text', 'inputmode="decimal"')}
+      ${f('due_day', 'Forfallsdag (1–28)', '1', 'number', 'min="1" max="28"')}
+      ${f('account', 'Kontonummer for betaling', '1234 56 78901')}
+      ${f('remind_days', 'Påminnelse før forfall (dager, 0 = av)', '3', 'number', 'min="0" max="14"')}
+      <label class="lbl-col">Strømpris per kWh (kr)<input class="input" type="text" inputmode="decimal" placeholder="F.eks. 1,50" value="${c.price_per_kwh ?? ''}" data-field="el.price"></label>
+      <label class="lbl-col">Merknad om strøm til leietaker<input class="input" type="text" maxlength="300" placeholder="F.eks. Betales sammen med husleien" value="${esc(c.note || '')}" data-field="el.note"></label>
+    </div>
+    <label class="lbl-col">Automatisk strømavlesning (valgfritt)
+      <select class="select" data-field="lease.meter_sensor"><option value="">Av – leietaker leser av selv</option>
+      ${(A.cand?.meters || []).map((m) => `<option value="${esc(m.entity_id)}" ${l.meter_sensor === m.entity_id ? 'selected' : ''}>${esc(m.name)} (${esc(m.state)})</option>`).join('')}
+      ${l.meter_sensor && !(A.cand?.meters || []).some((m) => m.entity_id === l.meter_sensor) ? `<option value="${esc(l.meter_sensor)}" selected>${esc(l.meter_sensor)}</option>` : ''}</select></label>
+    <p class="help">Husleie betales forskuddsvis; første og siste måned avregnes per dag. Strøm legges på første forfall etter hver avlesning, med prisen som gjaldt da. Husk «Lagre endringer» øverst.</p>
+  </details>`;
   return h + `</section>`;
 }
 
@@ -447,7 +465,7 @@ function render() {
   const focusId = document.activeElement?.id || (document.activeElement?.dataset?.field === 'q' ? '__q' : null);
   A.todo = todos();
   $('todo').innerHTML = todoBar();
-  $('main').innerHTML = `<div class="col-main">${reportsPanel()}${leasePanel()}${checklistPanel()}${entitiesPanel()}${scenesPanel()}${electricityPanel()}${infoPanel()}</div><div class="col-side">${limitsPanel()}${alertsPanel()}${resetPanel()}</div>${photoOverlay()}`;
+  $('main').innerHTML = `<div class="col-main">${reportsPanel()}${economyPanel()}${leasePanel()}${checklistPanel()}${entitiesPanel()}${scenesPanel()}${infoPanel()}</div><div class="col-side">${limitsPanel()}${alertsPanel()}${resetPanel()}</div>${photoOverlay()}`;
   if (focusId === '__q') {
     const q = document.querySelector('[data-field="q"]');
     if (q) { q.focus(); q.setSelectionRange(q.value.length, q.value.length); }
@@ -463,7 +481,7 @@ function isOpen(key) {
   if (key in folds) return folds[key];
   // Standard: alt lukket, unntatt meldinger når noe venter.
   if (key === 'Meldinger') return (A.st?.extras?.reports || []).some((r) => r.status === 'new' || r.status === 'in_progress' || r.landlord_unread);
-  if (key === 'Leieforhold') return (A.st?.extras?.lease?.overdue || []).length > 0;
+  if (key === 'Økonomi') return (A.st?.extras?.lease?.overdue || []).length > 0;
   if (key === 'Inn- og utflytting') return (A.st?.extras?.checklists || []).some((c) => c.status === 'submitted');
   return false;
 }
@@ -479,11 +497,11 @@ function todos() {
   const working = x.reports.filter((r) => r.status === 'in_progress').length;
   if (working) add('Meldinger', 'info', `${working} under arbeid`);
   const L = x.lease;
-  if (L.overdue.length) add('Leieforhold', 'bad', `${L.overdue.length} ikke betalt`);
-  if (L.next && L.next.status === 'soon') add('Leieforhold', 'info', `Forfall ${fmtDate(L.next.due)}`);
+  if (L.overdue.length) add('Økonomi', 'bad', `${L.overdue.length} ikke betalt`);
+  if (L.next && L.next.status === 'soon') add('Økonomi', 'info', `Forfall ${fmtDate(L.next.due)}`);
   const c = L.contract;
   if (c.end && c.days_left != null && c.days_left <= 90) add('Leieforhold', c.days_left <= 30 ? 'bad' : 'warn', c.days_left < 0 ? 'Kontrakten er utløpt' : `Kontrakt utløper om ${c.days_left} d`);
-  if (!L.settings.rent) add('Leieforhold', 'info', 'Husleie ikke satt');
+  if (!L.settings.rent) add('Økonomi', 'info', 'Husleie ikke satt');
   const sub = x.checklists.filter((cl) => cl.status === 'submitted').length;
   if (sub) add('Inn- og utflytting', 'warn', `${sub} til godkjenning`);
   const open = x.checklists.filter((cl) => cl.status === 'open');
@@ -491,9 +509,9 @@ function todos() {
   const off = st.entities.filter((e) => e.enabled && !e.available);
   if (off.length) add('Synlige enheter', 'bad', `${off.length} uten kontakt`);
   const e = x.electricity;
-  if (e.remind && !c.auto_meter) add('Strøm', 'info', 'Ikke lest av denne måneden');
-  if (!L.settings.rent && e.unpaid > 0) add('Strøm', 'warn', `${kr(e.unpaid)} ubetalt`);
-  if (e.price == null) add('Strøm', 'info', 'Pris ikke satt');
+  if (e.remind && !c.auto_meter) add('Økonomi', 'info', 'Strøm ikke lest av');
+  if (!L.settings.rent && e.unpaid > 0) add('Økonomi', 'warn', `Strøm ${kr(e.unpaid)} ubetalt`);
+  if (e.price == null) add('Økonomi', 'info', 'Strømpris ikke satt');
   const i = x.info;
   const missing = [!i.wifi_ssid && 'wifi', !(i.contact_phone || i.contact_email) && 'kontakt'].filter(Boolean);
   if (missing.length) add('Info til leietaker', 'info', `Mangler ${missing.join(' og ')}`);
@@ -600,6 +618,18 @@ document.addEventListener('click', async (ev) => {
         const r = await api('api/admin/test-notify', { method: 'POST', body: '{}' });
         A.testResult = (r.results || []).map((x) => `${x.ok ? '✓' : '✗'} ${x.channel === 'push' ? `Push til ${esc(x.target)}` : 'Bjella i Home Assistant'}${x.ok ? '' : `: ${esc(x.error)}`}`).join('<br>');
       } catch (e) { A.testResult = '✗ ' + esc(e.message); }
+      break;
+    }
+    case 'pay-all-overdue': {
+      try {
+        let r = null;
+        for (const o of A.st.extras.lease.overdue) {
+          r = await api('api/admin/payment', { method: 'POST', body: JSON.stringify({ month: o.month, paid: true }) });
+          if (!r.ok) { message(esc(r.error), true); return; }
+        }
+        if (r) A.st = r.state;
+        message('Alle forfalte måneder er markert som betalt.');
+      } catch (e) { message(esc(e.message), true); }
       break;
     }
     case 'month-paid': {

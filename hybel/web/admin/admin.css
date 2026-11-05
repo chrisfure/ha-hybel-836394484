@@ -166,3 +166,18 @@ a.sbtn { display: inline-flex; align-items: center; text-decoration: none; color
 .todo-badge.warn { background: var(--amber-soft); color: var(--amber-ink); }
 .panel-head.has-todo > span:not(.chev):not(.todo-badges) { display: none; }
 @media (max-width: 560px) { .panel-head[data-act="fold"] > span.todo-badges { display: flex; } .todo-badge { white-space: normal; } }
+
+/* ---------- økonomi ---------- */
+.eco-tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 8px; margin-bottom: 6px; }
+.eco-tile { background: var(--bg); border-radius: 14px; padding: 10px 12px; display: flex; flex-direction: column; gap: 2px; }
+.eco-tile span { font-size: 12px; color: var(--muted); }
+.eco-tile strong { font-size: 18px; font-variant-numeric: tabular-nums; }
+.eco-tile small { font-size: 11.5px; color: var(--muted); }
+.eco-tile.bad { background: #FBE3DA; }
+.eco-tile.bad strong, .eco-tile.bad small { color: #7A2A12; }
+.sub-h { font-size: 15px; font-family: var(--sans); font-weight: 700; margin: 14px 0 4px; }
+.reading-inline { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; margin-bottom: 6px; }
+.reading-inline .input { flex: 1 1 140px; width: auto; }
+.reading-inline .sbtn { flex: none; }
+.eco-set { margin-top: 14px; border-top: 1px solid var(--line); padding-top: 8px; }
+.eco-set summary { cursor: pointer; font-size: 14px; font-weight: 600; color: #5B5045; padding: 6px 0; }

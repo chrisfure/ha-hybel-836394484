@@ -1,5 +1,11 @@
 # Endringslogg
 
+## 0.8.0
+
+- Utleiersiden: ny seksjon **Økonomi** som samler husleie og strøm: utestående, neste forfall, betalt i år og strømpris øverst, deretter betalinger per måned, strømavlesning og -perioder, og innstillinger for husleie og strøm.
+- «Marker alle forfalte som betalt» med ett trykk.
+- «Leieforhold» inneholder nå bare kontrakt, depositum og hva som er inkludert. Den egne Strøm-seksjonen er slått inn i Økonomi.
+
 ## 0.7.4
 
 - Utleiersiden: ny linje «Må gjøres» øverst med det som venter (ubesvarte meldinger, ubetalt leie, sjekkliste til godkjenning, enheter uten kontakt, kontrakt som snart utløper). Trykk for å gå rett til seksjonen.
