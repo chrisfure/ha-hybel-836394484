@@ -1,5 +1,9 @@
 # Endringslogg
 
+## 0.7.1
+
+- Automasjoner er samlet i grupper som kan felles sammen: én gruppe per knapp (sortert på knapp og retning, med «Trykk»/«Hold»), «Til faste tider» (sortert gjennom døgnet) og «Når noe skjer».
+
 ## 0.7.0
 
 - Ny sensor i Home Assistant: `sensor.hybel_leietaker_venter` viser hvor mange meldinger, svar og sjekklister fra leietaker som venter på deg (0 når alt er besvart). Kan brukes til et kort i dashbordet som bare vises når noe venter.

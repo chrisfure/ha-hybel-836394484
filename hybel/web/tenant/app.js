@@ -41,6 +41,7 @@ const S = {
   uploading: null,     // nøkkel for punkt som laster opp bilde
   photo: null,         // bilde som vises i stort format
   pdf: null,           // { key, file } – ferdig hentet PDF av sjekklisten
+  autoOpen: (() => { try { return JSON.parse(localStorage.getItem('hybel-auto-open') || '{}'); } catch { return {}; } })(),
   reply: {},
   reading: { date: new Date().toISOString().slice(0, 10), value: '' }
 };
@@ -447,24 +448,81 @@ function climateTab() {
   return h;
 }
 
+// Automasjoner samlet i grupper: knapper (per knapp), tidspunkter (sortert på klokkeslett) og hendelser.
+function autoSortKey(a) {
+  const t = a.trigger;
+  if (t.type === 'time') return t.at;
+  if (t.type === 'sunrise') return `06:00+${String(1000 + (t.offset || 0)).padStart(5, '0')}`;
+  if (t.type === 'sunset') return `18:00+${String(1000 + (t.offset || 0)).padStart(5, '0')}`;
+  return '';
+}
+
+function autoRow(a, title, sub, tag = '') {
+  const m = S.m;
+  return `<div class="list-row auto-row ${a.enabled ? '' : 'off'}">
+    <button class="grow plain" data-act="auto-edit" data-id="${a.id}" data-fid="a-${a.id}" ${m.can_edit ? '' : 'disabled'}>
+      ${tag ? `<span class="auto-tag">${esc(tag)}</span>` : ''}
+      <span class="t">${esc(title)}</span>
+      ${sub ? `<span class="s">${esc(sub)}</span>` : ''}
+    </button>
+    ${m.can_edit ? `<button class="switch teal" role="switch" aria-checked="${a.enabled}" aria-label="Automasjon på" data-act="auto-toggle" data-id="${a.id}" data-fid="at-${a.id}"></button>` : ''}
+  </div>`;
+}
+
+function autoGroup(key, title, icon, list, body) {
+  const open = S.autoOpen[key] !== false;
+  const on = list.filter((a) => a.enabled).length;
+  return `<section class="auto-group">
+    <button class="auto-head" data-act="auto-group" data-v="${key}" aria-expanded="${open}">
+      <span class="row-ic">${svg(icon, 20)}</span>
+      <span class="grow"><span class="t">${esc(title)}</span><span class="s">${list.length} automasjon${list.length === 1 ? '' : 'er'}${on < list.length ? ` · ${on} på` : ''}</span></span>
+      <span class="chev-s ${open ? 'open' : ''}">${svg(UI.down, 18, 2)}</span>
+    </button>
+    ${open ? `<div class="list">${body}</div>` : ''}
+  </section>`;
+}
+
 function autoTab() {
   const m = S.m;
   let h = '';
   if (!m.automations.length) h += `<p class="intro">Automasjoner gjør ting av seg selv – f.eks. «Kos 30 min før solnedgang» eller «Høy ventilasjon når luftfuktigheten er over 70 %».</p>`;
-  h += `<div class="list">`;
-  for (const a of m.automations) {
-    h += `<div class="list-row auto-row">
-      <button class="grow plain" data-act="auto-edit" data-id="${a.id}" data-fid="a-${a.id}" ${m.can_edit ? '' : 'disabled'}>
-        <span class="t">${esc(autoWhat(a.action))}</span>
-        <span class="s">${esc(autoWhen(a.trigger, a.window))} · ${esc(autoDays(a.days))}${a.revert_after ? ` · tilbake etter ${revertLabel(a.revert_after)}` : ''}</span>
-      </button>
-      ${m.can_edit ? `<button class="switch teal" role="switch" aria-checked="${a.enabled}" aria-label="Automasjon på" data-act="auto-toggle" data-id="${a.id}" data-fid="at-${a.id}"></button>` : ''}
-    </div>`;
-  }
-  if (m.can_edit) h += `<button class="list-row add-row" data-act="auto-new" data-fid="a-new">${svg(UI.plus, 20, 2)}<span class="t">Ny automasjon</span></button>`;
-  return h + `</div>`;
-}
+  const extra = (a) => [a.window ? `${a.window.from}–${a.window.to}` : '', autoDays(a.days) !== 'hver dag' ? autoDays(a.days) : '', a.revert_after ? `tilbake etter ${revertLabel(a.revert_after)}` : ''].filter(Boolean).join(' · ');
 
+  // 1. Knapper – én gruppe per knapp, sortert på knappenummer og retning.
+  const buttons = m.automations.filter((a) => a.trigger.type === 'button');
+  const byEntity = new Map();
+  for (const a of buttons) {
+    if (!byEntity.has(a.trigger.entity)) byEntity.set(a.trigger.entity, []);
+    byEntity.get(a.trigger.entity).push(a);
+  }
+  for (const [ent, list] of byEntity) {
+    const parse = (a) => {
+      const x = String(a.trigger.event).match(/button_(\d+)_(up|down|on|off)_(press|hold|release|short_release|long_press)/i);
+      return x ? { n: Number(x[1]), dir: /up|on/i.test(x[2]) ? '▲' : '▼', how: /hold|long/i.test(x[3]) ? 'Hold' : 'Trykk', key: `${x[1]}${/up|on/i.test(x[2]) ? 0 : 1}${/hold|long/i.test(x[3]) ? 1 : 0}` } : { n: 99, dir: '', how: eventLabel(a.trigger.event), key: `99${a.trigger.event}` };
+    };
+    const sorted = [...list].sort((a, b) => parse(a).key.localeCompare(parse(b).key));
+    let body = '';
+    let lastKey = null;
+    for (const a of sorted) {
+      const p = parse(a);
+      const k = `${p.n}${p.dir}`;
+      if (p.n !== 99 && k !== lastKey) { body += `<div class="auto-sub">Knapp ${p.n} ${p.dir}</div>`; lastKey = k; }
+      body += autoRow(a, autoWhat(a.action), extra(a), p.how);
+    }
+    h += autoGroup(`btn-${ent}`, entity(ent)?.label || 'Knapp', 'M12 12m-3 0a3 3 0 1 0 6 0a3 3 0 1 0 -6 0M5 3h14a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2z', list, body);
+  }
+
+  // 2. Tidspunkter og sol – sortert gjennom døgnet.
+  const timed = m.automations.filter((a) => ['time', 'sunset', 'sunrise'].includes(a.trigger.type)).sort((a, b) => autoSortKey(a).localeCompare(autoSortKey(b)));
+  if (timed.length) h += autoGroup('time', 'Til faste tider', UI.clock, timed, timed.map((a) => autoRow(a, autoWhat(a.action), extra(a), autoWhen(a.trigger))).join(''));
+
+  // 3. Når noe skjer (lys slås på/av, luftfuktighet).
+  const events = m.automations.filter((a) => !['time', 'sunset', 'sunrise', 'button'].includes(a.trigger.type));
+  if (events.length) h += autoGroup('event', 'Når noe skjer', 'M13 2L3 14h9l-1 8 10-12h-9l1-8z', events, events.map((a) => autoRow(a, autoWhat(a.action), extra(a), autoWhen(a.trigger))).join(''));
+
+  if (m.can_edit) h += `<button class="btn ghost scene-add" data-act="auto-new" data-fid="a-new">${svg(UI.plus, 18, 2)} Ny automasjon</button>`;
+  return h;
+}
 
 // ---------- info, strøm og meldinger ----------
 
@@ -1293,6 +1351,10 @@ function act(a, ds) {
       return openAuto(null);
     case 'auto-edit':
       return openAuto(ds.id);
+    case 'auto-group':
+      S.autoOpen[ds.v] = S.autoOpen[ds.v] === false;
+      store.set('hybel-auto-open', JSON.stringify(S.autoOpen));
+      return render();
     case 'auto-toggle': {
       const x = m.automations.find((y) => y.id === ds.id);
       if (!x) return;
