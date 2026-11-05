@@ -382,7 +382,8 @@ function economyPanel() {
         return `<tr><td>${esc(r.label)}<br><span class="help">Forfall ${esc(fmtDate(r.due))}</span></td><td>${r.rent ? esc(kr(r.rent)) : '–'}${r.rent_note ? `<br><span class="help">Avregnet ${esc(r.rent_note)}</span>` : ''}</td>
           <td>${el ? esc(kr(el)) : '–'}${r.electricity.map((p) => `<br><span class="help">${p.kwh.toLocaleString('nb-NO')} kWh</span>`).join('')}</td>
           <td><strong>${esc(kr(r.total))}</strong><br><span class="pill2 ${cls}">${lab}</span></td>
-          <td><button class="sbtn ${r.paid ? 'on' : ''}" data-act="month-paid" data-v="${r.month}" data-paid="${r.paid ? '0' : '1'}">${r.paid ? 'Betalt ✓' : 'Marker betalt'}</button></td></tr>`;
+          <td><button class="sbtn ${r.paid ? 'on' : ''}" data-act="month-paid" data-v="${r.month}" data-paid="${r.paid ? '0' : '1'}">${r.paid ? 'Betalt ✓' : 'Marker betalt'}</button>
+            <a class="sbtn" href="api/admin/invoice/${r.month}.pdf" target="_blank" rel="noopener">Faktura</a></td></tr>`;
       }).join('')}
     </tbody></table>`;
   }
@@ -414,6 +415,9 @@ function economyPanel() {
       ${f('rent', 'Husleie per måned (kr)', 'F.eks. 8500', 'text', 'inputmode="decimal"')}
       ${f('due_day', 'Forfallsdag (1–28)', '1', 'number', 'min="1" max="28"')}
       ${f('account', 'Kontonummer for betaling', '1234 56 78901')}
+      ${f('landlord_name', 'Ditt navn på fakturaen', 'Tom = kontaktperson fra Info')}
+      ${f('tenant_name', 'Leietakers navn (faktura)', 'F.eks. Kari Nordmann')}
+      ${f('address', 'Adresse for hybelen (faktura)', 'Gate 1, 1234 Sted')}
       ${f('remind_days', 'Påminnelse før forfall (dager, 0 = av)', '3', 'number', 'min="0" max="14"')}
       <label class="lbl-col">Strømpris per kWh (kr)<input class="input" type="text" inputmode="decimal" placeholder="F.eks. 1,50" value="${c.price_per_kwh ?? ''}" data-field="el.price"></label>
       <label class="lbl-col">Merknad om strøm til leietaker<input class="input" type="text" maxlength="300" placeholder="F.eks. Betales sammen med husleien" value="${esc(c.note || '')}" data-field="el.note"></label>

@@ -1,5 +1,6 @@
 // Leieforholdet: husleie, strøm på etterskudd, betalinger, kontraktsdatoer og påminnelser.
 import { log } from './log.js';
+import { PdfDoc, PAGE, wrap, textWidth } from './pdf.js';
 
 const str = (v, max) => String(v ?? '').trim().slice(0, max);
 const isDate = (v) => /^\d{4}-\d{2}-\d{2}$/.test(String(v)) && !Number.isNaN(new Date(v).getTime());
@@ -19,7 +20,7 @@ const daysBetween = (a, b) => Math.round((new Date(b) - new Date(a)) / 86400000)
 const kr = (n) => `${n.toLocaleString('nb-NO', Number.isInteger(n) ? { maximumFractionDigits: 0 } : { minimumFractionDigits: 2, maximumFractionDigits: 2 })} kr`;
 
 export function defaultLease() {
-  return { rent: null, due_day: 1, start: '', end: '', notice_months: 3, deposit: null, deposit_note: '', account: '', includes: '', note: '', remind_days: 3, meter_sensor: '' };
+  return { rent: null, due_day: 1, start: '', end: '', notice_months: 3, deposit: null, deposit_note: '', account: '', includes: '', note: '', remind_days: 3, meter_sensor: '', tenant_name: '', landlord_name: '', address: '' };
 }
 
 export class Lease {
@@ -68,7 +69,7 @@ export class Lease {
       else errors.push('Ugyldig dato i leieforholdet');
     }
     if (l.start && l.end && l.end <= l.start) errors.push('Sluttdato må være etter startdato');
-    for (const [k, max] of [['deposit_note', 200], ['account', 40], ['includes', 600], ['note', 1500]]) if (b[k] !== undefined) l[k] = str(b[k], max);
+    for (const [k, max] of [['deposit_note', 200], ['account', 40], ['includes', 600], ['note', 1500], ['tenant_name', 80], ['landlord_name', 80], ['address', 160]]) if (b[k] !== undefined) l[k] = str(b[k], max);
     if (b.meter_sensor !== undefined) {
       const id = String(b.meter_sensor || '');
       if (!id || /^sensor\.[a-z0-9_]+$/.test(id)) l.meter_sensor = id;
@@ -139,6 +140,89 @@ export class Lease {
       if (paid) this.x.engine.dismissNotice(`strom_${p.id}`);
     }
     this.x.save();
+  }
+
+  invoiceNo(month) {
+    return `H-${month.replace('-', '')}`;
+  }
+
+  // Faktura for én måned: husleie (evt. avregnet) + strøm på etterskudd.
+  invoicePdf(month) {
+    const row = this.ledger().find((r) => r.month === month);
+    if (!row) throw new Error('Fant ikke måneden');
+    const l = this.l;
+    const info = this.d.info || {};
+    const doc = new PdfDoc();
+    const { W, M } = PAGE;
+    const CW = W - 2 * M;
+    const GRAY = '0.42 0.38 0.35';
+    const d = (iso) => new Date(iso).toLocaleDateString('nb-NO', { day: 'numeric', month: 'long', year: 'numeric' });
+    const kr2 = (n) => n.toLocaleString('nb-NO', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+    const right = (t, x, y, size = 10, bold = false, color = null) => doc.text(t, x - textWidth(t, size, bold), y, size, bold, color);
+
+    // Topp
+    doc.text('Faktura', M, doc.y - 26, 28, true);
+    right(this.invoiceNo(month), W - M, doc.y - 14, 11, true);
+    right(`Fakturadato ${d(new Date(Math.min(Date.now(), new Date(row.due).getTime() - 7 * 86400000)).toISOString())}`, W - M, doc.y - 28, 9.5, false, GRAY);
+    doc.y -= 50;
+
+    // Parter
+    const colW = CW / 2 - 10;
+    const block = (x, title, lines) => {
+      doc.text(title, x, doc.y - 10, 8.5, true, GRAY);
+      lines.filter(Boolean).forEach((t, i) => doc.text(t, x, doc.y - 24 - i * 13, 10, i === 0));
+    };
+    const landlord = l.landlord_name || info.contact_name || 'Utleier';
+    block(M, 'FRA', [landlord, info.contact_email, info.contact_phone]);
+    block(M + colW + 20, 'TIL', [l.tenant_name || 'Leietaker', l.address]);
+    doc.y -= 80;
+
+    // Nøkkeltall
+    doc.rect(M, doc.y - 46, CW, 46, '0.96 0.94 0.91');
+    const cells = [['Forfallsdato', d(row.due)], ['Kontonummer', l.account || '–'], ['Merk betalingen', this.invoiceNo(month)], ['Å betale', `${kr2(row.total)} kr`]];
+    cells.forEach(([k, v], i) => {
+      const x = M + 12 + i * (CW / 4);
+      doc.text(k, x, doc.y - 16, 8.5, false, GRAY);
+      doc.text(v, x, doc.y - 33, i === 3 ? 12 : 10.5, true);
+    });
+    doc.y -= 66;
+
+    // Linjer
+    doc.text('Beskrivelse', M, doc.y - 10, 9, true, GRAY);
+    right('Beløp', W - M, doc.y - 10, 9, true, GRAY);
+    doc.y -= 16;
+    doc.line(M, doc.y, W - M, doc.y, 0.75, 0.8);
+    const line = (title, sub, amount) => {
+      const subs = sub ? wrap(sub, CW - 120, 9) : [];
+      const h = 16 + subs.length * 12 + 8;
+      doc.text(title, M, doc.y - 15, 10.5);
+      subs.forEach((t, i) => doc.text(t, M, doc.y - 28 - i * 12, 9, false, GRAY));
+      right(`${kr2(amount)} kr`, W - M, doc.y - 15, 10.5);
+      doc.y -= h;
+      doc.line(M, doc.y, W - M, doc.y, 0.9);
+    };
+    if (row.rent) line(`Husleie ${monthName(month)}`, row.rent_note ? `Avregnet ${row.rent_note} (${kr2(this.l.rent)} kr per måned)` : 'Forskuddsvis', row.rent);
+    for (const p of row.electricity) {
+      line(`Strøm ${new Date(p.from).toLocaleDateString('nb-NO', { day: 'numeric', month: 'short' })} – ${new Date(p.to).toLocaleDateString('nb-NO', { day: 'numeric', month: 'short', year: 'numeric' })}`,
+        `Målerstand ${p.start.toLocaleString('nb-NO')} → ${p.end.toLocaleString('nb-NO')} = ${p.kwh.toLocaleString('nb-NO')} kWh × ${p.price != null ? kr2(p.price) : '–'} kr/kWh`, p.amount || 0);
+    }
+    doc.y -= 8;
+    doc.text('Totalt å betale', M + CW / 2, doc.y - 14, 12, true);
+    right(`${kr2(row.total)} kr`, W - M, doc.y - 14, 13, true);
+    doc.y -= 34;
+
+    if (row.paid) {
+      doc.rect(M, doc.y - 30, CW, 30, '0.89 0.93 0.89');
+      doc.text(`Betalt${row.paid_at ? ` – registrert ${d(row.paid_at)}` : ''}`, M + 12, doc.y - 19, 11, true, '0.18 0.37 0.25');
+      doc.y -= 44;
+    }
+    const notes = [
+      l.account ? `Betal til kontonummer ${l.account} innen ${d(row.due)}, og merk betalingen med ${this.invoiceNo(month)}.` : `Forfall ${d(row.due)}.`,
+      row.electricity.length ? 'Strøm faktureres på etterskudd etter avlesning av måleren i hybelen.' : '',
+      l.includes ? `Inkludert i leien: ${l.includes}` : ''
+    ].filter(Boolean).join(' ');
+    doc.para(notes, M, CW, 9.5, false, 1.4, GRAY);
+    return doc.build({ footer: `Faktura ${this.invoiceNo(month)}${l.address ? ` · ${l.address}` : ''}` });
   }
 
   contract() {

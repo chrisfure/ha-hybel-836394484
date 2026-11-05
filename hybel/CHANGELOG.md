@@ -1,5 +1,11 @@
 # Endringslogg
 
+## 0.8.1
+
+- **Faktura (PDF) for hver måned**: husleie (med avregning ved delvis måned) og strøm med målerstander, kWh og pris, forfallsdato, kontonummer og fakturanummer (H-ÅÅÅÅMM) som betalingsmerking. Betalte måneder får «Betalt»-stempel.
+- Leietaker åpner fakturaen fra «Neste betaling» eller ved å trykke på en måned under Betalinger. Utleier har «Faktura» på hver linje i Økonomi.
+- Nye felt under Økonomi → Innstillinger: ditt navn, leietakers navn og adressen til hybelen (brukes på fakturaen).
+
 ## 0.8.0
 
 - Utleiersiden: ny seksjon **Økonomi** som samler husleie og strøm: utestående, neste forfall, betalt i år og strømpris øverst, deretter betalinger per måned, strømavlesning og -perioder, og innstillinger for husleie og strøm.

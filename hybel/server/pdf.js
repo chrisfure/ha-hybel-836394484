@@ -17,7 +17,8 @@ export const textWidth = (s, size, bold = false) => [...String(s)].reduce((a, ch
 
 function enc(s) {
   let out = '';
-  for (const ch of String(s)) {
+  const t = String(s).replace(/[\u202f\u2009\u2007]/g, ' ').replace(/→/g, '–').replace(/[✓✔]/g, 'v').replace(/−/g, '-');
+  for (const ch of t) {
     let c = WIN[ch] ?? ch.charCodeAt(0);
     if (c > 255 || (c < 32 && c !== 9)) c = 63; // '?'
     if (c === 40 || c === 41 || c === 92) out += '\\' + String.fromCharCode(c);

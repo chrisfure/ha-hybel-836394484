@@ -1,7 +1,7 @@
 // Utleiersiden. Nås kun via Home Assistant ingress (Supervisor-proxyen), aldri via Cloudflare.
 import http from 'node:http';
 import { join } from 'node:path';
-import { serveStatic, sendJson, readJson, servePhoto, sendPdf } from './http.js';
+import { serveStatic, sendJson, readJson, servePhoto, sendPdf, sendInvoice } from './http.js';
 import { log } from './log.js';
 
 const INGRESS_IP = '172.30.32.2';
@@ -160,6 +160,8 @@ export function startAdminServer({ engine, ha, webRoot, port, tenantHub, devOpen
           return sendJson(res, 400, { ok: false, error: err.message });
         }
       }
+      const im = p.match(/^\/api\/admin\/invoice\/(\d{4}-\d{2})\.pdf$/);
+      if (im && req.method === 'GET') return sendInvoice(res, engine.extras.lease, im[1]);
       const cm = p.match(/^\/api\/admin\/checklist\/([a-f0-9]{10})\.pdf$/);
       if (cm && req.method === 'GET') return sendPdf(res, engine.extras.checklists, cm[1]);
       const pm = p.match(/^\/api\/admin\/photo\/([a-f0-9]{16})$/);

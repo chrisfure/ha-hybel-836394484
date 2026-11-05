@@ -90,6 +90,17 @@ export function sendPdf(res, checklists, id, headers = {}) {
   }
 }
 
+export function sendInvoice(res, lease, month, headers = {}) {
+  try {
+    const buf = lease.invoicePdf(month);
+    const name = `Faktura-${lease.invoiceNo(month)}.pdf`;
+    res.writeHead(200, { 'Content-Type': 'application/pdf', 'Content-Length': buf.length, 'Content-Disposition': `inline; filename="${name}"`, 'Cache-Control': 'no-store', ...headers });
+    res.end(buf);
+  } catch (err) {
+    sendJson(res, 404, { ok: false, error: err.message });
+  }
+}
+
 export function readJson(req, limit = 64 * 1024) {
   return new Promise((resolve, reject) => {
     let size = 0;

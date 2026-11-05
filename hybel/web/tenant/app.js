@@ -674,6 +674,7 @@ function stromHTML() {
       <div class="pay-lines">${payLines(n)}</div>
       ${c.rent && !n.electricity.length && e.price != null ? `<p class="note">Strøm for siste periode kommer i tillegg når måleren er lest av.</p>` : ''}
       ${c.account ? `<div class="mail-to"><span>Kontonr. <strong>${esc(c.account)}</strong></span><button class="chip-btn" data-act="copy" data-v="${esc(c.account.replace(/\s/g, ''))}" data-msg="Kontonummeret er kopiert">Kopier</button></div>` : ''}
+      <a class="btn ghost inv-btn" href="api/invoice/${n.month}.pdf" target="_blank" rel="noopener">Se faktura (PDF)</a>
     </section>`;
   }
   if (c && c.auto_meter) {
@@ -696,11 +697,11 @@ function stromHTML() {
     h += `<section><h2 class="group-title">Betalinger${L.year_total ? ` <span class="gt-count">Betalt i år: ${esc(nok(L.year_total))}</span>` : ''}</h2><div class="list">${L.ledger.map((r) => {
       const [lab, cls] = LSTAT[r.status];
       const el = elSum(r);
-      return `<div class="list-row period">
+      return `<a class="list-row period inv-row" href="api/invoice/${r.month}.pdf" target="_blank" rel="noopener">
         <span class="grow"><span class="t">${esc(r.label.charAt(0).toUpperCase() + r.label.slice(1))}</span><span class="s">Forfall ${esc(dateFmt(r.due))}${r.rent ? ` · leie ${esc(nok(r.rent))}${r.rent_note ? ' (avregnet)' : ''}` : ''}${el ? ` · strøm ${esc(nok(el))}` : ''}</span></span>
         <span class="amt"><span class="t">${esc(nok(r.total))}</span><span class="pill ${cls}">${lab}</span></span>
-      </div>`;
-    }).join('')}</div></section>`;
+      </a>`;
+    }).join('')}</div><p class="note" style="margin:6px 4px 0">Trykk på en måned for å se fakturaen.</p></section>`;
   } else {
     h += `<div class="stat-row">
       <div class="card stat"><span class="field-label">Til betaling</span><span class="big">${esc(nok(e.unpaid))}</span></div>
