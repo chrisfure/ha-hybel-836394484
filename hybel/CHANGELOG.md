@@ -1,5 +1,11 @@
 # Endringslogg
 
+## 0.7.4
+
+- Utleiersiden: ny linje «Må gjøres» øverst med det som venter (ubesvarte meldinger, ubetalt leie, sjekkliste til godkjenning, enheter uten kontakt, kontrakt som snart utløper). Trykk for å gå rett til seksjonen.
+- Hver seksjon viser merker i overskriften når noe bør sjekkes, også når den er lukket.
+- Rettet: strømprisen ble bare lagret sammen med info-feltene.
+
 ## 0.7.3
 
 - Velger leietaker en dato fram i tid ved strømavlesning, vises en tydelig advarsel med en gang, og «Lagre avlesning» blir utilgjengelig til datoen er rettet.

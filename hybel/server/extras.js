@@ -213,6 +213,7 @@ export class Extras {
 
   saveInfo(body, errors) {
     this.lease.save(body, errors);
+    this.saveElectricity(body, errors);
     if (!body.info) return;
     const i = body.info;
     const info = this.d.info;
@@ -220,6 +221,9 @@ export class Extras {
       if (i[k] !== undefined) info[k] = str(i[k], max);
     }
     if (Array.isArray(i.safety)) info.safety = [...new Set(i.safety.map(String).filter((id) => /^(binary_sensor|sensor)\.[a-z0-9_]+$/.test(id)))].slice(0, 10);
+  }
+
+  saveElectricity(body, errors) {
     if (body.electricity) {
       const p = body.electricity.price_per_kwh;
       if (p === null || p === '' || p === undefined) this.d.electricity.price_per_kwh = null;

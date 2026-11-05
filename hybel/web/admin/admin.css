@@ -150,3 +150,19 @@
 .sbtn:disabled { opacity: .45; cursor: default; }
 a.sbtn { display: inline-flex; align-items: center; text-decoration: none; color: inherit; }
 .pill2.bad { background: #FBE3DA; color: #7A2A12; }
+
+/* ---------- må gjøres ---------- */
+#todo:empty { display: none; }
+.todo-bar { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; background: #fff; border-radius: 20px; padding: 12px 14px; }
+.todo-bar.ok { background: var(--green-soft); }
+.todo-ok { color: var(--green-ink); font-weight: 600; font-size: 14px; }
+.todo-title { font-size: 13px; font-weight: 700; color: var(--muted); text-transform: uppercase; letter-spacing: .05em; margin-right: 4px; }
+.todo-chip { border: 0; border-radius: 12px; padding: 8px 12px; font-size: 13.5px; text-align: left; }
+.todo-chip.bad { background: #FBE3DA; color: #7A2A12; }
+.todo-chip.warn { background: var(--amber-soft); color: var(--amber-ink); }
+.todo-badges { display: flex; gap: 6px; flex-wrap: wrap; justify-content: flex-end; }
+.todo-badge { font-size: 12px; font-weight: 600; padding: 4px 9px; border-radius: 10px; background: var(--bg); color: var(--muted); white-space: nowrap; }
+.todo-badge.bad { background: #FBE3DA; color: #7A2A12; }
+.todo-badge.warn { background: var(--amber-soft); color: var(--amber-ink); }
+.panel-head.has-todo > span:not(.chev):not(.todo-badges) { display: none; }
+@media (max-width: 560px) { .panel-head[data-act="fold"] > span.todo-badges { display: flex; } .todo-badge { white-space: normal; } }

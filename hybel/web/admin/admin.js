@@ -445,6 +445,8 @@ function resetPanel() {
 function render() {
   if (!A.cfg) return;
   const focusId = document.activeElement?.id || (document.activeElement?.dataset?.field === 'q' ? '__q' : null);
+  A.todo = todos();
+  $('todo').innerHTML = todoBar();
   $('main').innerHTML = `<div class="col-main">${reportsPanel()}${leasePanel()}${checklistPanel()}${entitiesPanel()}${scenesPanel()}${electricityPanel()}${infoPanel()}</div><div class="col-side">${limitsPanel()}${alertsPanel()}${resetPanel()}</div>${photoOverlay()}`;
   if (focusId === '__q') {
     const q = document.querySelector('[data-field="q"]');
@@ -465,6 +467,49 @@ function isOpen(key) {
   if (key === 'Inn- og utflytting') return (A.st?.extras?.checklists || []).some((c) => c.status === 'submitted');
   return false;
 }
+// ---------- hva må gjøres? ----------
+// Hver seksjon kan ha et merke: 'bad' (haster), 'warn' (bør gjøres) eller 'info'.
+function todos() {
+  const st = A.st;
+  const x = st.extras;
+  const t = {};
+  const add = (key, level, text) => { (t[key] = t[key] || []).push({ level, text }); };
+  const waiting = x.reports.filter((r) => r.landlord_unread || (r.origin !== 'landlord' && r.status === 'new' && !r.updates.some((u) => u.from === 'landlord')));
+  if (waiting.length) add('Meldinger', waiting.some((r) => r.urgent) ? 'bad' : 'warn', `${waiting.length} venter på svar`);
+  const working = x.reports.filter((r) => r.status === 'in_progress').length;
+  if (working) add('Meldinger', 'info', `${working} under arbeid`);
+  const L = x.lease;
+  if (L.overdue.length) add('Leieforhold', 'bad', `${L.overdue.length} ikke betalt`);
+  if (L.next && L.next.status === 'soon') add('Leieforhold', 'info', `Forfall ${fmtDate(L.next.due)}`);
+  const c = L.contract;
+  if (c.end && c.days_left != null && c.days_left <= 90) add('Leieforhold', c.days_left <= 30 ? 'bad' : 'warn', c.days_left < 0 ? 'Kontrakten er utløpt' : `Kontrakt utløper om ${c.days_left} d`);
+  if (!L.settings.rent) add('Leieforhold', 'info', 'Husleie ikke satt');
+  const sub = x.checklists.filter((cl) => cl.status === 'submitted').length;
+  if (sub) add('Inn- og utflytting', 'warn', `${sub} til godkjenning`);
+  const open = x.checklists.filter((cl) => cl.status === 'open');
+  if (open.length) add('Inn- og utflytting', 'info', `Hos leietaker (${open[0].done}/${open[0].total})`);
+  const off = st.entities.filter((e) => e.enabled && !e.available);
+  if (off.length) add('Synlige enheter', 'bad', `${off.length} uten kontakt`);
+  const e = x.electricity;
+  if (e.remind && !c.auto_meter) add('Strøm', 'info', 'Ikke lest av denne måneden');
+  if (!L.settings.rent && e.unpaid > 0) add('Strøm', 'warn', `${kr(e.unpaid)} ubetalt`);
+  if (e.price == null) add('Strøm', 'info', 'Pris ikke satt');
+  const i = x.info;
+  const missing = [!i.wifi_ssid && 'wifi', !(i.contact_phone || i.contact_email) && 'kontakt'].filter(Boolean);
+  if (missing.length) add('Info til leietaker', 'info', `Mangler ${missing.join(' og ')}`);
+  if (!st.alerts.notify_service) add('Varsle meg', 'info', 'Bare bjella – ingen push');
+  return t;
+}
+
+const LEVEL_RANK = { bad: 0, warn: 1, info: 2 };
+function todoBar() {
+  const t = todos();
+  const items = Object.entries(t).flatMap(([key, list]) => list.filter((x) => x.level !== 'info').map((x) => ({ key, ...x })));
+  items.sort((a, b) => LEVEL_RANK[a.level] - LEVEL_RANK[b.level]);
+  if (!items.length) return `<div class="todo-bar ok"><span class="todo-ok">✓ Ingenting som venter på deg</span></div>`;
+  return `<div class="todo-bar"><span class="todo-title">Må gjøres</span>${items.map((x) => `<button class="todo-chip ${x.level}" data-act="goto" data-key="${esc(x.key)}"><strong>${esc(x.key)}</strong> ${esc(x.text)}</button>`).join('')}</div>`;
+}
+
 function applyFolds() {
   document.querySelectorAll('#main section.panel').forEach((sec) => {
     const head = sec.querySelector(':scope > .panel-head');
@@ -477,6 +522,13 @@ function applyFolds() {
     head.setAttribute('tabindex', '0');
     head.setAttribute('aria-expanded', String(open));
     if (!head.querySelector('.chev')) head.insertAdjacentHTML('beforeend', '<span class="chev" aria-hidden="true"></span>');
+    head.querySelector('.todo-badges')?.remove();
+    const list = (A.todo || {})[key];
+    if (list && list.length) {
+      const sorted = [...list].sort((a, b) => LEVEL_RANK[a.level] - LEVEL_RANK[b.level]);
+      head.querySelector('.chev').insertAdjacentHTML('beforebegin', `<span class="todo-badges">${sorted.map((x) => `<span class="todo-badge ${x.level}">${esc(x.text)}</span>`).join('')}</span>`);
+      head.classList.add('has-todo');
+    } else head.classList.remove('has-todo');
     sec.classList.toggle('folded', !open);
   });
 }
@@ -515,6 +567,14 @@ document.addEventListener('click', async (ev) => {
   if (d.act !== 'tenant-reset') A.confirmReset = false;
   if (d.act !== 'reset-scenes') A.confirmScenes = false;
   if (d.act === 'fold') { toggleFold(d.key); return; }
+  if (d.act === 'goto') {
+    folds[d.key] = true;
+    try { localStorage.setItem(FOLD_KEY, JSON.stringify(folds)); } catch {}
+    applyFolds();
+    const h = [...document.querySelectorAll('#main .panel-head')].find((x) => x.dataset.key === d.key);
+    h?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    return;
+  }
   switch (d.act) {
     case 'ent-toggle': ents[i].enabled = !ents[i].enabled; setDirty(); break;
     case 'ent-up': [ents[i - 1], ents[i]] = [ents[i], ents[i - 1]]; setDirty(); break;
