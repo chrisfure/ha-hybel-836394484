@@ -1,5 +1,11 @@
 # Endringslogg
 
+## 0.7.2
+
+- Godkjente sjekklister er gjemt: egen fane vises bare mens en sjekkliste er i bruk. Ellers ligger den som en lenke nederst på Info.
+- Innsendte og godkjente sjekklister vises som et sammendrag (antall OK, merknader og bilder, med merknadene listet). Hele listen kan åpnes ved behov.
+- Strømavlesninger kan ikke legges inn fram i tid.
+
 ## 0.7.1
 
 - Automasjoner er samlet i grupper som kan felles sammen: én gruppe per knapp (sortert på knapp og retning, med «Trykk»/«Hold»), «Til faste tider» (sortert gjennom døgnet) og «Når noe skjer».

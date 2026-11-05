@@ -43,7 +43,7 @@ const S = {
   pdf: null,           // { key, file } – ferdig hentet PDF av sjekklisten
   autoOpen: (() => { try { return JSON.parse(localStorage.getItem('hybel-auto-open') || '{}'); } catch { return {}; } })(),
   reply: {},
-  reading: { date: new Date().toISOString().slice(0, 10), value: '' }
+  reading: { date: (() => { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`; })(), value: '' }
 };
 const TYPING = 'input[type="text"], input[type="time"], input[type="number"], input[type="date"], textarea';
 
@@ -528,6 +528,7 @@ function autoTab() {
 
 const nok = (n) => (n == null ? '–' : n.toLocaleString('nb-NO', Number.isInteger(n) ? { maximumFractionDigits: 0 } : { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + ' kr');
 const kwhFmt = (n) => (n == null ? '–' : n.toLocaleString('nb-NO', { maximumFractionDigits: 1 }) + ' kWh');
+const localToday = () => { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`; };
 const dateFmt = (d) => new Date(d).toLocaleDateString('nb-NO', { day: 'numeric', month: 'short', year: 'numeric' });
 const STATUS = { new: ['Mottatt', 'st-new'], in_progress: ['Under arbeid', 'st-work'], done: ['Løst', 'st-done'] };
 
@@ -541,7 +542,9 @@ function infoTab() {
   const unread = (m.reports || []).filter((r) => r.unread).length;
   const cls = m.checklists || [];
   const subs = [['info', 'Info'], ['strom', 'Leie'], ['meld', 'Meldinger']];
-  if (cls.length) subs.push(['sjekk', 'Sjekkliste']);
+  // Sjekklisten får egen fane bare mens den er i bruk; ellers ligger den nederst på Info.
+  const clActive = cls.some((c) => c.status !== 'approved' || c.unread);
+  if (clActive || S.infoSub === 'sjekk') subs.push(['sjekk', 'Sjekkliste']);
   if (S.infoSub === 'sjekk' && !cls.length) S.infoSub = 'info';
   const dot = (k) => (k === 'strom' && (m.electricity.remind || (m.lease && m.lease.overdue.length))) || (k === 'meld' && unread > 0) || (k === 'sjekk' && cls.some((c) => c.status === 'open' || c.unread));
   let h = `<div class="seg subnav ${subs.length > 3 ? 'four' : ''}" style="grid-template-columns: repeat(${subs.length}, minmax(0, 1fr))">${subs.map(([k, l]) => `<button aria-pressed="${S.infoSub === k}" data-act="info-sub" data-v="${k}">${esc(l)}${dot(k) ? ' •' : ''}</button>`).join('')}</div>`;
@@ -592,6 +595,10 @@ function infoHTML() {
   }
   h += textCard('Søppel og henting', i.garbage) + textCard('Husregler', i.rules) + textCard('Ved nødstilfeller', i.emergency) + textCard('Annet', i.other);
   if (!h) h = `<p class="intro">Utleier har ikke lagt inn informasjon ennå.</p>`;
+  const done = (S.m.checklists || []).filter((c) => c.status === 'approved');
+  if (done.length && !(S.m.checklists || []).some((c) => c.status !== 'approved' || c.unread)) {
+    h += `<button class="card list-row link-row" data-act="info-sub" data-v="sjekk"><span class="grow"><span class="t">Inn- og utflyttingssjekklister</span><span class="s">${done.map((c) => `${c.label} · godkjent ${dateFmt(c.approved_at)}`).map(esc).join('<br>')}</span></span>${svg(UI.down, 18, 2).replace('<svg', '<svg style="transform:rotate(-90deg)"')}</button>`;
+  }
   return h;
 }
 
@@ -669,7 +676,7 @@ function stromHTML() {
       ${e.last ? `<span class="note">${e.last.by === 'landlord' ? 'Startavlesning (lagt inn av utleier)' : 'Forrige'}: ${esc(kwhFmt(e.last.value))} den ${esc(dateFmt(e.last.date))}</span>` : `<span class="note">Første avlesning blir startpunktet.</span>`}
       <div class="reading-form">
         <label class="field"><span class="field-label">Målerstand (kWh)</span><input class="input" type="number" inputmode="decimal" step="0.1" min="0" placeholder="F.eks. 12345" value="${esc(S.reading.value)}" data-field="reading-value"></label>
-        <label class="field"><span class="field-label">Dato</span><input class="input" type="date" value="${esc(S.reading.date)}" data-field="reading-date"></label>
+        <label class="field"><span class="field-label">Dato</span><input class="input" type="date" value="${esc(S.reading.date)}" max="${localToday()}" data-field="reading-date"></label>
       </div>
       <button class="btn primary big" data-act="reading-add">Lagre avlesning</button>
       ${e.last && e.last.deletable ? `<button class="btn ghost" data-act="reading-delete" data-id="${e.last.id}">${S.confirmDelete ? 'Trykk igjen for å slette siste' : 'Slett siste avlesning'}</button>` : ''}
@@ -781,8 +788,16 @@ function sjekkHTML() {
     h += `<p class="note">${c.status === 'approved' ? `Godkjent av utleier ${esc(dateFmt(c.approved_at))}.` : `Sendt inn ${esc(dateFmt(c.submitted_at))}. Utleier går gjennom den.`}</p>
       ${c.landlord_comment ? `<div class="msg landlord"><span>${esc(c.landlord_comment)}</span><small>Utleier</small></div>` : ''}`;
   }
+  if (!editable) {
+    const notes = c.rows.filter((r) => r.status === 'note');
+    const ok = c.rows.filter((r) => r.status === 'ok').length;
+    h += `<div class="cl-summary"><span><strong>${ok}</strong> OK</span><span><strong>${notes.length}</strong> merknad${notes.length === 1 ? '' : 'er'}</span><span><strong>${c.rows.reduce((a, r) => a + r.photos.length, 0)}</strong> bilder</span></div>`;
+    if (notes.length) h += `<div class="cl-notes">${notes.map((r) => `<div class="cl-note-t"><span class="t">${esc(r.room)} – ${esc(r.item)}</span>${r.note ? `<span class="s">${esc(r.note)}</span>` : ''}${photoThumbs(r.photos)}</div>`).join('')}</div>`;
+    h += `<button class="btn ghost" data-act="cl-full" data-id="${c.id}">${S.clFull === c.id ? 'Skjul hele listen' : 'Vis hele listen'}</button>`;
+  }
   h += `</section>`;
   if (!editable) h += mailCardHTML(c);
+  if (!editable && S.clFull !== c.id) return h;
   rooms.forEach((room) => {
     const rows = c.rows.map((r, i) => ({ ...r, i })).filter((r) => r.room === room);
     const done = rows.filter((r) => r.status).length;
@@ -1220,6 +1235,7 @@ function act(a, ds) {
     case 'cl-photo-rm':
       cmd({ type: 'checklist_photo_remove', id: ds.id, i: Number(ds.i), photo: ds.photo });
       return;
+    case 'cl-full': S.clFull = S.clFull === ds.id ? null : ds.id; return render();
     case 'cl-sel': S.clSel = ds.id; window.scrollTo(0, 0); return render();
     case 'cl-mail': {
       const c = (m.checklists || []).find((x) => x.id === ds.id);
@@ -1270,9 +1286,10 @@ function act(a, ds) {
       return;
     }
     case 'reading-add':
+      if (S.reading.date > localToday()) return showToast('Du kan ikke legge inn en avlesning fram i tid', true);
       cmd({ type: 'reading_add', date: S.reading.date, value: S.reading.value }).then((r) => {
         if (!r.ok) return;
-        S.reading = { date: new Date().toISOString().slice(0, 10), value: '' };
+        S.reading = { date: localToday(), value: '' };
         showToast('Avlesningen er lagret');
       });
       return;

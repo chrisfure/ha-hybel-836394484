@@ -5,7 +5,7 @@ import { join } from 'node:path';
 import { log } from './log.js';
 import { loadVapid, sendPush } from './webpush.js';
 import { Checklists, DEFAULT_TEMPLATE, parseTemplate, templateToText } from './checklist.js';
-import { Lease, defaultLease } from './lease.js';
+import { Lease, defaultLease, localDate } from './lease.js';
 
 export const REPORT_CATEGORIES = ['Vann og rør', 'Elektrisk', 'Varme og ventilasjon', 'Hvitevarer', 'Dører, vinduer og lås', 'Annet'];
 export const REPORT_STATUS = ['new', 'in_progress', 'done'];
@@ -316,7 +316,9 @@ export class Extras {
 
   addReading(cmd, by = 'tenant') {
     if (by === true) by = 'landlord';
-    const date = isDate(cmd.date) ? cmd.date : new Date().toISOString().slice(0, 10);
+    const today = localDate();
+    const date = isDate(cmd.date) ? cmd.date : today;
+    if (date > today) throw new Error('Du kan ikke legge inn en avlesning fram i tid – les av måleren på dagen');
     const value = Math.round(Number(String(cmd.value).replace(',', '.')) * 10) / 10;
     if (!Number.isFinite(value) || value < 0 || value > 10_000_000) throw new Error('Ugyldig målerstand');
     const list = this.d.readings;

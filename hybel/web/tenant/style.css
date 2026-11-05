@@ -304,3 +304,12 @@ button, .range, .switch { touch-action: manipulation; }
 .auto-row .t { font-size: 15px; }
 .auto-tag { display: inline-block; font-size: 11.5px; font-weight: 700; color: var(--teal-ink); background: var(--teal-soft); border-radius: 8px; padding: 2px 7px; margin-bottom: 3px; }
 .auto-row.off .t, .auto-row.off .auto-tag { opacity: .5; }
+
+.cl-summary { display: flex; gap: 8px; margin-top: 4px; }
+.cl-summary span { flex: 1; background: var(--bg); border-radius: 12px; padding: 8px 10px; font-size: 13px; color: var(--muted); text-align: center; }
+.cl-summary strong { display: block; font-size: 18px; color: var(--ink); }
+.cl-notes { display: flex; flex-direction: column; gap: 8px; margin-top: 4px; }
+.cl-note-t { border-left: 3px solid var(--amber); padding-left: 10px; display: flex; flex-direction: column; gap: 2px; }
+.cl-note-t .t { font-size: 14px; font-weight: 600; }
+.cl-note-t .s { font-size: 13.5px; color: var(--muted); }
+.link-row { border-radius: 22px; padding: 12px 16px; min-height: 0; color: var(--ink); }
