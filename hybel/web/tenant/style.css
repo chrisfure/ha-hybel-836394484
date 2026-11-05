@@ -313,3 +313,4 @@ button, .range, .switch { touch-action: manipulation; }
 .cl-note-t .t { font-size: 14px; font-weight: 600; }
 .cl-note-t .s { font-size: 13.5px; color: var(--muted); }
 .link-row { border-radius: 22px; padding: 12px 16px; min-height: 0; color: var(--ink); }
+.future-warn[hidden] { display: none; }

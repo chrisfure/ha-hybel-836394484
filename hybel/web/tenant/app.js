@@ -528,6 +528,13 @@ function autoTab() {
 
 const nok = (n) => (n == null ? '–' : n.toLocaleString('nb-NO', Number.isInteger(n) ? { maximumFractionDigits: 0 } : { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + ' kr');
 const kwhFmt = (n) => (n == null ? '–' : n.toLocaleString('nb-NO', { maximumFractionDigits: 1 }) + ' kWh');
+function checkFutureReading() {
+  const future = S.reading.date > localToday();
+  const w = $app.querySelector('.future-warn');
+  if (w) w.hidden = !future;
+  const b = $app.querySelector('[data-act="reading-add"]');
+  if (b) b.disabled = future;
+}
 const localToday = () => { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`; };
 const dateFmt = (d) => new Date(d).toLocaleDateString('nb-NO', { day: 'numeric', month: 'short', year: 'numeric' });
 const STATUS = { new: ['Mottatt', 'st-new'], in_progress: ['Under arbeid', 'st-work'], done: ['Løst', 'st-done'] };
@@ -676,9 +683,10 @@ function stromHTML() {
       ${e.last ? `<span class="note">${e.last.by === 'landlord' ? 'Startavlesning (lagt inn av utleier)' : 'Forrige'}: ${esc(kwhFmt(e.last.value))} den ${esc(dateFmt(e.last.date))}</span>` : `<span class="note">Første avlesning blir startpunktet.</span>`}
       <div class="reading-form">
         <label class="field"><span class="field-label">Målerstand (kWh)</span><input class="input" type="number" inputmode="decimal" step="0.1" min="0" placeholder="F.eks. 12345" value="${esc(S.reading.value)}" data-field="reading-value"></label>
-        <label class="field"><span class="field-label">Dato</span><input class="input" type="date" value="${esc(S.reading.date)}" max="${localToday()}" data-field="reading-date"></label>
+        <label class="field"><span class="field-label">Dato</span><input class="input" type="date" value="${esc(S.reading.date)}" data-field="reading-date"></label>
       </div>
-      <button class="btn primary big" data-act="reading-add">Lagre avlesning</button>
+      <div class="notice-soft bad future-warn" ${S.reading.date > localToday() ? '' : 'hidden'}>Du kan ikke legge inn strømmen på forhånd. Les av måleren på dagen og velg dagens dato eller en tidligere dato.</div>
+      <button class="btn primary big" data-act="reading-add" ${S.reading.date > localToday() ? 'disabled' : ''}>Lagre avlesning</button>
       ${e.last && e.last.deletable ? `<button class="btn ghost" data-act="reading-delete" data-id="${e.last.id}">${S.confirmDelete ? 'Trykk igjen for å slette siste' : 'Slett siste avlesning'}</button>` : ''}
       ${e.note ? `<p class="note pre">${esc(e.note)}</p>` : ''}
     </section>`;
@@ -1552,7 +1560,7 @@ $app.addEventListener('input', (ev) => {
   if (f === 'cl-note' || f === 'cl-comment') return;
   if (f === 'reply') { S.reply[t.dataset.id] = t.value; return; }
   if (f === 'reading-value') { S.reading.value = t.value; return; }
-  if (f === 'reading-date') { S.reading.date = t.value; return; }
+  if (f === 'reading-date') { S.reading.date = t.value; checkFutureReading(); return; }
   if (f === 'auto-time') { S.adraft.trigger.at = t.value; return; }
   if (f === 'win-from') { S.adraft.window.from = t.value; return; }
   if (f === 'win-to') { S.adraft.window.to = t.value; return; }
@@ -1575,6 +1583,7 @@ $app.addEventListener('input', (ev) => {
 
 $app.addEventListener('change', (ev) => {
   const t = ev.target;
+  if (t.dataset.field === 'reading-date') { S.reading.date = t.value; checkFutureReading(); }
   if (t.closest('input.range[data-key]')) endDrag();
   if (t.dataset.field === 'cl-note') {
     const c = (S.m.checklists || []).find((x) => x.id === t.dataset.id);

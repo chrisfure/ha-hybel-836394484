@@ -1,5 +1,9 @@
 # Endringslogg
 
+## 0.7.3
+
+- Velger leietaker en dato fram i tid ved strømavlesning, vises en tydelig advarsel med en gang, og «Lagre avlesning» blir utilgjengelig til datoen er rettet.
+
 ## 0.7.2
 
 - Godkjente sjekklister er gjemt: egen fane vises bare mens en sjekkliste er i bruk. Ellers ligger den som en lenke nederst på Info.
