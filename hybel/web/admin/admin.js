@@ -384,9 +384,13 @@ function economyPanel() {
           <td>${el ? esc(kr(el)) : '–'}${r.electricity.map((p) => `<br><span class="help">${p.kwh.toLocaleString('nb-NO')} kWh</span>`).join('')}</td>
           <td><strong>${esc(kr(r.total))}</strong><br><span class="pill2 ${cls}">${lab}</span></td>
           <td><button class="sbtn ${r.paid ? 'on' : ''}" data-act="month-paid" data-v="${r.month}" data-paid="${r.paid ? '0' : '1'}">${r.paid ? 'Betalt ✓' : 'Marker betalt'}</button>
-            <a class="sbtn" href="api/admin/invoice/${r.month}.pdf" target="_blank" rel="noopener">Faktura</a></td></tr>`;
+            <a class="sbtn" href="api/admin/invoice/${r.month}.pdf" target="_blank" rel="noopener">Faktura</a>
+            ${r.paid ? '' : `<button class="sbtn" data-act="inv-delete" data-v="${r.month}">${A.confirmDel === `inv-${r.month}` ? 'Bekreft sletting' : 'Slett'}</button>`}</td></tr>`;
       }).join('')}
     </tbody></table>`;
+    if (L.deleted.length) h += `<details class="eco-del"><summary>Slettede fakturaer (${L.deleted.length})</summary>
+      ${L.deleted.map((x) => `<div class="del-row"><span>${esc(x.label)} <span class="help">slettet ${esc(fmtDate(x.at))}</span></span><button class="sbtn" data-act="inv-restore" data-v="${x.month}">Gjenopprett</button></div>`).join('')}
+      <p class="help">En slettet faktura vises ikke for leietaker og regnes ikke som utestående. Strøm i den måneden blir ikke fakturert.</p></details>`;
   }
 
   // Strøm: avlesning og perioder
@@ -627,6 +631,17 @@ document.addEventListener('click', async (ev) => {
         const r = await api('api/admin/test-notify', { method: 'POST', body: '{}' });
         A.testResult = (r.results || []).map((x) => `${x.ok ? '✓' : '✗'} ${x.channel === 'push' ? `Push til ${esc(x.target)}` : 'Bjella i Home Assistant'}${x.ok ? '' : `: ${esc(x.error)}`}`).join('<br>');
       } catch (e) { A.testResult = '✗ ' + esc(e.message); }
+      break;
+    }
+    case 'inv-delete':
+    case 'inv-restore': {
+      if (d.act === 'inv-delete' && A.confirmDel !== `inv-${d.v}`) { A.confirmDel = `inv-${d.v}`; break; }
+      try {
+        const r = await api('api/admin/payment', { method: 'POST', body: JSON.stringify({ month: d.v, void: d.act === 'inv-delete' }) });
+        if (!r.ok) { message(esc(r.error), true); return; }
+        A.st = r.state; A.confirmDel = null;
+        message(d.act === 'inv-delete' ? 'Fakturaen er slettet.' : 'Fakturaen er gjenopprettet.');
+      } catch (e) { message(esc(e.message), true); }
       break;
     }
     case 'pay-all-overdue': {

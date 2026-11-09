@@ -128,7 +128,8 @@ export function startAdminServer({ engine, ha, webRoot, port, tenantHub, devOpen
       if (p === '/api/admin/payment' && req.method === 'POST') {
         const body = await readJson(req);
         try {
-          engine.extras.lease.setPaid(body.month, body.paid);
+          if (body.void !== undefined) engine.extras.lease.setVoid(body.month, Boolean(body.void));
+          else engine.extras.lease.setPaid(body.month, body.paid);
           engine.changed();
           return sendJson(res, 200, { ok: true, state: engine.adminView({ tenant_clients: tenantHub.size }) });
         } catch (err) {

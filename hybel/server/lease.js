@@ -125,7 +125,22 @@ export class Lease {
       r.status = r.paid ? 'paid' : r.due < today ? 'overdue' : daysBetween(today, r.due) <= 10 ? 'soon' : 'upcoming';
       r.label = monthName(r.month);
       return r;
-    }).filter((r) => r.total > 0 || r.paid);
+    }).filter((r) => (r.total > 0 || r.paid) && !this.pay[r.month]?.void);
+  }
+
+  // Slett (annuller) en faktura. Kan gjenopprettes. Strømmen i måneden blir da ikke fakturert.
+  setVoid(month, on) {
+    if (!/^\d{4}-\d{2}$/.test(String(month))) throw new Error('Ugyldig måned');
+    if (on) {
+      if (this.pay[month]?.paid) throw new Error('Fakturaen er markert som betalt – fjern betalingen først');
+      this.pay[month] = { void: true, at: new Date().toISOString() };
+      this.x.engine.dismissNotice(`betaling_${month}`);
+    } else if (this.pay[month]?.void) delete this.pay[month];
+    this.x.save();
+  }
+
+  deletedMonths() {
+    return Object.entries(this.pay).filter(([, v]) => v.void).map(([m, v]) => ({ month: m, label: monthName(m), at: v.at })).sort((a, b) => b.month.localeCompare(a.month));
   }
 
   setPaid(month, paid) {
@@ -249,6 +264,7 @@ export class Lease {
     return {
       contract: this.contract(),
       ledger: [...ledger].reverse(),
+      deleted: this.deletedMonths(),
       next,
       overdue: open.filter((r) => r.due < today).map((r) => ({ month: r.month, label: r.label, total: r.total, due: r.due })),
       year_total: ledger.filter((r) => r.paid && r.month.startsWith(today.slice(0, 4))).reduce((s, r) => s + r.total, 0)

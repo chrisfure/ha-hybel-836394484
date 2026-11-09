@@ -1,5 +1,9 @@
 # Endringslogg
 
+## 0.8.4
+
+- Fakturaer kan slettes fra Økonomi (med bekreftelse). Slettede fakturaer vises ikke for leietaker, regnes ikke som utestående og kan gjenopprettes under «Slettede fakturaer». Betalte fakturaer må få fjernet betalingen før de kan slettes.
+
 ## 0.8.3
 
 - Zigbee-tilkobling holdes åpen i 10 minutter (Zigbee2MQTT slås på igjen automatisk når den lukker selv).
