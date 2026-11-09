@@ -1,5 +1,13 @@
 # Endringslogg
 
+## 0.9.0
+
+- Scener styrer bare lys – varme og ventilasjon er tatt ut. Eldre scenesverdier for varme/ventilasjon ignoreres, og scener uten lys skjules.
+- Bare den sist valgte scenen vises som aktiv (før kunne f.eks. Natt og Borte vises samtidig fordi begge slår av alle lys).
+- Scener vises som små knapper i to kolonner; redigering ligger bak «Endre scener».
+- **Fast lysknapp**: utleier velger fjernkontroll, knapp og lys under Scener og automasjoner. Opp = på, ned = av, hold inne = dim. Følger hybelen fra start, overlever leietakerbytte og kan ikke endres av leietaker.
+- Temperaturkort viser ikke lenger begrunnelse for maks/min, og listen over grenser i innstillingene er fjernet.
+
 ## 0.8.4
 
 - Fakturaer kan slettes fra Økonomi (med bekreftelse). Slettede fakturaer vises ikke for leietaker, regnes ikke som utestående og kan gjenopprettes under «Slettede fakturaer». Betalte fakturaer må få fjernet betalingen før de kan slettes.

@@ -300,13 +300,13 @@ export class Engine extends EventEmitter {
     const all = (kind, v) => Object.fromEntries(ents.filter((e) => e.kind === kind).map((e) => [e.entity_id, v]));
     const heat = (v) => Object.fromEntries(ents.filter((e) => e.kind === 'heat').map((e) => [e.entity_id, this.clampTemp(e, v)]));
     const vent = (v) => Object.fromEntries(ents.filter((e) => e.kind === 'vent').map((e) => [e.entity_id, this.sanitize(e, v)]));
+    // Scener styrer bare lys. Varme og ventilasjon styres for seg.
+    void heat; void vent;
     const list = [
-      { name: 'Matlaging', icon: 'pot', values: { ...all('light', 90), ...vent('high') } },
-      { name: 'Dusj', icon: 'drop', values: { ...heat(24), ...vent('high') } },
+      { name: 'Matlaging', icon: 'pot', values: all('light', 90) },
       { name: 'Kos', icon: 'sofa', values: all('light', 30) },
       { name: 'Lesestund', icon: 'book', values: all('light', 70) },
-      { name: 'Natt', icon: 'moon', values: { ...all('light', 0), ...heat(20), ...vent('low') } },
-      { name: 'Borte', icon: 'door', values: { ...all('light', 0), ...heat(18), ...vent('away') } }
+      { name: 'Natt', icon: 'moon', values: all('light', 0) }
     ];
     return list.filter((s) => Object.keys(s.values).length).map((s) => ({ id: newId(), ...s }));
   }
@@ -328,6 +328,24 @@ export class Engine extends EventEmitter {
       try { out[e.entity_id] = this.sanitize(e, values[e.entity_id]); } catch {}
     }
     return out;
+  }
+
+  // Scener styrer bare lys – eventuelle eldre verdier for varme/ventilasjon ignoreres.
+  sceneValues(sc) {
+    const v = this.cleanValues(sc.values);
+    for (const id of Object.keys(v)) if (this.byId(id)?.kind !== 'light') delete v[id];
+    return v;
+  }
+
+  scenes() {
+    return this.ensureScenes().filter((sc) => Object.keys(this.sceneValues(sc)).length);
+  }
+
+  // Bare den sist valgte scenen regnes som aktiv, og bare så lenge lysene fortsatt står slik.
+  activeSceneId() {
+    const id = this.data.active_scene;
+    const sc = id && this.scenes().find((x) => x.id === id);
+    return sc && this.sceneMatches(this.sceneValues(sc)) ? id : null;
   }
 
   valueMatches(e, cur, want) {
@@ -359,8 +377,10 @@ export class Engine extends EventEmitter {
     const sc = this.ensureScenes().find((s) => s.id === id);
     if (!sc) throw new Error('Scenen finnes ikke');
     log.info('Scene:', sc.name);
+    this.data.active_scene = sc.id;
+    this.store.save();
     this.changed();
-    await this.applyValues(this.cleanValues(sc.values));
+    await this.applyValues(this.sceneValues(sc));
   }
 
   // Verdier fra leietaker (nøkler) → entity_id, med streng kontroll.
@@ -384,7 +404,8 @@ export class Engine extends EventEmitter {
     if (!name) throw new Error('Scenen må ha et navn');
     const icon = ICONS.includes(input.icon) ? input.icon : 'star';
     const values = this.valuesFromKeys(input.values);
-    if (!Object.keys(values).length) throw new Error('Velg minst én ting scenen skal styre');
+    for (const id of Object.keys(values)) if (this.byId(id)?.kind !== 'light') delete values[id];
+    if (!Object.keys(values).length) throw new Error('Velg minst ett lys scenen skal styre');
     const existing = scenes.find((s) => s.id === input.id);
     if (existing) Object.assign(existing, { name, icon, values });
     else {
@@ -485,9 +506,35 @@ export class Engine extends EventEmitter {
     return { trigger, window, days, action, revert_after: revert };
   }
 
+  // Faste automasjoner for en lysknapp, satt opp av utleier: opp = på, ned = av, hold = dim.
+  // Følger hybelen (beholdes ved leietakerbytte) og kan ikke endres av leietaker.
+  fixedAutomations() {
+    const f = this.data.fixed_button;
+    if (!f?.entity_id || !f.light || !f.n) return [];
+    const light = this.byId(f.light);
+    if (!light || light.kind !== 'light') return [];
+    const ev = (dir, how) => `button_${f.n}_${dir}_${how}`;
+    const mk = (suffix, event, action) => ({ id: `fixed-${suffix}`, fixed: true, enabled: true, trigger: { type: 'button', entity_id: f.entity_id, event }, days: [1, 2, 3, 4, 5, 6, 7], action });
+    return [
+      mk('on', ev('up', 'press'), { type: 'light_on', entities: [f.light] }),
+      mk('off', ev('down', 'press'), { type: 'light_off', entities: [f.light] }),
+      mk('up', ev('up', 'hold'), { type: 'dim', entities: [f.light], dir: 'up', step: 8 }),
+      mk('down', ev('down', 'hold'), { type: 'dim', entities: [f.light], dir: 'down', step: 8 })
+    ];
+  }
+
+  allAutomations() {
+    const fixed = this.fixedAutomations();
+    const taken = new Set(fixed.map((a) => `${a.trigger.entity_id}|${a.trigger.event}`));
+    return [...fixed, ...this.data.automations.filter((a) => !(a.trigger.type === 'button' && taken.has(`${a.trigger.entity_id}|${a.trigger.event}`)))];
+  }
+
   saveAutomation(input) {
     const d = this.data;
     const clean = this.validateAutomation(input);
+    if (clean.trigger.type === 'button' && this.fixedAutomations().some((f) => f.trigger.entity_id === clean.trigger.entity_id && f.trigger.event === clean.trigger.event)) {
+      throw new Error('Denne knappen er allerede satt opp fast – velg en annen knapp');
+    }
     let auto = d.automations.find((x) => x.id === input.id);
     if (auto) Object.assign(auto, clean);
     else {
@@ -576,6 +623,13 @@ export class Engine extends EventEmitter {
     if (a.type === 'lights_off') return this.applyValues(Object.fromEntries(this.actionEntities(a).map((id) => [id, 0])));
     if (a.type === 'set') return this.applyValues(this.cleanValues(a.values));
     if (a.type === 'dim') return this.startDim(auto);
+    if (a.type === 'light_on' || a.type === 'light_off') {
+      // Slå på uten lysstyrke, så lyset kommer tilbake slik det var sist.
+      const ids = a.entities.filter((id) => this.byId(id));
+      if (ids.length) await this.ha.callService('light', a.type === 'light_on' ? 'turn_on' : 'turn_off', { entity_id: ids });
+      this.changed();
+      return;
+    }
     if (a.type === 'heat') return this.applyValues(Object.fromEntries(this.actionEntities(a).map((id) => [id, a.value])));
   }
 
@@ -593,6 +647,8 @@ export class Engine extends EventEmitter {
       : a.type === 'lights_off' ? 'slå av alle lys'
       : a.type === 'set' ? `styr ${Object.keys(a.values).map(label).join(', ')}`
       : a.type === 'dim' ? `dim ${a.entities.map(label).join(', ')} ${a.dir === 'up' ? 'opp' : 'ned'}`
+      : a.type === 'light_on' ? `slå på ${a.entities.map(label).join(', ')}`
+      : a.type === 'light_off' ? `slå av ${a.entities.map(label).join(', ')}`
       : `varme ${a.value}°`;
     return `${when}: ${what}${auto.revert_after ? ` (gjør om etter ${auto.revert_after} min)` : ''}`;
   }
@@ -655,7 +711,7 @@ export class Engine extends EventEmitter {
     const d = this.data;
     const now = new Date();
     const today = dateKey(now);
-    for (const auto of d.automations) {
+    for (const auto of this.allAutomations()) {
       if (!auto.enabled || !auto.days.includes(isoDay(now)) || d.auto_runs[auto.id] === today) continue;
       const due = this.dueToday(auto, now);
       if (due == null || now.getTime() < due || now.getTime() - due > RUN_WINDOW_MS) continue;
@@ -674,7 +730,7 @@ export class Engine extends EventEmitter {
       const prefix = ev.replace(/_?(short_|long_)?release$/i, '');
       for (const [id, loop] of this.dimLoops) if (loop.entity === entityId && loop.prefix === prefix) this.stopDim(id);
     }
-    for (const auto of d.automations) {
+    for (const auto of this.allAutomations()) {
       const t = auto.trigger;
       if (!auto.enabled || t.entity_id !== entityId) continue;
       if (!auto.days.includes(isoDay(now)) || !this.inWindow(auto, now)) continue;
@@ -806,11 +862,11 @@ export class Engine extends EventEmitter {
   publicAutomation(a) {
     const t = { ...a.trigger };
     if (t.entity_id) { t.entity = keyOf(t.entity_id); delete t.entity_id; }
-    const action = a.action.type === 'dim' ? { ...a.action, entities: a.action.entities.map(keyOf) }
+    const action = ['dim', 'light_on', 'light_off'].includes(a.action.type) ? { ...a.action, entities: a.action.entities.map(keyOf) }
       : a.action.type === 'set' ? { type: 'set', values: this.toKeys(a.action.values) } : a.action.type === 'heat'
       ? { type: 'set', values: this.toKeys(Object.fromEntries(this.actionEntities(a.action).map((id) => [id, a.action.value]))) }
       : { ...a.action };
-    return { id: a.id, enabled: a.enabled, trigger: t, window: a.window || null, days: a.days, action, revert_after: a.revert_after || 0 };
+    return { id: a.id, enabled: a.enabled, fixed: Boolean(a.fixed), trigger: t, window: a.window || null, days: a.days, action, revert_after: a.revert_after || 0 };
   }
 
   tenantView() {
@@ -823,11 +879,11 @@ export class Engine extends EventEmitter {
       pairing: this.pairing.view(),
       icons: ICONS,
       revert_options: REVERT_OPTIONS,
-      scenes: this.ensureScenes().map((s) => {
-        const values = this.cleanValues(s.values);
-        return { id: s.id, name: s.name, icon: s.icon, values: this.toKeys(values), active: this.sceneMatches(values) };
-      }),
-      automations: d.automations.map((a) => this.publicAutomation(a)),
+      scenes: (() => {
+        const act = this.activeSceneId();
+        return this.scenes().map((s) => ({ id: s.id, name: s.name, icon: s.icon, values: this.toKeys(this.sceneValues(s)), active: s.id === act }));
+      })(),
+      automations: this.allAutomations().map((a) => this.publicAutomation(a)),
       sun: { sunrise: sunToday.sunrise || null, sunset: sunToday.sunset || null },
       limits: { boost_max_minutes: d.limits.boost_max_minutes, vent_allow_away: d.limits.vent_allow_away },
       prefs: { boost_minutes: Math.min(d.tenant_prefs.boost_minutes || 30, d.limits.boost_max_minutes) },
@@ -883,13 +939,14 @@ export class Engine extends EventEmitter {
       limits: d.limits,
       tenant_can_edit_scenes: d.tenant_can_edit_scenes,
       pairing: { enabled: d.pairing_enabled !== false, switch: this.pairing.switchId(), set: d.pairing_switch || '' },
-      scenes: this.ensureScenes().map((s) => ({ id: s.id, name: s.name, icon: s.icon, parts: Object.keys(this.cleanValues(s.values)).map((id) => labels.get(id) || id) })),
-      automations: d.automations.map((a) => ({ id: a.id, enabled: a.enabled, label: this.describeAutomation(a), days: a.days })),
+      scenes: this.scenes().map((s) => ({ id: s.id, name: s.name, icon: s.icon, parts: Object.keys(this.sceneValues(s)).map((id) => labels.get(id) || id) })),
+      automations: this.allAutomations().map((a) => ({ id: a.id, enabled: a.enabled, fixed: Boolean(a.fixed), label: this.describeAutomation(a), days: a.days })),
+      fixed_button: d.fixed_button || null,
       alerts: d.alerts,
       extras: this.extras.adminView(),
       status: {
         ha_connected: this.ha.connected,
-        active_scenes: this.ensureScenes().filter((s) => this.sceneMatches(this.cleanValues(s.values))).map((s) => s.name),
+        active_scenes: this.scenes().filter((s) => s.id === this.activeSceneId()).map((s) => s.name),
         boost: d.boost,
         last_tenant_activity: d.last_tenant_activity,
         ...extra
@@ -940,6 +997,15 @@ export class Engine extends EventEmitter {
     }
     if (typeof body.tenant_can_edit_scenes === 'boolean') d.tenant_can_edit_scenes = body.tenant_can_edit_scenes;
     if (typeof body.pairing_enabled === 'boolean') d.pairing_enabled = body.pairing_enabled;
+    if (body.fixed_button !== undefined) {
+      const f = body.fixed_button;
+      if (!f || !f.entity_id || !f.light) d.fixed_button = null;
+      else {
+        const n = Number(f.n);
+        if (!/^event\.[a-z0-9_]+$/.test(f.entity_id) || !/^light\.[a-z0-9_]+$/.test(f.light) || !(n >= 1 && n <= 8)) errors.push('Ugyldig oppsett for fast lysknapp');
+        else d.fixed_button = { entity_id: f.entity_id, n, light: f.light };
+      }
+    }
     if (body.alerts) {
       const svc = String(body.alerts.notify_service || '').trim();
       if (svc && !/^notify\.[a-z0-9_]+$/.test(svc)) errors.push('Varslingstjenesten må se ut som notify.mobile_app_telefon');

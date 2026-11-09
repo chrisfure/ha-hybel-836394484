@@ -46,6 +46,7 @@ function pickCfg(st) {
     limits: st.limits,
     tenant_can_edit_scenes: st.tenant_can_edit_scenes,
     pairing_enabled: st.pairing.enabled,
+    fixed_button: st.fixed_button || { entity_id: '', n: 1, light: '' },
     alerts: st.alerts,
     info: st.extras.info,
     electricity: { price_per_kwh: st.extras.electricity.price, note: st.extras.electricity.note },
@@ -179,6 +180,7 @@ function scenesPanel() {
   h += `<div class="row-btns">
       <button class="sbtn" data-act="reset-scenes">${A.resetScenes ? 'Tilbakestilles ved lagring ✓' : A.confirmScenes ? 'Trykk igjen for å bekrefte' : 'Tilbakestill scener til forslag'}</button>
     </div>
+    ${fixedButtonHTML()}
     <button class="toggle-row" data-act="toggle-tenant-edit" style="margin-top:10px">
       <span><span class="t">Leietaker kan lage og endre scener og automasjoner</span><span class="s">Av: leietakeren kan bare bruke scenene som finnes</span></span>
       <span class="switch" role="switch" aria-checked="${A.cfg.tenant_can_edit_scenes}"></span>
@@ -457,6 +459,22 @@ function infoPanel() {
     ${A.picker === 'safety' ? `<div class="picker"><div class="picker-list">${avail.map((c) => `<button class="pick" data-act="safety-add" data-id="${esc(c.entity_id)}"><span><span class="n">${esc(c.name)}</span><span class="mono">${esc(c.entity_id)}</span></span><span class="a">${esc(c.state)}</span></button>`).join('') || '<p class="help">Fant ingen.</p>'}</div><button class="sbtn" data-act="close-picker">Lukk</button></div>` : `<button class="add" data-act="open-picker" data-kind="safety">+ Legg til sikkerhetsføler</button>`}
     <p class="help">Husk «Lagre endringer» øverst.</p>
   </section>`;
+}
+
+function fixedButtonHTML() {
+  const f = A.cfg.fixed_button;
+  const buttons = A.cfg.entities.filter((e) => e.kind === 'button' && e.enabled !== false);
+  const lights = A.cfg.entities.filter((e) => e.kind === 'light' && e.enabled !== false);
+  if (!buttons.length) return '';
+  return `<div class="fixed-btn">
+    <span class="t">Fast lysknapp</span>
+    <span class="help">Følger hybelen fra start og kan ikke endres av leietaker: opp = på, ned = av, hold inne = dim opp/ned.</span>
+    <div class="form-grid">
+      <label class="lbl-col">Fjernkontroll<select class="select" data-field="fb.entity_id"><option value="">Av</option>${buttons.map((b) => `<option value="${esc(b.entity_id)}" ${f.entity_id === b.entity_id ? 'selected' : ''}>${esc(b.label || b.entity_id)}</option>`).join('')}</select></label>
+      <label class="lbl-col">Knapp<select class="select" data-field="fb.n">${[1, 2, 3, 4].map((n) => `<option value="${n}" ${Number(f.n) === n ? 'selected' : ''}>Knapp ${n}</option>`).join('')}</select></label>
+      <label class="lbl-col">Lys<select class="select" data-field="fb.light"><option value="">Velg lys</option>${lights.map((l) => `<option value="${esc(l.entity_id)}" ${f.light === l.entity_id ? 'selected' : ''}>${esc(l.label || l.entity_id)}</option>`).join('')}</select></label>
+    </div>
+  </div>`;
 }
 
 function resetPanel() {
@@ -784,6 +802,7 @@ document.addEventListener('input', (ev) => {
   else if (f === 'el.note') { A.cfg.electricity.note = el.value; setDirty(); }
   else if (f === 'nr.value') { A.newReading.value = el.value; }
   else if (f === 'nr.date') { A.newReading.date = el.value; }
+  else if (f.startsWith('fb.')) { A.cfg.fixed_button[f.slice(3)] = f === 'fb.n' ? Number(el.value) : el.value; setDirty(); }
   else if (f.startsWith('lease.')) { A.cfg.lease[f.slice(6)] = el.value; setDirty(); }
   else if (f === 'compose') { A.compose = el.value; }
   else if (f === 'cl-comment') { A.clComment[el.dataset.id] = el.value; }

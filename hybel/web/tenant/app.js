@@ -259,6 +259,7 @@ function autoWhat(a) {
   if (a.type === 'lights_off') return 'Slå av alle lys';
   if (a.type === 'set') return valuesSummary(a.values) || 'Styr enheter';
   if (a.type === 'dim') return `Dim ${(a.entities || []).map((k) => entity(k)?.label || '').filter(Boolean).join(', ').toLowerCase()} ${a.dir === 'up' ? 'opp' : 'ned'}`;
+  if (a.type === 'light_on' || a.type === 'light_off') return `Slå ${a.type === 'light_on' ? 'på' : 'av'} ${(a.entities || []).map((k) => entity(k)?.label || '').filter(Boolean).join(', ').toLowerCase()}`;
   return '';
 }
 // «button_2_up_press» → «Knapp 2 opp – trykk»
@@ -397,8 +398,8 @@ function stepper(e, v, mode, act = 'heat') {
 function limitLine(e, v) {
   const atMax = v != null && v >= e.max;
   const atMin = v != null && v <= e.min;
-  const text = !e.available ? 'Svarer ikke akkurat nå' : atMax ? `Maks ${e.max}° – satt av utleier` : atMin ? `Minimum ${e.min}°` : `Kan stilles mellom ${e.min}° og ${e.max}°`;
-  return `<div class="limit ${atMax || atMin ? 'hit' : ''}">${text}</div>`;
+  const text = !e.available ? 'Svarer ikke akkurat nå' : atMax ? `Maks ${e.max}°` : atMin ? `Min ${e.min}°` : '';
+  return text ? `<div class="limit ${atMax || atMin ? 'hit' : ''}">${text}</div>` : '';
 }
 
 function ventButtons(e, v, mode) {
@@ -438,22 +439,24 @@ function climateControls(e, v, mode) {
 function scenesTab() {
   const m = S.m;
   let h = '';
-  if (m.scenes.length) {
+  if (S.sceneEdit && m.can_edit) {
     h += `<section class="card section scene-list">`;
-    for (const s of m.scenes) {
-      h += `<div class="scene-row ${s.active ? 'active' : ''}">
-        <button class="scene-main" data-act="scene" data-id="${s.id}" data-fid="s-${s.id}" aria-pressed="${s.active}">
-          <span class="ic">${svg(ICON[s.icon] || ICON.star, 18)}</span>
-          <span class="txt"><span class="name">${esc(s.name)}</span><span class="sum">${esc(valuesSummary(s.values))}</span></span>
-          ${s.active ? '<span class="pill lvl-ok">På</span>' : ''}
-        </button>
-        ${m.can_edit ? `<button class="scene-edit" data-act="scene-edit" data-id="${s.id}" aria-label="Rediger ${esc(s.name)}">${svg(UI.pencil, 15, 2)}</button>` : ''}
-      </div>`;
+    for (const sc of m.scenes) {
+      h += `<div class="scene-row"><button class="scene-main" data-act="scene-edit" data-id="${sc.id}">
+          <span class="ic">${svg(ICON[sc.icon] || ICON.star, 18)}</span>
+          <span class="txt"><span class="name">${esc(sc.name)}</span><span class="sum">${esc(valuesSummary(sc.values))}</span></span>
+          ${svg(UI.pencil, 15, 2)}
+        </button></div>`;
     }
-    h += `</section>`;
+    h += `</section><div class="scene-tools"><button class="btn ghost" data-act="scene-new" data-fid="s-new">${svg(UI.plus, 18, 2)} Ny scene</button><button class="btn primary" data-act="scene-edit-mode">Ferdig</button></div>`;
+    return h;
   }
-  if (m.can_edit) h += `<button class="btn ghost scene-add" data-act="scene-new" data-fid="s-new">${svg(UI.plus, 18, 2)} Ny scene</button>`;
-  if (!m.scenes.length && !m.can_edit) h += `<p class="intro">Ingen scener ennå.</p>`;
+  if (m.scenes.length) {
+    h += `<div class="scene-chips">${m.scenes.map((sc) => `<button class="scene-chip ${sc.active ? 'active' : ''}" data-act="scene" data-id="${sc.id}" data-fid="s-${sc.id}" aria-pressed="${sc.active}">
+        ${svg(ICON[sc.icon] || ICON.star, 16)}<span>${esc(sc.name)}</span></button>`).join('')}</div>`;
+    h += `<p class="note scene-note">Scener stiller bare lysene.</p>`;
+  } else h += `<p class="intro">Ingen scener ennå.</p>`;
+  if (m.can_edit) h += `<button class="chip-btn scene-edit-btn" data-act="scene-edit-mode">Endre scener</button>`;
   return h;
 }
 
@@ -504,6 +507,12 @@ function autoSortKey(a) {
 
 function autoRow(a, title, sub, tag = '') {
   const m = S.m;
+  if (a.fixed) {
+    return `<div class="list-row auto-row fixed">
+      <span class="grow">${tag ? `<span class="auto-tag">${esc(tag)}</span>` : ''}<span class="t">${esc(title)}</span>${sub ? `<span class="s">${esc(sub)}</span>` : ''}</span>
+      <span class="fixed-tag">Fast</span>
+    </div>`;
+  }
   return `<div class="list-row auto-row ${a.enabled ? '' : 'off'}">
     <button class="grow plain" data-act="auto-edit" data-id="${a.id}" data-fid="a-${a.id}" ${m.can_edit ? '' : 'disabled'}>
       ${tag ? `<span class="auto-tag">${esc(tag)}</span>` : ''}
@@ -997,22 +1006,13 @@ function settingsHTML() {
     </div></section>`;
   }
 
-  html += `<section><h2 class="group-title">Grenser satt av utleier</h2><div class="list soft">`;
-  for (const e of m.entities.filter((x) => x.kind === 'heat' || x.kind === 'climate')) {
-    html += `<div class="list-row"><span class="t" style="font-weight:500">${esc(e.label)}</span><span class="t">${e.min}–${e.max}°</span></div>`;
-  }
-  if (hasVent) {
-    html += `<div class="list-row"><span class="t" style="font-weight:500">Høy ventilasjon</span><span class="t">Maks ${m.limits.boost_max_minutes} min</span></div>`;
-    html += `<div class="list-row"><span class="t" style="font-weight:500">Bortemodus på ventilasjon</span><span class="t">${m.limits.vent_allow_away ? 'Tillatt' : 'Ikke tillatt'}</span></div>`;
-  }
-  html += `</div><p class="note" style="margin-top:8px">Grensene beskytter gulv, fukt og inneklima. Ta kontakt med utleier hvis noe ikke passer.</p></section>`;
   return html;
 }
 
 // Velg enheter og verdier – brukes både av scener og automasjoner.
-function pickerHTML(t) {
+function pickerHTML(t, onlyLights = false) {
   let html = '';
-  for (const e of S.m.entities.filter((x) => x.kind !== 'button')) {
+  for (const e of S.m.entities.filter((x) => (onlyLights ? x.kind === 'light' : x.kind !== 'button'))) {
     const inc = t.include[e.key];
     const v = t.values[e.key];
     let ctl = '';
@@ -1044,8 +1044,8 @@ function sceneEditorHTML() {
     <span class="field-label">Ikon</span>
     <div class="icons">${m.icons.map((i) => `<button class="icon-pick" aria-pressed="${d.icon === i}" aria-label="Ikon ${i}" data-act="icon" data-icon="${i}">${svg(ICON[i], 20)}</button>`).join('')}</div>
   </section>`;
-  html += `<p class="intro">Velg hva scenen skal styre. Det du ikke tar med, blir som det er.</p>`;
-  html += pickerHTML(d);
+  html += `<p class="intro">Velg hvilke lys scenen skal styre. Lys du ikke tar med, blir som de er.</p>`;
+  html += pickerHTML(d, true);
   html += `<button class="btn ghost big" data-act="from-now" style="width:100%">Hent det som er på nå</button>`;
   html += `<div class="actions">
     ${d.id ? `<button class="btn ghost big danger-text" data-act="scene-delete">${S.confirmDelete ? 'Trykk igjen for å slette' : 'Slett'}</button>` : ''}
@@ -1289,6 +1289,7 @@ function act(a, ds) {
     case 'cl-photo-rm':
       cmd({ type: 'checklist_photo_remove', id: ds.id, i: Number(ds.i), photo: ds.photo });
       return;
+    case 'scene-edit-mode': S.sceneEdit = !S.sceneEdit; return render();
     case 'pair-help': S.pairHelp = S.pairHelp === ds.key ? null : ds.key; return render();
     case 'pair-start':
       S.pairHelp = ds.key;
