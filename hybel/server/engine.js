@@ -5,6 +5,7 @@ import { defaultData } from './store.js';
 import { log } from './log.js';
 import { Extras } from './extras.js';
 import { Pairing } from './pairing.js';
+import { Stats } from './stats.js';
 import { readdirSync, readFileSync as readF } from 'node:fs';
 import { join as pjoin, dirname as pdir } from 'node:path';
 import { fileURLToPath as f2p } from 'node:url';
@@ -76,6 +77,7 @@ export class Engine extends EventEmitter {
     this.dimLoops = new Map(); // auto_id -> { timer, until, prefix }
     this.extras = new Extras(this);
     this.pairing = new Pairing(this);
+    this.stats = new Stats(this);
     this.pairing.resume();
     ha.on('state', (id, n, o) => this.onState(id, n, o));
     ha.on('status', () => this.changed());
@@ -461,6 +463,8 @@ export class Engine extends EventEmitter {
       if (!e || e.kind !== 'light') throw new Error('Velg et lys');
       if (!['on', 'off'].includes(t.to)) throw new Error('Velg på eller av');
       trigger = { type: 'light', entity_id: e.entity_id, to: t.to };
+    } else if (t.type === 'humidity' && !input.id) {
+      throw new Error('Automasjoner på luftfuktighet er ikke lenger tilgjengelig');
     } else if (t.type === 'humidity') {
       const e = this.byKey(t.entity);
       if (!e || e.kind !== 'vent') throw new Error('Velg ventilasjonen');

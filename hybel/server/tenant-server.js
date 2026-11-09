@@ -86,6 +86,13 @@ export function startTenantServer({ engine, options, webRoot, port }) {
           return sendJson(res, 400, { ok: false, error: err.message });
         }
       }
+      if (url.pathname === '/api/stats' && req.method === 'GET') {
+        try {
+          return sendJson(res, 200, { ok: true, ...(await engine.stats.get(url.searchParams.get('range') || '24h')) });
+        } catch (err) {
+          return sendJson(res, 502, { ok: false, error: err.message });
+        }
+      }
       const dm = url.pathname.match(/^\/api\/doc\/([a-f0-9]{16})$/);
       if (dm && req.method === 'GET') {
         const doc = engine.extras.docFile(dm[1]);

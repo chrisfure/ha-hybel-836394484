@@ -94,6 +94,24 @@ function handle(c, msg) {
     case 'config/area_registry/list': return ok([{ area_id: 'hybel', name: 'Hybel' }, { area_id: 'kjokken', name: 'Kjøkken' }]);
     case 'config/device_registry/list': return ok([]);
     case 'config/entity_registry/list': return ok([...states.keys()].map((id) => ({ entity_id: id, area_id: id.includes('hovedhus') || id.includes('benk') ? 'kjokken' : 'hybel' })));
+    case 'history/history_during_period': {
+      // Syntetisk historikk: døgnvariasjon hvert 10. minutt.
+      const out = {};
+      const t0 = Date.parse(msg.start_time), t1 = Date.parse(msg.end_time);
+      for (const id of msg.entity_ids) {
+        const rows = [];
+        let k = 0;
+        for (let t = t0 - 600e3; t <= t1; t += 600e3, k++) {
+          const h = (t / 3600e3) % 24;
+          const base = id.includes('bad') ? 23 : 21;
+          const temp = Math.round((base + 1.5 * Math.sin((h - 9) / 24 * 2 * Math.PI) + (Math.random() - .5) * .4) * 10) / 10;
+          const hum = Math.round(42 + 12 * Math.max(0, Math.sin((h - 6) / 24 * 4 * Math.PI)) + (Math.random() - .5) * 3);
+          rows.push(id.startsWith('sensor.') ? { s: String(temp), lu: t / 1000 } : { s: 'heat', a: { current_temperature: temp, current_humidity: hum }, lu: t / 1000 });
+        }
+        out[id] = rows;
+      }
+      return ok(out);
+    }
     case 'get_services': return ok({ notify: { mobile_app_demo: {}, notify: {} } });
     default: return c.send({ id: msg.id, type: 'result', success: false, error: { message: 'unknown' } });
   }

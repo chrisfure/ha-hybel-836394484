@@ -22,7 +22,7 @@ const store = {
 
 const S = {
   m: null,             // siste tilstand fra serveren
-  tab: store.get('hybel-tab') || 'lys',
+  tab: (() => { const t = store.get('hybel-tab'); return !t || t === 'scener' ? 'lys' : t; })(),
   view: 'tabs',        // tabs | settings | scene | auto
   draft: null,         // sceneutkast { id, name, icon, include, values }
   adraft: null,        // automasjonsutkast
@@ -86,8 +86,8 @@ const DAYS = ['Ma', 'Ti', 'On', 'To', 'Fr', 'Lø', 'Sø'];
 const TABS = [
   { id: 'lys', label: 'Lys', icon: UI.bulb },
   { id: 'klima', label: 'Klima', icon: UI.flame },
-  { id: 'scener', label: 'Scener', icon: ICON.star },
   { id: 'auto', label: 'Automasjoner', short: 'Auto', icon: UI.clock },
+  { id: 'stat', label: 'Statistikk', short: 'Statistikk', icon: 'M4 19h16M7 15l3-4 3 2 4-6' },
   { id: 'info', label: 'Info', icon: 'M12 8h.01M11 12h1v4h1M21 12a9 9 0 1 1-18 0 9 9 0 0 1 18 0z' }
 ];
 
@@ -289,6 +289,7 @@ function tabs() {
     if (t.id === 'lys') return m.entities.some((e) => e.kind === 'light');
     if (t.id === 'klima') return m.entities.some((e) => ['heat', 'vent', 'climate'].includes(e.kind));
     if (t.id === 'auto') return m.can_edit || m.automations.length;
+    if (t.id === 'stat') return m.entities.some((e) => ['heat', 'vent', 'climate'].includes(e.kind));
     if (t.id === 'info') return true;
     return true;
   });
@@ -452,11 +453,10 @@ function scenesTab() {
     return h;
   }
   if (m.scenes.length) {
+    h += `<div class="scene-head"><span class="group-title">Scener</span>${m.can_edit ? '<button class="link-btn" data-act="scene-edit-mode">Endre</button>' : ''}</div>`;
     h += `<div class="scene-chips">${m.scenes.map((sc) => `<button class="scene-chip ${sc.active ? 'active' : ''}" data-act="scene" data-id="${sc.id}" data-fid="s-${sc.id}" aria-pressed="${sc.active}">
         ${svg(ICON[sc.icon] || ICON.star, 16)}<span>${esc(sc.name)}</span></button>`).join('')}</div>`;
-    h += `<p class="note scene-note">Scener stiller bare lysene.</p>`;
-  } else h += `<p class="intro">Ingen scener ennå.</p>`;
-  if (m.can_edit) h += `<button class="chip-btn scene-edit-btn" data-act="scene-edit-mode">Endre scener</button>`;
+  } else if (m.can_edit) h += `<button class="chip-btn scene-edit-btn" data-act="scene-edit-mode">+ Lag en scene</button>`;
   return h;
 }
 
@@ -964,14 +964,151 @@ function tabsHTML() {
   const title = t.label;
   let body = '';
   if (!S.m.entities.length) body = `<section class="card section"><p class="intro" style="padding:18px 0">Ingen enheter er satt opp ennå. Ta kontakt med utleier.</p></section>`;
-  else if (S.tab === 'scener') body = scenesTab();
-  else if (S.tab === 'lys') body = lightsTab();
+  else if (S.tab === 'lys') body = scenesTab() + lightsTab();
+  else if (S.tab === 'stat') body = statsTab();
   else if (S.tab === 'klima') body = climateTab();
   else if (S.tab === 'info') body = infoTab();
   else body = autoTab();
   if (S.tab === 'info' && !S.m.entities.length) body = infoTab();
   return topHTML(title) + toastHTML() + body + navHTML() + photoViewHTML();
 }
+
+// ---------- statistikk ----------
+
+S.stats = { range: store.get('hybel-stat-range') || '24h', data: null, loading: false, error: null };
+
+async function loadStats() {
+  const range = S.stats.range;
+  S.stats.loading = true;
+  S.stats.error = null;
+  try {
+    const r = await fetch(`api/stats?range=${range}`, { credentials: 'same-origin' });
+    const j = await r.json();
+    if (!j.ok) throw new Error(j.error || 'Feil');
+    if (S.stats.range === range) S.stats.data = j;
+  } catch (err) {
+    S.stats.error = err.message || 'Kunne ikke hente statistikk';
+  }
+  S.stats.loading = false;
+  if (S.tab === 'stat' && S.view === 'tabs') render();
+}
+
+const num1 = (v) => (v == null ? '–' : v.toLocaleString('nb-NO', { minimumFractionDigits: 1, maximumFractionDigits: 1 }));
+const fmtVal = (v, unit) => (v == null ? '–' : unit === '%' ? `${Math.round(v)} %` : `${num1(v)}°`);
+
+function tickLabel(t, range) {
+  const d = new Date(t);
+  if (range === '24h') return `${String(d.getHours()).padStart(2, '0')}`;
+  if (range === '7d') return d.toLocaleDateString('nb-NO', { weekday: 'short' }).replace('.', '');
+  return `${d.getDate()}.${d.getMonth() + 1}`;
+}
+
+function chartSVG(sr, data) {
+  const W = 320, H = 132, L = 30, R = 6, T = 8, B = 20;
+  const pts = sr.points;
+  const vals = pts.filter((p) => p != null);
+  if (vals.length < 2) return '<p class="note">Ikke nok data ennå.</p>';
+  let lo = Math.min(...vals), hi = Math.max(...vals);
+  const pad = sr.unit === '%' ? 4 : 0.6;
+  lo = Math.floor(lo - pad); hi = Math.ceil(hi + pad);
+  if (sr.unit === '%') { lo = Math.max(0, lo); hi = Math.min(100, hi); }
+  const x = (i) => L + (i / (pts.length - 1)) * (W - L - R);
+  const y = (v) => T + (1 - (v - lo) / (hi - lo || 1)) * (H - T - B);
+  let line = '', area = '', started = false, firstX = 0, lastX = 0;
+  pts.forEach((p, i) => {
+    if (p == null) return;
+    line += `${started ? 'L' : 'M'}${x(i).toFixed(1)},${y(p).toFixed(1)}`;
+    if (!started) firstX = x(i);
+    lastX = x(i);
+    started = true;
+  });
+  area = `${line}L${lastX.toFixed(1)},${H - B}L${firstX.toFixed(1)},${H - B}Z`;
+  const grid = [lo, (lo + hi) / 2, hi].map((g) => `<line x1="${L}" x2="${W - R}" y1="${y(g).toFixed(1)}" y2="${y(g).toFixed(1)}" class="gl"/><text x="${L - 6}" y="${(y(g) + 3.5).toFixed(1)}" class="yl">${sr.unit === '%' ? Math.round(g) : Math.round(g * 10) / 10}</text>`).join('');
+  const ticks = [];
+  const nT = 4;
+  for (let k = 0; k <= nT; k++) {
+    const i = Math.round((k / nT) * (pts.length - 1));
+    const t = data.start + i * data.bucket;
+    ticks.push(`<text x="${x(i).toFixed(1)}" y="${H - 5}" class="xl" text-anchor="${k === 0 ? 'start' : k === nT ? 'end' : 'middle'}">${tickLabel(t, data.range)}</text>`);
+  }
+  const band = sr.unit === '%' ? `<rect x="${L}" width="${W - L - R}" y="${y(Math.min(hi, 60)).toFixed(1)}" height="${Math.max(0, y(Math.max(lo, 30)) - y(Math.min(hi, 60))).toFixed(1)}" class="band"/>` : '';
+  return `<svg class="chart-svg ${sr.type}" viewBox="0 0 ${W} ${H}" data-chart="${sr.id}" role="img" aria-label="${esc(sr.label)}">
+    ${band}${grid}<path d="${area}" class="ar"/><path d="${line}" class="ln"/>${ticks.join('')}
+    <line class="cur" x1="0" x2="0" y1="${T}" y2="${H - B}" style="display:none"/><circle class="dot" r="4" style="display:none"/>
+  </svg>`;
+}
+
+function statsTab() {
+  const st = S.stats;
+  if (!st.data && !st.loading && !st.error) loadStats();
+  const ranges = [['24h', 'Døgn'], ['7d', 'Uke'], ['30d', 'Måned']];
+  let h = `<div class="seg stat-seg" style="grid-template-columns: repeat(3, minmax(0, 1fr))">${ranges.map(([k, l]) => `<button aria-pressed="${st.range === k}" data-act="stat-range" data-v="${k}">${l}</button>`).join('')}</div>`;
+  if (st.error) return h + `<div class="notice-soft bad">${esc(st.error)}</div>`;
+  const d = st.data && st.data.range === st.range ? st.data : null;
+  if (!d) return h + `<p class="intro">Henter statistikk …</p>`;
+  if (!d.series.length) return h + `<p class="intro">Ingen temperatur- eller fuktmålinger å vise.</p>`;
+  for (const sr of d.series) {
+    h += `<section class="card stat-card ${sr.type}">
+      <div class="stat-top"><span><span class="t">${esc(sr.label)}</span><span class="s">${esc(sr.sub)}</span></span>
+        <span class="stat-now"><span class="v" data-readout="${sr.id}">${fmtVal(sr.now, sr.unit)}</span><span class="s" data-readout-t="${sr.id}">nå</span></span></div>
+      ${chartSVG(sr, d)}
+      <div class="stat-chips"><span>Laveste <strong>${fmtVal(sr.min, sr.unit)}</strong></span><span>Snitt <strong>${fmtVal(sr.avg, sr.unit)}</strong></span><span>Høyeste <strong>${fmtVal(sr.max, sr.unit)}</strong></span></div>
+      ${sr.unit === '%' ? '<p class="note">Det grønne feltet (30–60 %) er god luftfuktighet innendørs. Over 60 % over tid kan gi fukt og mugg – luft ut eller bruk høy ventilasjon.</p>' : ''}
+    </section>`;
+  }
+  h += `<p class="note" style="margin:0 4px">Dra fingeren over en graf for å se verdien på et bestemt tidspunkt.</p>`;
+  return h;
+}
+
+// Dra over grafen: vis verdi og tidspunkt.
+function scrub(ev) {
+  const svgEl = ev.target.closest && ev.target.closest('svg[data-chart]');
+  if (!svgEl || !S.stats.data) return;
+  const sr = S.stats.data.series.find((x) => x.id === svgEl.dataset.chart);
+  if (!sr) return;
+  const rect = svgEl.getBoundingClientRect();
+  const W = 320, L = 30, R = 6, T = 8, B = 20, H = 132;
+  const px = ((ev.touches ? ev.touches[0].clientX : ev.clientX) - rect.left) / rect.width * W;
+  const n = sr.points.length;
+  let i = Math.round(((px - L) / (W - L - R)) * (n - 1));
+  i = Math.max(0, Math.min(n - 1, i));
+  let j = i;
+  while (j > 0 && sr.points[j] == null) j--;
+  const v = sr.points[j];
+  if (v == null) return;
+  const vals = sr.points.filter((p) => p != null);
+  const pad = sr.unit === '%' ? 4 : 0.6;
+  let lo = Math.floor(Math.min(...vals) - pad), hi = Math.ceil(Math.max(...vals) + pad);
+  if (sr.unit === '%') { lo = Math.max(0, lo); hi = Math.min(100, hi); }
+  const x = L + (j / (n - 1)) * (W - L - R);
+  const y = T + (1 - (v - lo) / (hi - lo || 1)) * (H - T - B);
+  const cur = svgEl.querySelector('.cur'), dot = svgEl.querySelector('.dot');
+  cur.setAttribute('x1', x); cur.setAttribute('x2', x); cur.style.display = '';
+  dot.setAttribute('cx', x); dot.setAttribute('cy', y); dot.style.display = '';
+  const t = new Date(S.stats.data.start + j * S.stats.data.bucket + S.stats.data.bucket / 2);
+  const tl = S.stats.data.range === '24h' ? `kl. ${String(t.getHours()).padStart(2, '0')}:${String(t.getMinutes()).padStart(2, '0')}` : t.toLocaleString('nb-NO', { weekday: 'short', day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' });
+  const ro = document.querySelector(`[data-readout="${sr.id}"]`), rt = document.querySelector(`[data-readout-t="${sr.id}"]`);
+  if (ro) ro.textContent = fmtVal(v, sr.unit);
+  if (rt) rt.textContent = tl;
+  if (ev.cancelable && ev.touches) ev.preventDefault();
+}
+function scrubEnd(ev) {
+  const svgEl = ev.target.closest && ev.target.closest('svg[data-chart]');
+  if (!svgEl || !S.stats.data) return;
+  const sr = S.stats.data.series.find((x) => x.id === svgEl.dataset.chart);
+  setTimeout(() => {
+    svgEl.querySelector('.cur').style.display = 'none';
+    svgEl.querySelector('.dot').style.display = 'none';
+    const ro = document.querySelector(`[data-readout="${sr.id}"]`), rt = document.querySelector(`[data-readout-t="${sr.id}"]`);
+    if (ro) ro.textContent = fmtVal(sr.now, sr.unit);
+    if (rt) rt.textContent = 'nå';
+  }, 1500);
+}
+document.addEventListener('pointermove', (ev) => { if (ev.pointerType === 'mouse') scrub(ev); });
+document.addEventListener('pointerdown', scrub);
+document.addEventListener('touchmove', scrub, { passive: false });
+document.addEventListener('pointerup', scrubEnd);
+document.addEventListener('touchend', scrubEnd);
 
 // ---------- innstillinger og redigering ----------
 
@@ -1064,7 +1201,6 @@ function autoEditorHTML() {
   const vents = m.entities.filter((e) => e.kind === 'vent' && e.humidity != null);
   const types = [['time', 'Klokke'], ['sunset', 'Sol ned'], ['sunrise', 'Sol opp']];
   if (lights.length) types.push(['light', 'Lys']);
-  if (vents.length) types.push(['humidity', 'Fukt']);
   const buttons = m.entities.filter((e) => e.kind === 'button' && e.events.length);
   if (buttons.length) types.push(['button', 'Knapp']);
   let html = subHTML(a.id ? 'Rediger automasjon' : 'Ny automasjon', 'Automasjon') + toastHTML();
@@ -1366,11 +1502,17 @@ function act(a, ds) {
       S.tab = ds.id;
       store.set('hybel-tab', ds.id);
       window.scrollTo(0, 0);
+      if (ds.id === 'stat') loadStats();
+      return render();
+    case 'stat-range':
+      S.stats.range = ds.v;
+      store.set('hybel-stat-range', ds.v);
+      loadStats();
       return render();
     case 'settings':
       return go('settings');
     case 'back':
-      if (S.view === 'scene') { S.draft = null; return go(S.tab === 'scener' ? 'tabs' : 'settings'); }
+      if (S.view === 'scene') { S.draft = null; return go(S.tab === 'lys' ? 'tabs' : 'settings'); }
       if (S.view === 'auto') S.adraft = null;
       return go('tabs');
     case 'scene': {

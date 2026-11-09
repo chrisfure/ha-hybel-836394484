@@ -1,5 +1,11 @@
 # Endringslogg
 
+## 0.10.0
+
+- Ny fane **Statistikk**: temperatur (termostater/varmepumpe, med valgt føler) og luftfuktighet/inneluft fra ventilasjonen for siste døgn, uke eller måned. Nåverdi, laveste, snitt og høyeste, og dra fingeren over grafen for å se verdien på et tidspunkt. Grønt felt viser god luftfuktighet (30–60 %).
+- Scener har ikke lenger egen fane – de ligger som små knapper øverst på Lys.
+- Automasjoner på luftfuktighet kan ikke lenger lages (eksisterende kjører som før).
+
 ## 0.9.1
 
 - **Dokumenter**: utleier kan laste opp signert leiekontrakt og andre dokumenter (PDF, JPG, PNG, maks 15 MB) under Leieforhold. Leietaker finner dem under Leie → Leieforholdet og får pushvarsel. Dokumenter kan skjules, gis nytt navn eller slettes, og arkiveres ved leietakerbytte.
