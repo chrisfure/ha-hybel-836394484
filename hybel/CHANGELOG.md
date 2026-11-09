@@ -1,5 +1,9 @@
 # Endringslogg
 
+## 0.10.2
+
+- Statistikk har nå **utetemperatur** (blå graf). Termometeret velges automatisk (temperaturføler med «ute» i navnet, snitt-sensor foretrekkes) eller under Oppsett på utleiersiden.
+
 ## 0.10.1
 
 - Statistikk viser luftfuktighet også når ventilasjonen har fuktføleren som egen sensor på samme enhet (vises også på ventilasjonskortet under Klima).

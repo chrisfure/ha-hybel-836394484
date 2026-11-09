@@ -46,6 +46,7 @@ function pickCfg(st) {
     limits: st.limits,
     tenant_can_edit_scenes: st.tenant_can_edit_scenes,
     pairing_enabled: st.pairing.enabled,
+    outdoor_sensor: st.outdoor.set,
     fixed_button: st.fixed_button || { entity_id: '', n: 1, light: '' },
     alerts: st.alerts,
     info: st.extras.info,
@@ -517,12 +518,25 @@ function fixedButtonHTML() {
   </div>`;
 }
 
+function outdoorHTML() {
+  if (!A.cand) loadCandidates();
+  const used = A.st.outdoor.used;
+  const name = (id) => (A.cand?.temp_sensors || []).find((t) => t.entity_id === id)?.name || id;
+  return `<label class="lbl-col"><span class="t" style="font-size:15px;font-weight:600;color:var(--ink)">Utetermometer i statistikken</span>
+    <select class="select" data-field="outdoor">
+      <option value="" ${!A.cfg.outdoor_sensor ? 'selected' : ''}>Automatisk${!A.cfg.outdoor_sensor && used ? ` (${esc(name(used))})` : ''}</option>
+      <option value="off" ${A.cfg.outdoor_sensor === 'off' ? 'selected' : ''}>Ikke vis</option>
+      ${(A.cand?.temp_sensors || []).map((t) => `<option value="${esc(t.entity_id)}" ${A.cfg.outdoor_sensor === t.entity_id ? 'selected' : ''}>${esc(t.name)} (${esc(t.state)}°)</option>`).join('')}
+    </select></label>`;
+}
+
 function resetPanel() {
   return `<section class="panel soft"><div class="panel-head"><h2>Leietakerbytte</h2></div>
     <p class="help">Sletter leietakerens scener og automasjoner og lager nye forslag. Husk å fjerne forrige leietaker i Cloudflare Access og legge inn den nye.</p>
     <button class="danger ${A.confirmReset ? 'confirm' : ''}" data-act="tenant-reset">${A.confirmReset ? 'Trykk igjen for å bekrefte' : 'Klargjør for ny leietaker'}</button>
   </section>
   <section class="panel soft"><div class="panel-head"><h2>Oppsett</h2></div>
+    ${outdoorHTML()}
     <button class="toggle-row" data-act="toggle-pairing">
       <span><span class="t">Leietaker kan koble lys til Zigbee på nytt</span><span class="s">${A.st.pairing.switch ? `Åpner for tilkobling (${esc(A.st.pairing.switch)}) i opptil 10 minutter når et lys ikke svarer` : 'Fant ingen «permit join»-bryter fra Zigbee2MQTT'}</span></span>
       <span class="switch" role="switch" aria-checked="${A.cfg.pairing_enabled}"></span>
@@ -853,6 +867,7 @@ document.addEventListener('input', (ev) => {
   else if (f === 'el.note') { A.cfg.electricity.note = el.value; setDirty(); }
   else if (f === 'nr.value') { A.newReading.value = el.value; }
   else if (f === 'nr.date') { A.newReading.date = el.value; }
+  else if (f === 'outdoor') { A.cfg.outdoor_sensor = el.value; setDirty(); }
   else if (f === 'doc-name') { A.docName = el.value; }
   else if (f.startsWith('fb.')) { A.cfg.fixed_button[f.slice(3)] = f === 'fb.n' ? Number(el.value) : el.value; setDirty(); }
   else if (f.startsWith('lease.')) { A.cfg.lease[f.slice(6)] = el.value; setDirty(); }

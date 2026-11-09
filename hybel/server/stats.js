@@ -44,6 +44,27 @@ export class Stats {
     return Number.isFinite(v) ? Math.round(v) : null;
   }
 
+  // Utetermometer: valgt av utleier, ellers en temperaturføler som heter noe med «ute»/«outdoor»
+  // (gjennomsnitt foretrekkes, f.eks. en snitt-sensor over flere følere).
+  outdoorSensor() {
+    const set = this.engine.data.outdoor_sensor;
+    if (set === 'off') return null;
+    if (set && this.engine.ha.states.has(set)) return set;
+    const cands = [];
+    for (const [id, st] of this.engine.ha.states) {
+      if (!id.startsWith('sensor.')) continue;
+      const a = st.attributes || {};
+      if (a.device_class !== 'temperature' && !['°C', '°F'].includes(a.unit_of_measurement)) continue;
+      const name = `${id} ${a.friendly_name || ''}`.toLowerCase();
+      if (!/(^|[^a-zæøå])(ute|utendørs|outdoor|outside)([^a-zæøå]|$)/.test(name.replace(/_/g, ' '))) continue;
+      if (/deprecated|batteri|battery|ventilasjon|ventilation/.test(name)) continue;
+      if (!Number.isFinite(Number(st.state))) continue;
+      cands.push({ id, score: (/gjennomsnitt|snitt|average|mean/.test(name) ? 10 : 0) - name.length / 100 });
+    }
+    cands.sort((a, b) => b.score - a.score);
+    return cands[0]?.id || null;
+  }
+
   // Hvilke måleserier finnes: temperatur fra termostater/varmepumpe (egen føler hvis valgt) og ventilasjonsaggregat.
   async series() {
     const out = [];
@@ -62,6 +83,8 @@ export class Stats {
         if (typeof a.current_temperature === 'number') out.push({ id: `v-${e.entity_id}`, label: 'Inneluft', sub: `${e.label} · temperatur`, unit: '°', type: 'temp', entity_id: e.entity_id, attr: 'current_temperature' });
       }
     }
+    const ute = this.outdoorSensor();
+    if (ute) out.push({ id: 'ute', label: 'Ute', sub: 'Utetemperatur', unit: '°', type: 'out', entity_id: ute, attr: null });
     return out;
   }
 
@@ -101,7 +124,7 @@ export class Stats {
         if (r.a) lastAttrs = r.a;
         const v = d.attr ? Number((r.a || lastAttrs || {})[d.attr]) : Number(r.s ?? r.state);
         if (!Number.isFinite(v)) continue;
-        if (d.type === 'temp' && (v < -30 || v > 60)) continue;
+        if ((d.type === 'temp' || d.type === 'out') && (v < -50 || v > 60)) continue;
         if (d.type === 'hum' && (v < 0 || v > 100)) continue;
         raw.push([t, v]);
       }

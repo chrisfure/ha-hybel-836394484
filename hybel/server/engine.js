@@ -942,6 +942,7 @@ export class Engine extends EventEmitter {
       }),
       limits: d.limits,
       tenant_can_edit_scenes: d.tenant_can_edit_scenes,
+      outdoor: { set: d.outdoor_sensor || '', used: this.stats.outdoorSensor() },
       pairing: { enabled: d.pairing_enabled !== false, switch: this.pairing.switchId(), set: d.pairing_switch || '' },
       scenes: this.scenes().map((s) => ({ id: s.id, name: s.name, icon: s.icon, parts: Object.keys(this.sceneValues(s)).map((id) => labels.get(id) || id) })),
       automations: this.allAutomations().map((a) => ({ id: a.id, enabled: a.enabled, fixed: Boolean(a.fixed), label: this.describeAutomation(a), days: a.days })),
@@ -1001,6 +1002,10 @@ export class Engine extends EventEmitter {
     }
     if (typeof body.tenant_can_edit_scenes === 'boolean') d.tenant_can_edit_scenes = body.tenant_can_edit_scenes;
     if (typeof body.pairing_enabled === 'boolean') d.pairing_enabled = body.pairing_enabled;
+    if (body.outdoor_sensor !== undefined) {
+      const o = String(body.outdoor_sensor || '');
+      if (!o || o === 'off' || /^sensor\.[a-z0-9_]+$/.test(o)) { d.outdoor_sensor = o; this.stats.cache.clear(); }
+    }
     if (body.fixed_button !== undefined) {
       const f = body.fixed_button;
       if (!f || !f.entity_id || !f.light) d.fixed_button = null;
