@@ -1,5 +1,10 @@
 # Endringslogg
 
+## 0.8.3
+
+- Zigbee-tilkobling holdes åpen i 10 minutter (Zigbee2MQTT slås på igjen automatisk når den lukker selv).
+- Tilkoblingen lukkes ikke lenger bare fordi lyset svarer et øyeblikk – det skjer ofte når lyset får strøm eller under tilbakestillingen. Leietaker tester lyset i appen og trykker «Ferdig – lyset virker».
+
 ## 0.8.2
 
 - Lys som ikke svarer, vises som «Ikke tilkoblet» med en infoknapp. Den viser hvordan leietaker kobler lyset til Zigbee igjen: slå på lyset, trykk «Start tilkobling» (åpner for tilkobling i Zigbee2MQTT i 4 minutter), og slå bryteren av og på 7 ganger raskt.

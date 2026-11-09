@@ -462,7 +462,7 @@ function resetPanel() {
   </section>
   <section class="panel soft"><div class="panel-head"><h2>Oppsett</h2></div>
     <button class="toggle-row" data-act="toggle-pairing">
-      <span><span class="t">Leietaker kan koble lys til Zigbee på nytt</span><span class="s">${A.st.pairing.switch ? `Åpner for tilkobling (${esc(A.st.pairing.switch)}) i 4 minutter når et lys ikke svarer` : 'Fant ingen «permit join»-bryter fra Zigbee2MQTT'}</span></span>
+      <span><span class="t">Leietaker kan koble lys til Zigbee på nytt</span><span class="s">${A.st.pairing.switch ? `Åpner for tilkobling (${esc(A.st.pairing.switch)}) i opptil 10 minutter når et lys ikke svarer` : 'Fant ingen «permit join»-bryter fra Zigbee2MQTT'}</span></span>
       <span class="switch" role="switch" aria-checked="${A.cfg.pairing_enabled}"></span>
     </button>
     <p class="help">Leietakersiden kjører på port <code>8100</code> inne i Home Assistant. Pek Cloudflare Tunnel til <code>http://&lt;vertsnavn&gt;:8100</code> – vertsnavnet står på appens infoside. Se dokumentasjonen for steg-for-steg.</p>

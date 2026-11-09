@@ -330,8 +330,9 @@ function lightRow(e, v, mode) {
   const live = mode === 'draft' || e.available;
   const P = S.m.pairing || {};
   const helpable = !live && mode === 'live' && P.allowed;
+  const pairing = mode === 'live' && P.open_until && P.key === e.key;
   const status = !live ? (helpable ? 'Ikke tilkoblet' : 'Svarer ikke') : on ? (e.dimmable ? `På · ${v} %` : 'På') : 'Av';
-  if (helpable) return pairRow(e, status);
+  if (helpable || pairing) return pairRow(e, pairing && P.responding ? 'Svarer – fullfør tilkoblingen' : 'Ikke tilkoblet');
   return `<div class="light ${live ? '' : 'unavail'}">
     <div class="row">
       ${mode === 'draft' ? `<span class="status" data-status="${e.key}">${status}</span>` : `<span><span class="name">${esc(e.label)}</span><span class="status" data-status="${e.key}">${status}</span>${P.done === e.key ? '<span class="pair-ok">Tilkoblet igjen ✓</span>' : ''}</span>`}
@@ -356,13 +357,15 @@ function pairRow(e, status) {
       <p class="note">Lyset har mistet kontakten med smarthuset (Zigbee). Slik kobler du det til igjen:</p>
       <ol class="steps">
         <li><strong>Slå på lyset</strong> med lysbryteren på veggen, så det får strøm.</li>
-        <li>Trykk <strong>Start tilkobling</strong> under. Da er smarthuset klart til å finne lyset i 4 minutter.</li>
-        <li><strong>Slå bryteren av og på 7 ganger raskt</strong> (ca. ett trykk i sekundet). Lyset blinker når det er klart.</li>
-        <li>Vent litt – lyset dukker opp som vanlig her når det er tilkoblet. Det kan ta opptil ett minutt.</li>
+        <li>Trykk <strong>Start tilkobling</strong> under. Da er smarthuset klart til å finne lyset i 10 minutter.</li>
+        <li><strong>Slå bryteren av og på 7 ganger raskt</strong> (ca. ett trykk i sekundet). Lyset blinker når det er tilbakestilt.</li>
+        <li>La lyset stå på og vent 1–2 minutter. Det kan dukke opp her et øyeblikk underveis – det er normalt.</li>
+        <li>Når lyset kan slås av og på fra appen igjen, trykk <strong>Ferdig</strong>.</li>
       </ol>
       ${active
-        ? `<div class="pair-live"><span class="dot-pulse"></span><span>Venter på lyset … <strong data-countdown="${P.open_until}">${fmtLeft(P.open_until)}</strong> igjen</span></div>
-           <button class="btn ghost" data-act="pair-stop">Avbryt</button>`
+        ? `<div class="pair-live">${P.responding ? '<span class="dot-ok"></span><span><strong>Lyset svarer!</strong> Prøv å slå det av og på i appen før du trykker Ferdig.' : '<span class="dot-pulse"></span><span>Venter på lyset …'} <strong data-countdown="${P.open_until}">${fmtLeft(P.open_until)}</strong> igjen</span></div>
+           ${P.responding ? `<button class="switch" role="switch" aria-checked="${(valueOf(e) ?? 0) > 0}" aria-label="Test ${esc(e.label)}" data-act="toggle" data-key="${e.key}" data-mode="live"></button>` : ''}
+           <button class="btn ${P.responding ? 'primary big' : 'ghost'}" data-act="pair-stop">${P.responding ? 'Ferdig – lyset virker' : 'Avbryt'}</button>`
         : P.open_until
           ? `<p class="note">Et annet lys holder på å kobles til. Prøv igjen om litt.</p>`
           : `<button class="btn primary big" data-act="pair-start" data-key="${e.key}">Start tilkobling</button>`}
@@ -1289,7 +1292,7 @@ function act(a, ds) {
     case 'pair-help': S.pairHelp = S.pairHelp === ds.key ? null : ds.key; return render();
     case 'pair-start':
       S.pairHelp = ds.key;
-      cmd({ type: 'pair_start', key: ds.key }).then((r) => { if (r.ok) showToast('Tilkobling startet – slå bryteren av og på 7 ganger'); });
+      cmd({ type: 'pair_start', key: ds.key }).then((r) => { if (r.ok) showToast('Tilkobling åpen i 10 min – slå bryteren av og på 7 ganger'); });
       return;
     case 'pair-stop': cmd({ type: 'pair_stop' }); return;
     case 'cl-full': S.clFull = S.clFull === ds.id ? null : ds.id; return render();
