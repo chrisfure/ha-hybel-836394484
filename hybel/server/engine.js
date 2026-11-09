@@ -4,6 +4,7 @@ import { createHash, randomBytes } from 'node:crypto';
 import { defaultData } from './store.js';
 import { log } from './log.js';
 import { Extras } from './extras.js';
+import { Pairing } from './pairing.js';
 import { readdirSync, readFileSync as readF } from 'node:fs';
 import { join as pjoin, dirname as pdir } from 'node:path';
 import { fileURLToPath as f2p } from 'node:url';
@@ -74,6 +75,8 @@ export class Engine extends EventEmitter {
     this.lastTemp = new Map();
     this.dimLoops = new Map(); // auto_id -> { timer, until, prefix }
     this.extras = new Extras(this);
+    this.pairing = new Pairing(this);
+    this.pairing.resume();
     ha.on('state', (id, n, o) => this.onState(id, n, o));
     ha.on('status', () => this.changed());
     ha.on('ready', () => { this.recordSun(); this.ensureScenes(); });
@@ -732,6 +735,12 @@ export class Engine extends EventEmitter {
         await this.setValue(e, v);
         break;
       }
+      case 'pair_start':
+        await this.pairing.start(cmd.key);
+        break;
+      case 'pair_stop':
+        await this.pairing.stop('avbrutt av leietaker');
+        break;
       case 'all_off':
         await this.applyValues(Object.fromEntries(this.actionEntities({ type: 'lights_off' }).map((id) => [id, 0])));
         break;
@@ -811,6 +820,7 @@ export class Engine extends EventEmitter {
       build: BUILD,
       connected: this.ha.connected,
       can_edit: d.tenant_can_edit_scenes,
+      pairing: this.pairing.view(),
       icons: ICONS,
       revert_options: REVERT_OPTIONS,
       scenes: this.ensureScenes().map((s) => {
@@ -872,6 +882,7 @@ export class Engine extends EventEmitter {
       }),
       limits: d.limits,
       tenant_can_edit_scenes: d.tenant_can_edit_scenes,
+      pairing: { enabled: d.pairing_enabled !== false, switch: this.pairing.switchId(), set: d.pairing_switch || '' },
       scenes: this.ensureScenes().map((s) => ({ id: s.id, name: s.name, icon: s.icon, parts: Object.keys(this.cleanValues(s.values)).map((id) => labels.get(id) || id) })),
       automations: d.automations.map((a) => ({ id: a.id, enabled: a.enabled, label: this.describeAutomation(a), days: a.days })),
       alerts: d.alerts,
@@ -928,6 +939,7 @@ export class Engine extends EventEmitter {
       d.limits.vent_allow_away = L.vent_allow_away !== false;
     }
     if (typeof body.tenant_can_edit_scenes === 'boolean') d.tenant_can_edit_scenes = body.tenant_can_edit_scenes;
+    if (typeof body.pairing_enabled === 'boolean') d.pairing_enabled = body.pairing_enabled;
     if (body.alerts) {
       const svc = String(body.alerts.notify_service || '').trim();
       if (svc && !/^notify\.[a-z0-9_]+$/.test(svc)) errors.push('Varslingstjenesten må se ut som notify.mobile_app_telefon');
@@ -981,6 +993,8 @@ export class Engine extends EventEmitter {
 
   onState(entityId, newState, oldState) {
     if (entityId === 'sun.sun') this.recordSun();
+    this.pairing?.onState(entityId, newState);
+    if (/permit_join$/.test(entityId)) this.changed();
     if (this.data.entities.some((e) => e.enabled && e.now_sensor === entityId)) this.changed();
     if (this.data.info?.safety?.includes(entityId)) this.changed();
     if (this.data.entities.some((e) => e.enabled && e.entity_id === entityId)) {

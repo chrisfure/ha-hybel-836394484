@@ -45,6 +45,7 @@ function pickCfg(st) {
     entities: st.entities.map(({ entity_id, label, kind, enabled, min_pct, max_pct, min_temp, max_temp, now_sensor, all_off }) => ({ entity_id, label, kind, enabled, ...(now_sensor ? { now_sensor } : {}), ...(all_off === false ? { all_off: false } : {}), ...(kind === 'light' ? { min_pct: min_pct ?? 1, max_pct: max_pct ?? 100 } : {}), ...(kind === 'heat' || kind === 'climate' ? { min_temp: min_temp ?? st.limits.heat_min, max_temp: max_temp ?? st.limits.heat_max } : {}) })),
     limits: st.limits,
     tenant_can_edit_scenes: st.tenant_can_edit_scenes,
+    pairing_enabled: st.pairing.enabled,
     alerts: st.alerts,
     info: st.extras.info,
     electricity: { price_per_kwh: st.extras.electricity.price, note: st.extras.electricity.note },
@@ -460,6 +461,10 @@ function resetPanel() {
     <button class="danger ${A.confirmReset ? 'confirm' : ''}" data-act="tenant-reset">${A.confirmReset ? 'Trykk igjen for å bekrefte' : 'Klargjør for ny leietaker'}</button>
   </section>
   <section class="panel soft"><div class="panel-head"><h2>Oppsett</h2></div>
+    <button class="toggle-row" data-act="toggle-pairing">
+      <span><span class="t">Leietaker kan koble lys til Zigbee på nytt</span><span class="s">${A.st.pairing.switch ? `Åpner for tilkobling (${esc(A.st.pairing.switch)}) i 4 minutter når et lys ikke svarer` : 'Fant ingen «permit join»-bryter fra Zigbee2MQTT'}</span></span>
+      <span class="switch" role="switch" aria-checked="${A.cfg.pairing_enabled}"></span>
+    </button>
     <p class="help">Leietakersiden kjører på port <code>8100</code> inne i Home Assistant. Pek Cloudflare Tunnel til <code>http://&lt;vertsnavn&gt;:8100</code> – vertsnavnet står på appens infoside. Se dokumentasjonen for steg-for-steg.</p>
   </section>`;
 }
@@ -714,6 +719,7 @@ document.addEventListener('click', async (ev) => {
       break;
     }
     case 'alarm-remove': A.cfg.alerts.entities = A.cfg.alerts.entities.filter((x) => x !== d.id); setDirty(); break;
+    case 'toggle-pairing': A.cfg.pairing_enabled = !A.cfg.pairing_enabled; setDirty(); break;
     case 'toggle-tenant-edit': A.cfg.tenant_can_edit_scenes = !A.cfg.tenant_can_edit_scenes; setDirty(); break;
     case 'toggle-away': A.cfg.limits.vent_allow_away = !A.cfg.limits.vent_allow_away; setDirty(); break;
     case 'limit': {

@@ -328,15 +328,57 @@ function toastHTML() {
 function lightRow(e, v, mode) {
   const on = v > 0;
   const live = mode === 'draft' || e.available;
-  const status = !live ? 'Svarer ikke' : on ? (e.dimmable ? `På · ${v} %` : 'På') : 'Av';
+  const P = S.m.pairing || {};
+  const helpable = !live && mode === 'live' && P.allowed;
+  const status = !live ? (helpable ? 'Ikke tilkoblet' : 'Svarer ikke') : on ? (e.dimmable ? `På · ${v} %` : 'På') : 'Av';
+  if (helpable) return pairRow(e, status);
   return `<div class="light ${live ? '' : 'unavail'}">
     <div class="row">
-      ${mode === 'draft' ? `<span class="status" data-status="${e.key}">${status}</span>` : `<span><span class="name">${esc(e.label)}</span><span class="status" data-status="${e.key}">${status}</span></span>`}
+      ${mode === 'draft' ? `<span class="status" data-status="${e.key}">${status}</span>` : `<span><span class="name">${esc(e.label)}</span><span class="status" data-status="${e.key}">${status}</span>${P.done === e.key ? '<span class="pair-ok">Tilkoblet igjen ✓</span>' : ''}</span>`}
       <button class="switch" role="switch" aria-checked="${on}" aria-label="${esc(e.label)}" data-act="toggle" data-key="${e.key}" data-mode="${mode}" data-fid="t-${mode}-${e.key}" ${live ? '' : 'disabled'}></button>
     </div>
     ${on && e.dimmable && live ? `<input class="range" type="range" min="1" max="100" step="1" value="${v}" aria-label="Lysstyrke ${esc(e.label)}" data-key="${e.key}" data-mode="${mode}" data-fid="r-${mode}-${e.key}">` : ''}
   </div>`;
 }
+
+// Lys som har falt ut av Zigbee-nettet: infoknapp og veiledning for å koble det til igjen.
+function pairRow(e, status) {
+  const P = S.m.pairing;
+  const open = S.pairHelp === e.key;
+  const active = P.open_until && P.key === e.key;
+  let h = `<div class="light pair ${open ? 'open' : ''}">
+    <div class="row">
+      <span><span class="name">${esc(e.label)}</span><span class="status warn-s">${status}</span></span>
+      <button class="info-btn ${active ? 'busy' : ''}" data-act="pair-help" data-key="${e.key}" aria-expanded="${open}" aria-label="Hjelp til å koble til ${esc(e.label)}">${active ? 'Kobler til …' : 'i'}</button>
+    </div>`;
+  if (open || active) {
+    h += `<div class="pair-help">
+      <p class="note">Lyset har mistet kontakten med smarthuset (Zigbee). Slik kobler du det til igjen:</p>
+      <ol class="steps">
+        <li><strong>Slå på lyset</strong> med lysbryteren på veggen, så det får strøm.</li>
+        <li>Trykk <strong>Start tilkobling</strong> under. Da er smarthuset klart til å finne lyset i 4 minutter.</li>
+        <li><strong>Slå bryteren av og på 7 ganger raskt</strong> (ca. ett trykk i sekundet). Lyset blinker når det er klart.</li>
+        <li>Vent litt – lyset dukker opp som vanlig her når det er tilkoblet. Det kan ta opptil ett minutt.</li>
+      </ol>
+      ${active
+        ? `<div class="pair-live"><span class="dot-pulse"></span><span>Venter på lyset … <strong data-countdown="${P.open_until}">${fmtLeft(P.open_until)}</strong> igjen</span></div>
+           <button class="btn ghost" data-act="pair-stop">Avbryt</button>`
+        : P.open_until
+          ? `<p class="note">Et annet lys holder på å kobles til. Prøv igjen om litt.</p>`
+          : `<button class="btn primary big" data-act="pair-start" data-key="${e.key}">Start tilkobling</button>`}
+      <p class="note">Virker det ikke etter to forsøk, send en melding til utleier under Info.</p>
+    </div>`;
+  }
+  return h + `</div>`;
+}
+
+function fmtLeft(until) {
+  const s = Math.max(0, Math.round((until - Date.now()) / 1000));
+  return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`;
+}
+setInterval(() => {
+  for (const el of document.querySelectorAll('[data-countdown]')) el.textContent = fmtLeft(Number(el.dataset.countdown));
+}, 1000);
 
 function stepper(e, v, mode, act = 'heat') {
   const live = mode === 'draft' || e.available;
@@ -1244,6 +1286,12 @@ function act(a, ds) {
     case 'cl-photo-rm':
       cmd({ type: 'checklist_photo_remove', id: ds.id, i: Number(ds.i), photo: ds.photo });
       return;
+    case 'pair-help': S.pairHelp = S.pairHelp === ds.key ? null : ds.key; return render();
+    case 'pair-start':
+      S.pairHelp = ds.key;
+      cmd({ type: 'pair_start', key: ds.key }).then((r) => { if (r.ok) showToast('Tilkobling startet – slå bryteren av og på 7 ganger'); });
+      return;
+    case 'pair-stop': cmd({ type: 'pair_stop' }); return;
     case 'cl-full': S.clFull = S.clFull === ds.id ? null : ds.id; return render();
     case 'cl-sel': S.clSel = ds.id; window.scrollTo(0, 0); return render();
     case 'cl-mail': {

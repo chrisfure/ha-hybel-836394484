@@ -1,5 +1,11 @@
 # Endringslogg
 
+## 0.8.2
+
+- Lys som ikke svarer, vises som «Ikke tilkoblet» med en infoknapp. Den viser hvordan leietaker kobler lyset til Zigbee igjen: slå på lyset, trykk «Start tilkobling» (åpner for tilkobling i Zigbee2MQTT i 4 minutter), og slå bryteren av og på 7 ganger raskt.
+- Tilkoblingen lukkes automatisk når lyset er tilbake eller tiden er ute, og utleier får beskjed i Home Assistant.
+- Utleier kan slå funksjonen av under Oppsett.
+
 ## 0.8.1
 
 - **Faktura (PDF) for hver måned**: husleie (med avregning ved delvis måned) og strøm med målerstander, kWh og pris, forfallsdato, kontonummer og fakturanummer (H-ÅÅÅÅMM) som betalingsmerking. Betalte måneder får «Betalt»-stempel.

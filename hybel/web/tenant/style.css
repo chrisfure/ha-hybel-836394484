@@ -316,3 +316,16 @@ button, .range, .switch { touch-action: manipulation; }
 .future-warn[hidden] { display: none; }
 .inv-btn { flex: none; text-decoration: none; display: flex; align-items: center; justify-content: center; }
 a.inv-row { color: inherit; text-decoration: none; }
+
+/* ---------- lys som må kobles til igjen ---------- */
+.light.pair .row { align-items: center; }
+.warn-s { color: var(--amber-ink) !important; font-weight: 600; }
+.info-btn { min-width: 38px; height: 38px; padding: 0 12px; border-radius: 19px; border: 0; background: var(--amber-soft); color: var(--amber-ink); font: 700 16px/1 var(--serif); font-style: italic; flex: none; }
+.light.pair.open .info-btn { background: var(--amber-ink); color: #fff; }
+.pair-help { display: flex; flex-direction: column; gap: 10px; background: #FFF8EE; border-radius: 16px; padding: 12px 14px; margin: 4px 0 8px; }
+.pair-help .steps li { margin-bottom: 4px; }
+.pair-live { display: flex; align-items: center; gap: 10px; font-size: 14.5px; }
+.dot-pulse { width: 12px; height: 12px; border-radius: 50%; background: var(--amber); animation: pulse 1.2s ease-in-out infinite; flex: none; }
+@keyframes pulse { 0%, 100% { opacity: 1; transform: scale(1); } 50% { opacity: .35; transform: scale(.7); } }
+.pair-ok { display: block; font-size: 12.5px; color: var(--green-ink); font-weight: 600; }
+.info-btn.busy { font: 600 13px/1 var(--sans); font-style: normal; background: var(--amber-soft) !important; color: var(--amber-ink) !important; }
