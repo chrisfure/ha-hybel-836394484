@@ -1,10 +1,12 @@
 // Leietakerens side. Har KUN leietakerfunksjoner – ingen utleier-API finnes her.
 import http from 'node:http';
 import { join } from 'node:path';
-import { serveStatic, sendJson, readJson, readBody, servePhoto, sendPdf, sendInvoice, EventHub } from './http.js';
+import { serveStatic, sendJson, readJson, readBody, servePhoto, sendPdf, sendInvoice, serveDoc, EventHub } from './http.js';
 import { AccessVerifier } from './cfaccess.js';
 import { log } from './log.js';
 
+// PDF-er vises i nettleserens egen PDF-visning, som ikke tåler sidens strenge CSP.
+const FILE_HEADERS = { 'X-Content-Type-Options': 'nosniff', 'Referrer-Policy': 'no-referrer' };
 const SECURITY = {
   'X-Frame-Options': 'DENY',
   'X-Content-Type-Options': 'nosniff',
@@ -84,10 +86,15 @@ export function startTenantServer({ engine, options, webRoot, port }) {
           return sendJson(res, 400, { ok: false, error: err.message });
         }
       }
+      const dm = url.pathname.match(/^\/api\/doc\/([a-f0-9]{16})$/);
+      if (dm && req.method === 'GET') {
+        const doc = engine.extras.docFile(dm[1]);
+        return serveDoc(res, doc && doc.visible ? doc : null, FILE_HEADERS);
+      }
       const im = url.pathname.match(/^\/api\/invoice\/(\d{4}-\d{2})\.pdf$/);
-      if (im && req.method === 'GET') return sendInvoice(res, engine.extras.lease, im[1], SECURITY);
+      if (im && req.method === 'GET') return sendInvoice(res, engine.extras.lease, im[1], FILE_HEADERS);
       const cm = url.pathname.match(/^\/api\/checklist\/([a-f0-9]{10})\.pdf$/);
-      if (cm && req.method === 'GET') return sendPdf(res, engine.extras.checklists, cm[1], SECURITY);
+      if (cm && req.method === 'GET') return sendPdf(res, engine.extras.checklists, cm[1], FILE_HEADERS);
       const pm = url.pathname.match(/^\/api\/photo\/([a-f0-9]{16})$/);
       if (pm && req.method === 'GET') return servePhoto(res, engine.extras.photoFile(pm[1]), SECURITY);
       if (url.pathname.startsWith('/api/')) return sendJson(res, 404, { ok: false, error: 'Ikke funnet' });

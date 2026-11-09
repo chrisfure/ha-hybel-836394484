@@ -101,6 +101,25 @@ export function sendInvoice(res, lease, month, headers = {}) {
   }
 }
 
+export function serveDoc(res, doc, headers = {}) {
+  try {
+    if (!doc) throw new Error();
+    const st = statSync(doc.path);
+    const fname = `${doc.name}.${doc.ext}`;
+    res.writeHead(200, {
+      'Content-Type': doc.type,
+      'Content-Length': st.size,
+      'Content-Disposition': `inline; filename="${fname.replace(/[^\x20-\x7e]/g, '_')}"; filename*=UTF-8''${encodeURIComponent(fname)}`,
+      'Cache-Control': 'private, no-cache',
+      ...headers
+    });
+    createReadStream(doc.path).pipe(res);
+  } catch {
+    res.writeHead(404, { 'Content-Type': 'text/plain; charset=utf-8' });
+    res.end('Ikke funnet');
+  }
+}
+
 export function readJson(req, limit = 64 * 1024) {
   return new Promise((resolve, reject) => {
     let size = 0;

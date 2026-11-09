@@ -1,5 +1,10 @@
 # Endringslogg
 
+## 0.9.1
+
+- **Dokumenter**: utleier kan laste opp signert leiekontrakt og andre dokumenter (PDF, JPG, PNG, maks 15 MB) under Leieforhold. Leietaker finner dem under Leie → Leieforholdet og får pushvarsel. Dokumenter kan skjules, gis nytt navn eller slettes, og arkiveres ved leietakerbytte.
+- PDF-er (faktura, sjekkliste, dokumenter) sendes uten sidens strenge innholdsregler, så de åpnes i nettleserens PDF-visning overalt.
+
 ## 0.9.0
 
 - Scener styrer bare lys – varme og ventilasjon er tatt ut. Eldre scenesverdier for varme/ventilasjon ignoreres, og scener uten lys skjules.

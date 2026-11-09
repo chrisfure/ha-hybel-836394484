@@ -1,7 +1,7 @@
 // Utleiersiden. Nås kun via Home Assistant ingress (Supervisor-proxyen), aldri via Cloudflare.
 import http from 'node:http';
 import { join } from 'node:path';
-import { serveStatic, sendJson, readJson, servePhoto, sendPdf, sendInvoice } from './http.js';
+import { serveStatic, sendJson, readJson, readBody, servePhoto, sendPdf, sendInvoice, serveDoc } from './http.js';
 import { log } from './log.js';
 
 const INGRESS_IP = '172.30.32.2';
@@ -161,6 +161,28 @@ export function startAdminServer({ engine, ha, webRoot, port, tenantHub, devOpen
           return sendJson(res, 400, { ok: false, error: err.message });
         }
       }
+      if (p === '/api/admin/doc-upload' && req.method === 'POST') {
+        try {
+          const buf = await readBody(req, 15 * 1024 * 1024);
+          engine.extras.saveDoc(buf, { name: url.searchParams.get('name') || '', type: String(req.headers['content-type'] || '').split(';')[0] });
+          engine.changed();
+          return sendJson(res, 200, { ok: true, state: engine.adminView({ tenant_clients: tenantHub.size }) });
+        } catch (err) {
+          return sendJson(res, 400, { ok: false, error: err.message === 'Bildet er for stort' ? 'Filen er for stor (maks 15 MB)' : err.message });
+        }
+      }
+      if (p === '/api/admin/doc' && req.method === 'POST') {
+        const body = await readJson(req);
+        try {
+          engine.extras.updateDoc(body);
+          engine.changed();
+          return sendJson(res, 200, { ok: true, state: engine.adminView({ tenant_clients: tenantHub.size }) });
+        } catch (err) {
+          return sendJson(res, 400, { ok: false, error: err.message });
+        }
+      }
+      const dm = p.match(/^\/api\/admin\/doc\/([a-f0-9]{16})$/);
+      if (dm && req.method === 'GET') return serveDoc(res, engine.extras.docFile(dm[1]));
       const im = p.match(/^\/api\/admin\/invoice\/(\d{4}-\d{2})\.pdf$/);
       if (im && req.method === 'GET') return sendInvoice(res, engine.extras.lease, im[1]);
       const cm = p.match(/^\/api\/admin\/checklist\/([a-f0-9]{10})\.pdf$/);

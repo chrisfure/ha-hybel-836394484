@@ -354,7 +354,47 @@ function leasePanel() {
     <label class="lbl-col">Inkludert i leien<textarea class="input area" rows="2" data-field="lease.includes" placeholder="F.eks. Internett, vann og avløp, kommunale avgifter">${esc(l.includes || '')}</textarea></label>
     <label class="lbl-col">Annet om leieforholdet<textarea class="input area" rows="2" data-field="lease.note" placeholder="F.eks. Husleien justeres etter KPI hver januar">${esc(l.note || '')}</textarea></label>
     <p class="help">Du og leietaker får varsel 90 og 30 dager før kontrakten utløper. Husk «Lagre endringer» øverst.</p>
+    ${docsHTML()}
   </section>`;
+}
+
+const fmtSize = (b) => (b > 1048576 ? `${(b / 1048576).toFixed(1).replace('.', ',')} MB` : `${Math.max(1, Math.round(b / 1024))} kB`);
+
+function docsHTML() {
+  const docs = A.st.extras.docs || [];
+  return `<h3 class="sub-h">Dokumenter</h3>
+    <p class="help">Last opp den signerte leiekontrakten (PDF eller bilde). Leietaker finner den under Leie → Leieforholdet og får varsel når noe nytt er lagt ut.</p>
+    ${docs.map((d) => `<div class="doc-row">
+      <a class="doc-name" href="api/admin/doc/${d.id}" target="_blank" rel="noopener"><span class="doc-ic">${d.ext === 'pdf' ? 'PDF' : 'BILDE'}</span><span><strong>${esc(d.name)}</strong><br><span class="help">${esc(fmtDate(d.at))} · ${fmtSize(d.size)}</span></span></a>
+      <button class="sbtn ${d.visible ? 'on' : ''}" data-act="doc-visible" data-id="${d.id}" data-v="${d.visible ? '0' : '1'}">${d.visible ? 'Synlig for leietaker' : 'Skjult'}</button>
+      <button class="sbtn" data-act="doc-delete" data-id="${d.id}">${A.confirmDel === `doc-${d.id}` ? 'Bekreft' : 'Slett'}</button>
+    </div>`).join('')}
+    <div class="doc-up">
+      <input class="input" type="text" maxlength="80" placeholder="Navn, f.eks. Signert leiekontrakt" value="${esc(A.docName || '')}" data-field="doc-name">
+      <button class="sbtn on" data-act="doc-upload" ${A.uploading ? 'disabled' : ''}>${A.uploading ? 'Laster opp …' : 'Velg fil og last opp'}</button>
+    </div>`;
+}
+
+function uploadDoc() {
+  const inp = document.createElement('input');
+  inp.type = 'file';
+  inp.accept = 'application/pdf,image/jpeg,image/png';
+  inp.onchange = async () => {
+    const file = inp.files && inp.files[0];
+    if (!file) return;
+    if (file.size > 15 * 1024 * 1024) { message('Filen er for stor (maks 15 MB).', true); return; }
+    A.uploading = true; render();
+    try {
+      const name = (A.docName || '').trim() || file.name;
+      const r = await fetch(`api/admin/doc-upload?name=${encodeURIComponent(name)}`, { method: 'POST', headers: { 'Content-Type': file.type || 'application/octet-stream' }, body: file });
+      const j = await r.json().catch(() => ({ ok: false, error: `Feil ${r.status}` }));
+      if (!j.ok) throw new Error(j.error);
+      A.st = j.state; A.docName = '';
+      message('Dokumentet er lastet opp og synlig for leietaker.');
+    } catch (e) { message(esc(e.message), true); }
+    A.uploading = false; render();
+  };
+  inp.click();
 }
 
 // Økonomi: husleie og strøm samlet – oversikt, betalinger, avlesninger og innstillinger.
@@ -651,6 +691,17 @@ document.addEventListener('click', async (ev) => {
       } catch (e) { A.testResult = '✗ ' + esc(e.message); }
       break;
     }
+    case 'doc-upload': uploadDoc(); return;
+    case 'doc-visible':
+    case 'doc-delete': {
+      if (d.act === 'doc-delete' && A.confirmDel !== `doc-${d.id}`) { A.confirmDel = `doc-${d.id}`; break; }
+      try {
+        const r = await api('api/admin/doc', { method: 'POST', body: JSON.stringify(d.act === 'doc-delete' ? { id: d.id, delete: true } : { id: d.id, visible: d.v === '1' }) });
+        if (!r.ok) { message(esc(r.error), true); return; }
+        A.st = r.state; A.confirmDel = null;
+      } catch (e) { message(esc(e.message), true); }
+      break;
+    }
     case 'inv-delete':
     case 'inv-restore': {
       if (d.act === 'inv-delete' && A.confirmDel !== `inv-${d.v}`) { A.confirmDel = `inv-${d.v}`; break; }
@@ -802,6 +853,7 @@ document.addEventListener('input', (ev) => {
   else if (f === 'el.note') { A.cfg.electricity.note = el.value; setDirty(); }
   else if (f === 'nr.value') { A.newReading.value = el.value; }
   else if (f === 'nr.date') { A.newReading.date = el.value; }
+  else if (f === 'doc-name') { A.docName = el.value; }
   else if (f.startsWith('fb.')) { A.cfg.fixed_button[f.slice(3)] = f === 'fb.n' ? Number(el.value) : el.value; setDirty(); }
   else if (f.startsWith('lease.')) { A.cfg.lease[f.slice(6)] = el.value; setDirty(); }
   else if (f === 'compose') { A.compose = el.value; }

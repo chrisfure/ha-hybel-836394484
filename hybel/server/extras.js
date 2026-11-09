@@ -29,6 +29,7 @@ export function defaultExtras() {
     checklists: [],
     checklist_template: null,
     photo_pending: {},
+    docs: [],
     lease: defaultLease(),
     payments: {},
     lease_flags: {}
@@ -88,6 +89,49 @@ export class Extras {
 
   save() {
     this.engine.store.save();
+  }
+
+  // ---------- dokumenter (signert kontrakt o.l.) ----------
+
+  docFile(id) {
+    const d = (this.d.docs || []).find((x) => x.id === id);
+    return d ? { ...d, path: join(this.dir, 'docs', `${d.id}.${d.ext}`) } : null;
+  }
+
+  saveDoc(buf, { name, type }) {
+    const TYPES = { 'application/pdf': 'pdf', 'image/jpeg': 'jpg', 'image/png': 'png' };
+    const ext = TYPES[type];
+    if (!ext) throw new Error('Last opp en PDF eller et bilde (JPG/PNG)');
+    if (ext === 'pdf' && buf.subarray(0, 5).toString('latin1') !== '%PDF-') throw new Error('Filen er ikke en gyldig PDF');
+    if (!buf.length) throw new Error('Tom fil');
+    const docs = this.d.docs || (this.d.docs = []);
+    if (docs.length >= 30) throw new Error('Maks 30 dokumenter – slett noen først');
+    mkdirSync(join(this.dir, 'docs'), { recursive: true });
+    const id = randomBytes(8).toString('hex');
+    writeFileSync(join(this.dir, 'docs', `${id}.${ext}`), buf);
+    const clean = str(name, 80).replace(/\.(pdf|jpe?g|png)$/i, '') || 'Dokument';
+    const doc = { id, name: clean, ext, type, size: buf.length, at: new Date().toISOString(), visible: true };
+    docs.unshift(doc);
+    this.save();
+    this.pushTenant({ title: 'Nytt dokument fra utleier', body: clean, tag: `doc-${id}`, url: '/?vis=strom' });
+    return doc;
+  }
+
+  updateDoc(body) {
+    const doc = (this.d.docs || []).find((x) => x.id === body.id);
+    if (!doc) throw new Error('Fant ikke dokumentet');
+    if (body.delete) {
+      try { unlinkSync(join(this.dir, 'docs', `${doc.id}.${doc.ext}`)); } catch {}
+      this.d.docs = this.d.docs.filter((x) => x.id !== doc.id);
+    } else {
+      if (body.name !== undefined) doc.name = str(body.name, 80) || doc.name;
+      if (body.visible !== undefined) doc.visible = Boolean(body.visible);
+    }
+    this.save();
+  }
+
+  docsView(all = false) {
+    return (this.d.docs || []).filter((x) => all || x.visible).map(({ id, name, ext, size, at, visible }) => ({ id, name, ext, size, at, visible }));
   }
 
   // ---------- bilder ----------
@@ -409,6 +453,7 @@ export class Extras {
       electricity: this.electricityView(),
       checklists: this.checklists.view(),
       lease: this.lease.view(),
+      docs: this.docsView(),
       push: { key: this.vapid?.publicKey || null, devices: this.d.push_subs.length }
     };
   }
@@ -420,6 +465,7 @@ export class Extras {
       electricity: { ...this.electricityView(), readings: this.d.readings },
       checklists: this.checklists.view(),
       lease: { ...this.lease.view(), settings: this.d.lease },
+      docs: this.docsView(true),
       checklist_template: templateToText(this.d.checklist_template?.length ? this.d.checklist_template : DEFAULT_TEMPLATE),
       push_devices: this.d.push_subs.map((x) => ({ device: x.device, created: x.created }))
     };

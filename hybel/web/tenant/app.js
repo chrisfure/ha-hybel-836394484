@@ -708,6 +708,8 @@ function contractHTML(c) {
       ${c.notice_by && c.days_left >= 0 ? `<span class="note">Si fra innen ${esc(longDate(c.notice_by))} om du vil flytte eller forlenge (${c.notice_months} mnd oppsigelse).</span>` : ''}</div>`;
   }
   h += `<div class="kv">${rows.map(([k, v]) => `<div class="kv-row"><span>${esc(k)}</span><span>${esc(v)}${k === 'Kontonummer' ? ` <button class="chip-btn" data-act="copy" data-v="${esc(v.replace(/\s/g, ''))}" data-msg="Kontonummeret er kopiert">Kopier</button>` : ''}</span></div>`).join('')}</div>`;
+  const docs = S.m.docs || [];
+  if (docs.length) h += `<div class="docs">${docs.map((d) => `<a class="doc-link" href="api/doc/${d.id}" target="_blank" rel="noopener"><span class="doc-ic">${d.ext === 'pdf' ? 'PDF' : 'BILDE'}</span><span class="grow"><span class="t">${esc(d.name)}</span><span class="s">Lagt ut ${esc(dateFmt(d.at))}</span></span></a>`).join('')}</div>`;
   if (c.includes) h += `<span class="field-label">Inkludert i leien</span><p class="pre">${esc(c.includes)}</p>`;
   if (c.note) h += `<p class="pre note">${esc(c.note)}</p>`;
   return h + `</section>`;
@@ -746,7 +748,7 @@ function stromHTML() {
       ${e.note ? `<p class="note pre">${esc(e.note)}</p>` : ''}
     </section>`;
   }
-  if (c && (c.start || c.end || c.rent || c.deposit)) h += contractHTML(c);
+  if (c && (c.start || c.end || c.rent || c.deposit || (S.m.docs || []).length)) h += contractHTML(c);
   if (L && L.ledger.length && c.rent) {
     h += `<section><h2 class="group-title">Betalinger${L.year_total ? ` <span class="gt-count">Betalt i år: ${esc(nok(L.year_total))}</span>` : ''}</h2><div class="list">${L.ledger.map((r) => {
       const [lab, cls] = LSTAT[r.status];
