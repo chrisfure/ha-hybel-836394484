@@ -4,8 +4,7 @@ import { log } from './log.js';
 
 const RANGES = {
   '24h': { ms: 24 * 3600e3, bucket: 15 * 60e3 },
-  '7d': { ms: 7 * 24 * 3600e3, bucket: 2 * 3600e3 },
-  '30d': { ms: 30 * 24 * 3600e3, bucket: 8 * 3600e3 }
+  '7d': { ms: 7 * 24 * 3600e3, bucket: 2 * 3600e3 }
 };
 
 export class Stats {
@@ -14,8 +13,39 @@ export class Stats {
     this.cache = new Map();
   }
 
+  // Sensorer på samme enhet (device) som en gitt entitet, f.eks. fuktføleren i ventilasjonsaggregatet.
+  async deviceSensors(entityId) {
+    if (!this.reg || Date.now() - this.reg.at > 10 * 60e3) {
+      try {
+        const list = await this.engine.ha.send({ type: 'config/entity_registry/list' });
+        const byDev = new Map();
+        const devOf = new Map();
+        for (const r of list) {
+          if (!r.device_id) continue;
+          devOf.set(r.entity_id, r.device_id);
+          if (!byDev.has(r.device_id)) byDev.set(r.device_id, []);
+          byDev.get(r.device_id).push(r.entity_id);
+        }
+        this.reg = { at: Date.now(), byDev, devOf };
+      } catch {
+        this.reg = { at: Date.now(), byDev: new Map(), devOf: new Map() };
+      }
+    }
+    const dev = this.reg.devOf.get(entityId);
+    return dev ? this.reg.byDev.get(dev).filter((id) => id.startsWith('sensor.')) : [];
+  }
+
+  // Synkron variant for visningen: bruker registeret hvis det er hentet (hentes ellers i bakgrunnen).
+  ventHumidity(entityId) {
+    if (!this.reg) { this.deviceSensors(entityId).then(() => this.engine.changed()).catch(() => {}); return null; }
+    const dev = this.reg.devOf.get(entityId);
+    const id = dev && this.reg.byDev.get(dev).find((x) => x.startsWith('sensor.') && this.engine.ha.states.get(x)?.attributes?.device_class === 'humidity');
+    const v = id ? Number(this.engine.ha.states.get(id)?.state) : NaN;
+    return Number.isFinite(v) ? Math.round(v) : null;
+  }
+
   // Hvilke måleserier finnes: temperatur fra termostater/varmepumpe (egen føler hvis valgt) og ventilasjonsaggregat.
-  series() {
+  async series() {
     const out = [];
     for (const e of this.engine.enabled()) {
       if (e.kind === 'heat' || e.kind === 'climate') {
@@ -24,6 +54,11 @@ export class Stats {
       } else if (e.kind === 'vent') {
         const a = this.engine.ha.states.get(e.entity_id)?.attributes || {};
         if (typeof a.current_humidity === 'number') out.push({ id: `h-${e.entity_id}`, label: 'Luftfuktighet', sub: e.label, unit: '%', type: 'hum', entity_id: e.entity_id, attr: 'current_humidity' });
+        else {
+          // Ventilasjonen har ofte fuktføleren som egen sensor på samme enhet.
+          const hum = (await this.deviceSensors(e.entity_id)).find((id) => this.engine.ha.states.get(id)?.attributes?.device_class === 'humidity');
+          if (hum) out.push({ id: `h-${e.entity_id}`, label: 'Luftfuktighet', sub: e.label, unit: '%', type: 'hum', entity_id: hum, attr: null });
+        }
         if (typeof a.current_temperature === 'number') out.push({ id: `v-${e.entity_id}`, label: 'Inneluft', sub: `${e.label} · temperatur`, unit: '°', type: 'temp', entity_id: e.entity_id, attr: 'current_temperature' });
       }
     }
@@ -35,7 +70,7 @@ export class Stats {
     const key = `${range}`;
     const hit = this.cache.get(key);
     if (hit && Date.now() - hit.at < 120e3) return hit.data;
-    const defs = this.series();
+    const defs = await this.series();
     const end = Date.now();
     const start = end - R.ms;
     let hist = {};

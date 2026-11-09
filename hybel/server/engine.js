@@ -912,7 +912,7 @@ export class Engine extends EventEmitter {
           base.heating = a.hvac_action === 'heating';
         } else if (e.kind === 'vent') {
           base.modes = this.ventModes();
-          base.humidity = typeof a.current_humidity === 'number' ? a.current_humidity : null;
+          base.humidity = typeof a.current_humidity === 'number' ? a.current_humidity : this.stats.ventHumidity(e.entity_id);
           base.temperature = typeof a.current_temperature === 'number' ? a.current_temperature : null;
         } else if (e.kind === 'button') {
           base.value = null;

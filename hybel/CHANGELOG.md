@@ -1,5 +1,10 @@
 # Endringslogg
 
+## 0.10.1
+
+- Statistikk viser luftfuktighet også når ventilasjonen har fuktføleren som egen sensor på samme enhet (vises også på ventilasjonskortet under Klima).
+- Månedsvisning i statistikken er fjernet – bare døgn og uke.
+
 ## 0.10.0
 
 - Ny fane **Statistikk**: temperatur (termostater/varmepumpe, med valgt føler) og luftfuktighet/inneluft fra ventilasjonen for siste døgn, uke eller måned. Nåverdi, laveste, snitt og høyeste, og dra fingeren over grafen for å se verdien på et tidspunkt. Grønt felt viser god luftfuktighet (30–60 %).

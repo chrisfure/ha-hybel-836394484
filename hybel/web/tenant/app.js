@@ -975,7 +975,7 @@ function tabsHTML() {
 
 // ---------- statistikk ----------
 
-S.stats = { range: store.get('hybel-stat-range') || '24h', data: null, loading: false, error: null };
+S.stats = { range: store.get('hybel-stat-range') === '7d' ? '7d' : '24h', data: null, loading: false, error: null };
 
 async function loadStats() {
   const range = S.stats.range;
@@ -1041,8 +1041,8 @@ function chartSVG(sr, data) {
 function statsTab() {
   const st = S.stats;
   if (!st.data && !st.loading && !st.error) loadStats();
-  const ranges = [['24h', 'Døgn'], ['7d', 'Uke'], ['30d', 'Måned']];
-  let h = `<div class="seg stat-seg" style="grid-template-columns: repeat(3, minmax(0, 1fr))">${ranges.map(([k, l]) => `<button aria-pressed="${st.range === k}" data-act="stat-range" data-v="${k}">${l}</button>`).join('')}</div>`;
+  const ranges = [['24h', 'Døgn'], ['7d', 'Uke']];
+  let h = `<div class="seg stat-seg" style="grid-template-columns: repeat(2, minmax(0, 1fr))">${ranges.map(([k, l]) => `<button aria-pressed="${st.range === k}" data-act="stat-range" data-v="${k}">${l}</button>`).join('')}</div>`;
   if (st.error) return h + `<div class="notice-soft bad">${esc(st.error)}</div>`;
   const d = st.data && st.data.range === st.range ? st.data : null;
   if (!d) return h + `<p class="intro">Henter statistikk …</p>`;
