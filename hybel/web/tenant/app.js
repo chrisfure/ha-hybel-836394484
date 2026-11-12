@@ -994,7 +994,7 @@ async function loadStats() {
 }
 
 const num1 = (v) => (v == null ? '–' : v.toLocaleString('nb-NO', { minimumFractionDigits: 1, maximumFractionDigits: 1 }));
-const fmtVal = (v, unit) => (v == null ? '–' : unit === '%' ? `${Math.round(v)} %` : `${num1(v)}°`);
+const fmtVal = (v, unit) => (v == null ? '–' : unit === '%' ? `${Math.round(v)} %` : unit === '°' ? `${num1(v)}°` : `${Math.abs(v) >= 100 ? Math.round(v).toLocaleString('nb-NO') : num1(v)} ${unit}`);
 
 function tickLabel(t, range) {
   const d = new Date(t);
@@ -1009,7 +1009,7 @@ function chartSVG(sr, data) {
   const vals = pts.filter((p) => p != null);
   if (vals.length < 2) return '<p class="note">Ikke nok data ennå.</p>';
   let lo = Math.min(...vals), hi = Math.max(...vals);
-  const pad = sr.unit === '%' ? 4 : 0.6;
+  const pad = sr.unit === '%' ? 4 : sr.unit === '°' ? 0.6 : Math.max(1, (hi - lo) * 0.1);
   lo = Math.floor(lo - pad); hi = Math.ceil(hi + pad);
   if (sr.unit === '%') { lo = Math.max(0, lo); hi = Math.min(100, hi); }
   const x = (i) => L + (i / (pts.length - 1)) * (W - L - R);
@@ -1023,7 +1023,7 @@ function chartSVG(sr, data) {
     started = true;
   });
   area = `${line}L${lastX.toFixed(1)},${H - B}L${firstX.toFixed(1)},${H - B}Z`;
-  const grid = [lo, (lo + hi) / 2, hi].map((g) => `<line x1="${L}" x2="${W - R}" y1="${y(g).toFixed(1)}" y2="${y(g).toFixed(1)}" class="gl"/><text x="${L - 6}" y="${(y(g) + 3.5).toFixed(1)}" class="yl">${sr.unit === '%' ? Math.round(g) : Math.round(g * 10) / 10}</text>`).join('');
+  const grid = [lo, (lo + hi) / 2, hi].map((g) => `<line x1="${L}" x2="${W - R}" y1="${y(g).toFixed(1)}" y2="${y(g).toFixed(1)}" class="gl"/><text x="${L - 6}" y="${(y(g) + 3.5).toFixed(1)}" class="yl">${sr.unit === '°' ? Math.round(g * 10) / 10 : Math.round(g)}</text>`).join('');
   const ticks = [];
   const nT = 4;
   for (let k = 0; k <= nT; k++) {
@@ -1031,7 +1031,7 @@ function chartSVG(sr, data) {
     const t = data.start + i * data.bucket;
     ticks.push(`<text x="${x(i).toFixed(1)}" y="${H - 5}" class="xl" text-anchor="${k === 0 ? 'start' : k === nT ? 'end' : 'middle'}">${tickLabel(t, data.range)}</text>`);
   }
-  const band = sr.unit === '%' ? `<rect x="${L}" width="${W - L - R}" y="${y(Math.min(hi, 60)).toFixed(1)}" height="${Math.max(0, y(Math.max(lo, 30)) - y(Math.min(hi, 60))).toFixed(1)}" class="band"/>` : '';
+  const band = sr.type === 'hum' ? `<rect x="${L}" width="${W - L - R}" y="${y(Math.min(hi, 60)).toFixed(1)}" height="${Math.max(0, y(Math.max(lo, 30)) - y(Math.min(hi, 60))).toFixed(1)}" class="band"/>` : '';
   return `<svg class="chart-svg ${sr.type}" viewBox="0 0 ${W} ${H}" data-chart="${sr.id}" role="img" aria-label="${esc(sr.label)}">
     ${band}${grid}<path d="${area}" class="ar"/><path d="${line}" class="ln"/>${ticks.join('')}
     <line class="cur" x1="0" x2="0" y1="${T}" y2="${H - B}" style="display:none"/><circle class="dot" r="4" style="display:none"/>
@@ -1053,7 +1053,7 @@ function statsTab() {
         <span class="stat-now"><span class="v" data-readout="${sr.id}">${fmtVal(sr.now, sr.unit)}</span><span class="s" data-readout-t="${sr.id}">nå</span></span></div>
       ${chartSVG(sr, d)}
       <div class="stat-chips"><span>Laveste <strong>${fmtVal(sr.min, sr.unit)}</strong></span><span>Snitt <strong>${fmtVal(sr.avg, sr.unit)}</strong></span><span>Høyeste <strong>${fmtVal(sr.max, sr.unit)}</strong></span></div>
-      ${sr.unit === '%' ? '<p class="note">Det grønne feltet (30–60 %) er god luftfuktighet innendørs. Over 60 % over tid kan gi fukt og mugg – luft ut eller bruk høy ventilasjon.</p>' : ''}
+      ${sr.type === 'hum' ? '<p class="note">Det grønne feltet (30–60 %) er god luftfuktighet innendørs. Over 60 % over tid kan gi fukt og mugg – luft ut eller bruk høy ventilasjon.</p>' : ''}
     </section>`;
   }
   h += `<p class="note" style="margin:0 4px">Dra fingeren over en graf for å se verdien på et bestemt tidspunkt.</p>`;
@@ -1077,8 +1077,9 @@ function scrub(ev) {
   const v = sr.points[j];
   if (v == null) return;
   const vals = sr.points.filter((p) => p != null);
-  const pad = sr.unit === '%' ? 4 : 0.6;
-  let lo = Math.floor(Math.min(...vals) - pad), hi = Math.ceil(Math.max(...vals) + pad);
+  const mn = Math.min(...vals), mx = Math.max(...vals);
+  const pad = sr.unit === '%' ? 4 : sr.unit === '°' ? 0.6 : Math.max(1, (mx - mn) * 0.1);
+  let lo = Math.floor(mn - pad), hi = Math.ceil(mx + pad);
   if (sr.unit === '%') { lo = Math.max(0, lo); hi = Math.min(100, hi); }
   const x = L + (j / (n - 1)) * (W - L - R);
   const y = T + (1 - (v - lo) / (hi - lo || 1)) * (H - T - B);

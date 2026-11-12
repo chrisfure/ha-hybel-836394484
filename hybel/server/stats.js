@@ -66,8 +66,9 @@ export class Stats {
   }
 
   // Hvilke måleserier finnes: temperatur fra termostater/varmepumpe (egen føler hvis valgt) og ventilasjonsaggregat.
-  async series() {
+  async series(includeHidden = false) {
     const out = [];
+    const d = this.engine.data;
     for (const e of this.engine.enabled()) {
       if (e.kind === 'heat' || e.kind === 'climate') {
         if (e.now_sensor) out.push({ id: `t-${e.entity_id}`, label: e.label, sub: 'Temperatur', unit: '°', type: 'temp', entity_id: e.now_sensor, attr: null });
@@ -85,7 +86,17 @@ export class Stats {
     }
     const ute = this.outdoorSensor();
     if (ute) out.push({ id: 'ute', label: 'Ute', sub: 'Utetemperatur', unit: '°', type: 'out', entity_id: ute, attr: null });
-    return out;
+    // Egne sensorer valgt av utleier.
+    for (const c of d.stat_sensors || []) {
+      const st = this.engine.ha.states.get(c.entity_id);
+      if (!st) continue;
+      const a = st.attributes || {};
+      const type = a.device_class === 'temperature' || ['°C', '°F'].includes(a.unit_of_measurement) ? 'temp' : a.device_class === 'humidity' ? 'hum' : 'other';
+      const unit = type === 'temp' ? '°' : type === 'hum' ? '%' : a.unit_of_measurement || '';
+      out.push({ id: `c-${c.entity_id}`, label: c.label || a.friendly_name || c.entity_id, sub: a.friendly_name && c.label && c.label !== a.friendly_name ? a.friendly_name : type === 'temp' ? 'Temperatur' : type === 'hum' ? 'Luftfuktighet' : '', unit, type, entity_id: c.entity_id, attr: null, custom: true });
+    }
+    const hidden = new Set(d.stat_hidden || []);
+    return includeHidden ? out.map((x) => ({ ...x, hidden: hidden.has(x.id) })) : out.filter((x) => !hidden.has(x.id));
   }
 
   async get(range = '24h') {
@@ -125,6 +136,7 @@ export class Stats {
         const v = d.attr ? Number((r.a || lastAttrs || {})[d.attr]) : Number(r.s ?? r.state);
         if (!Number.isFinite(v)) continue;
         if ((d.type === 'temp' || d.type === 'out') && (v < -50 || v > 60)) continue;
+        if (d.type === 'other' && Math.abs(v) > 1e7) continue;
         if (d.type === 'hum' && (v < 0 || v > 100)) continue;
         raw.push([t, v]);
       }

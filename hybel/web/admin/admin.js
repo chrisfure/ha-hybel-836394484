@@ -47,6 +47,8 @@ function pickCfg(st) {
     tenant_can_edit_scenes: st.tenant_can_edit_scenes,
     pairing_enabled: st.pairing.enabled,
     outdoor_sensor: st.outdoor.set,
+    stat_sensors: (st.stat_sensors || []).map((c) => ({ ...c })),
+    stat_hidden: [...(st.stat_hidden || [])],
     fixed_button: st.fixed_button || { entity_id: '', n: 1, light: '' },
     alerts: st.alerts,
     info: st.extras.info,
@@ -518,6 +520,62 @@ function fixedButtonHTML() {
   </div>`;
 }
 
+// ---------- statistikk: hvilke sensorer leietaker ser ----------
+async function loadStatSeries() {
+  if (A.statLoading) return;
+  A.statLoading = true;
+  try { const r = await api('api/admin/stats-series'); A.statSeries = r.series || []; } catch { A.statSeries = []; }
+  A.statLoading = false;
+  render();
+}
+
+const TYPE_LBL = { temp: 'Temperatur', hum: 'Fuktighet', out: 'Ute', other: 'Annet' };
+
+function statsPanel() {
+  if (!A.statSeries) loadStatSeries();
+  const hidden = new Set(A.cfg.stat_hidden);
+  const auto = (A.statSeries || []).filter((x) => !x.custom);
+  const custom = A.cfg.stat_sensors;
+  const shown = auto.filter((x) => !hidden.has(x.id)).length + custom.filter((c) => !hidden.has(`c-${c.entity_id}`)).length;
+  let h = `<section class="panel"><div class="panel-head"><h2>Statistikk</h2><span>${shown} grafer for leietaker</span></div>
+    <p class="help">Velg hvilke målinger leietaker ser under Statistikk. Automatiske målinger kommer fra termostater og ventilasjon; du kan også legge til egne sensorer (temperatur, fukt, CO₂, strøm o.l.).</p>`;
+  if (!A.statSeries) h += `<p class="help">Henter …</p>`;
+  for (const x of auto) {
+    const on = !hidden.has(x.id);
+    h += `<div class="srow"><span class="lbl">${esc(x.label)}<br><span class="help">${esc(x.sub || '')} · ${esc(x.entity_id)}</span></span>
+      <span class="ctl"><span class="help">${esc(x.now ?? '')}</span><button class="sbtn ${on ? 'on' : ''}" data-act="stat-toggle" data-id="${esc(x.id)}">${on ? 'Vises' : 'Skjult'}</button></span></div>`;
+  }
+  custom.forEach((c, i) => {
+    const id = `c-${c.entity_id}`;
+    const on = !hidden.has(id);
+    const cand = (A.cand?.numeric || []).find((n) => n.entity_id === c.entity_id);
+    h += `<div class="srow"><span class="lbl" style="flex:1 1 220px"><input class="input" type="text" maxlength="40" placeholder="${esc(cand?.name || 'Navn')}" value="${esc(c.label)}" data-field="stat-label" data-i="${i}"><span class="help">${esc(c.entity_id)}${cand ? ` · ${esc(cand.state)}` : ''}</span></span>
+      <span class="ctl"><button class="sbtn ${on ? 'on' : ''}" data-act="stat-toggle" data-id="${esc(id)}">${on ? 'Vises' : 'Skjult'}</button><button class="sbtn" data-act="stat-remove" data-i="${i}">Fjern</button></span></div>`;
+  });
+  h += A.picker === 'stat' ? statPickerHTML() : `<button class="add" data-act="open-picker" data-kind="stat">+ Legg til sensor</button>`;
+  h += `<div style="margin-top:14px">${outdoorHTML()}</div>`;
+  h += `<p class="help">Husk «Lagre endringer» øverst.</p>`;
+  return h + `</section>`;
+}
+
+function statPickerHTML() {
+  if (!A.cand) return `<div class="picker"><p class="help">Henter sensorer …</p></div>`;
+  const q = A.q.trim().toLowerCase();
+  const taken = new Set(A.cfg.stat_sensors.map((c) => c.entity_id));
+  const list = (A.cand.numeric || []).filter((c) => !taken.has(c.entity_id)).filter((c) => !q || `${c.name} ${c.entity_id} ${c.area}`.toLowerCase().includes(q)).slice(0, 80);
+  return `<div class="picker">
+    <div style="display:flex;gap:8px">
+      <input class="input" type="search" placeholder="Søk etter sensor, område …" value="${esc(A.q)}" data-field="q" aria-label="Søk" autofocus>
+      <button class="sbtn" data-act="close-picker">Lukk</button>
+    </div>
+    <div class="picker-list">${list.length ? list.map((c) => `
+      <button class="pick" data-act="stat-add" data-id="${esc(c.entity_id)}">
+        <span><span class="n">${esc(c.name)}</span><span class="mono">${esc(c.entity_id)}</span></span>
+        <span class="a">${esc(c.area || '')} · ${esc(c.state)}</span>
+      </button>`).join('') : '<p class="help" style="padding:8px">Ingen treff.</p>'}</div>
+  </div>`;
+}
+
 function outdoorHTML() {
   if (!A.cand) loadCandidates();
   const used = A.st.outdoor.used;
@@ -536,7 +594,6 @@ function resetPanel() {
     <button class="danger ${A.confirmReset ? 'confirm' : ''}" data-act="tenant-reset">${A.confirmReset ? 'Trykk igjen for å bekrefte' : 'Klargjør for ny leietaker'}</button>
   </section>
   <section class="panel soft"><div class="panel-head"><h2>Oppsett</h2></div>
-    ${outdoorHTML()}
     <button class="toggle-row" data-act="toggle-pairing">
       <span><span class="t">Leietaker kan koble lys til Zigbee på nytt</span><span class="s">${A.st.pairing.switch ? `Åpner for tilkobling (${esc(A.st.pairing.switch)}) i opptil 10 minutter når et lys ikke svarer` : 'Fant ingen «permit join»-bryter fra Zigbee2MQTT'}</span></span>
       <span class="switch" role="switch" aria-checked="${A.cfg.pairing_enabled}"></span>
@@ -550,7 +607,7 @@ function render() {
   const focusId = document.activeElement?.id || (document.activeElement?.dataset?.field === 'q' ? '__q' : null);
   A.todo = todos();
   $('todo').innerHTML = todoBar();
-  $('main').innerHTML = `<div class="col-main">${reportsPanel()}${economyPanel()}${leasePanel()}${checklistPanel()}${entitiesPanel()}${scenesPanel()}${infoPanel()}</div><div class="col-side">${limitsPanel()}${alertsPanel()}${resetPanel()}</div>${photoOverlay()}`;
+  $('main').innerHTML = `<div class="col-main">${reportsPanel()}${economyPanel()}${leasePanel()}${checklistPanel()}${entitiesPanel()}${scenesPanel()}${statsPanel()}${infoPanel()}</div><div class="col-side">${limitsPanel()}${alertsPanel()}${resetPanel()}</div>${photoOverlay()}`;
   if (focusId === '__q') {
     const q = document.querySelector('[data-field="q"]');
     if (q) { q.focus(); q.setSelectionRange(q.value.length, q.value.length); }
@@ -685,6 +742,17 @@ document.addEventListener('click', async (ev) => {
     case 'ent-remove': ents.splice(i, 1); setDirty(); break;
     case 'open-picker': A.picker = d.kind; A.q = ''; render(); loadCandidates(); return;
     case 'close-picker': A.picker = null; break;
+    case 'stat-add': {
+      const c = A.cand.numeric.find((x) => x.entity_id === d.id);
+      if (c) A.cfg.stat_sensors.push({ entity_id: c.entity_id, label: c.name.slice(0, 40) });
+      A.picker = null; setDirty(); break;
+    }
+    case 'stat-remove': A.cfg.stat_sensors.splice(Number(d.i), 1); setDirty(); break;
+    case 'stat-toggle': {
+      const hs = new Set(A.cfg.stat_hidden);
+      if (hs.has(d.id)) hs.delete(d.id); else hs.add(d.id);
+      A.cfg.stat_hidden = [...hs]; setDirty(); break;
+    }
     case 'pick': {
       const c = A.cand.entities.find((x) => x.entity_id === d.id);
       if (!c) return;
@@ -867,6 +935,7 @@ document.addEventListener('input', (ev) => {
   else if (f === 'el.note') { A.cfg.electricity.note = el.value; setDirty(); }
   else if (f === 'nr.value') { A.newReading.value = el.value; }
   else if (f === 'nr.date') { A.newReading.date = el.value; }
+  else if (f === 'stat-label') { A.cfg.stat_sensors[Number(el.dataset.i)].label = el.value; setDirty(); }
   else if (f === 'outdoor') { A.cfg.outdoor_sensor = el.value; setDirty(); }
   else if (f === 'doc-name') { A.docName = el.value; }
   else if (f.startsWith('fb.')) { A.cfg.fixed_button[f.slice(3)] = f === 'fb.n' ? Number(el.value) : el.value; setDirty(); }
@@ -900,6 +969,7 @@ $('save').addEventListener('click', async () => {
     if (r.ok) {
       A.cfg = pickCfg(r.state);
       A.resetScenes = false;
+      A.statSeries = null;
       setDirty(false);
       message('Lagret. Leietakersiden er oppdatert.');
     } else {

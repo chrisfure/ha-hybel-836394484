@@ -1,5 +1,10 @@
 # Endringslogg
 
+## 0.11.0
+
+- Ny seksjon **Statistikk** på utleiersiden: velg hvilke målinger leietaker ser. Automatiske målinger (termostater, ventilasjon, ute) kan skjules, og du kan legge til egne sensorer (temperatur, fukt, CO₂, effekt o.l.) med eget navn. Utetermometer er flyttet hit fra Oppsett.
+- Grafer for andre sensorer får egen farge og riktig enhet.
+
 ## 0.10.2
 
 - Statistikk har nå **utetemperatur** (blå graf). Termometeret velges automatisk (temperaturføler med «ute» i navnet, snitt-sensor foretrekkes) eller under Oppsett på utleiersiden.

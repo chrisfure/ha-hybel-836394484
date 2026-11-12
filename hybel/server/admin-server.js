@@ -89,7 +89,18 @@ export function startAdminServer({ engine, ha, webRoot, port, tenantHub, devOpen
       }
     }
     meters.sort((x, y) => x.name.localeCompare(y.name, 'nb'));
-    return { entities: list, notify_services: notify, temp_sensors, safety, meters };
+    // Alle tallsensorer som kan vises i statistikken.
+    const numeric = [];
+    for (const [id, st] of ha.states) {
+      if (!id.startsWith('sensor.')) continue;
+      const a = st.attributes || {};
+      if (!a.unit_of_measurement || !Number.isFinite(Number(st.state))) continue;
+      if (['battery', 'signal_strength', 'timestamp', 'duration', 'monetary'].includes(a.device_class)) continue;
+      const areaId = reg.entityArea.get(id);
+      numeric.push({ entity_id: id, name: a.friendly_name || id, state: `${st.state} ${a.unit_of_measurement}`, dc: a.device_class || '', area: areaId ? reg.areas.get(areaId) || areaId : '' });
+    }
+    numeric.sort((x, y) => (x.area || 'zzz').localeCompare(y.area || 'zzz', 'nb') || x.name.localeCompare(y.name, 'nb'));
+    return { entities: list, notify_services: notify, temp_sensors, safety, meters, numeric };
   }
 
   const server = http.createServer(async (req, res) => {
@@ -102,6 +113,15 @@ export function startAdminServer({ engine, ha, webRoot, port, tenantHub, devOpen
       const p = url.pathname;
       if (p === '/api/admin/state' && req.method === 'GET') {
         return sendJson(res, 200, engine.adminView({ tenant_clients: tenantHub.size }));
+      }
+      if (p === '/api/admin/stats-series' && req.method === 'GET') {
+        const list = await engine.stats.series(true);
+        const unitOf = { temp: '°', out: '°', hum: '%' };
+        return sendJson(res, 200, { ok: true, series: list.map(({ id, label, sub, entity_id, type, custom, hidden, attr, unit }) => {
+          const st = engine.ha.states.get(entity_id);
+          const v = attr ? st?.attributes?.[attr] : st?.state;
+          return { id, label, sub, entity_id, type, custom: Boolean(custom), hidden: Boolean(hidden), now: v == null ? '' : `${v}${unitOf[type] || (unit ? ` ${unit}` : '')}` };
+        }) });
       }
       if (p === '/api/admin/candidates' && req.method === 'GET') {
         return sendJson(res, 200, await candidates());

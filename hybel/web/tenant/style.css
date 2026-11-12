@@ -384,3 +384,6 @@ a.inv-row { color: inherit; text-decoration: none; }
 .stat-card.out .stat-now .v { color: #3F6E9A; }
 .chart-svg.out .ln { stroke: #4C82B5; }
 .chart-svg.out .ar { fill: rgba(76, 130, 181, .10); }
+.stat-card.other .stat-now .v { color: #6A5A8C; }
+.chart-svg.other .ln { stroke: #7C6AA6; }
+.chart-svg.other .ar { fill: rgba(124, 106, 166, .10); }
