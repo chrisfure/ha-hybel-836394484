@@ -1038,6 +1038,51 @@ function chartSVG(sr, data) {
   </svg>`;
 }
 
+const kwhStr = (v) => `${(v ?? 0).toLocaleString('nb-NO', { minimumFractionDigits: v >= 10 ? 1 : 2, maximumFractionDigits: v >= 10 ? 1 : 2 })} kWh`;
+
+function barLabel(t, range) {
+  const d = new Date(t);
+  return range === '7d' ? d.toLocaleDateString('nb-NO', { weekday: 'short' }).replace('.', '') : String(d.getHours()).padStart(2, '0');
+}
+
+function barsSVG(en, range) {
+  const W = 320, H = 132, L = 30, R = 6, T = 8, B = 20;
+  const n = en.points.length;
+  const mx = Math.max(...en.points, 0);
+  const step = mx <= 0.5 ? 0.1 : mx <= 2 ? 0.5 : mx <= 5 ? 1 : mx <= 20 ? 5 : 10;
+  const hi = Math.max(step, Math.ceil(mx / step) * step);
+  const bw = (W - L - R) / n;
+  const y = (v) => T + (1 - v / hi) * (H - T - B);
+  const grid = [0, hi / 2, hi].map((g) => `<line x1="${L}" x2="${W - R}" y1="${y(g).toFixed(1)}" y2="${y(g).toFixed(1)}" class="gl"/><text x="${L - 6}" y="${(y(g) + 3.5).toFixed(1)}" class="yl">${String(Math.round(g * 10) / 10).replace('.', ',')}</text>`).join('');
+  const bars = en.points.map((v, i) => `<rect class="bar${i === n - 1 ? ' cur-b' : ''}" data-i="${i}" x="${(L + i * bw + bw * 0.15).toFixed(1)}" y="${y(v).toFixed(1)}" width="${(bw * 0.7).toFixed(1)}" height="${Math.max(0, H - B - y(v)).toFixed(1)}" rx="${Math.min(3, bw * 0.2).toFixed(1)}"/>`).join('');
+  const every = range === '7d' ? 1 : 6;
+  const labels = en.times.map((t, i) => (i % every === 0 || (range !== '7d' && i === n - 1) ? `<text x="${(L + i * bw + bw / 2).toFixed(1)}" y="${H - 5}" class="xl" text-anchor="middle">${range !== '7d' && i === n - 1 ? 'nå' : barLabel(t, range)}</text>` : '')).join('');
+  return `<svg class="chart-svg energy" viewBox="0 0 ${W} ${H}" data-bars="${esc(en.id)}" role="img" aria-label="${esc(en.label)}">${grid}${bars}${labels}</svg>`;
+}
+
+function energyCard(en, d) {
+  const per = d.range === '7d' ? 'dag' : 'time';
+  const price = d.price;
+  const top = Math.max(...en.points);
+  const avg = en.total / Math.max(1, en.points.length);
+  return `<section class="card stat-card energy">
+    <div class="stat-top"><span><span class="t">${esc(en.label)}</span><span class="s">${d.range === '7d' ? 'Siste 7 dager' : 'Siste døgn'}${en.power != null ? ` · bruker ${en.power.toLocaleString('nb-NO')} W nå` : ''}</span></span>
+      <span class="stat-now"><span class="v" data-readout="${esc(en.id)}">${kwhStr(en.total)}</span><span class="s" data-readout-t="${esc(en.id)}">${price != null ? `≈ ${nok(Math.round(en.total * price * 100) / 100)}` : 'totalt'}</span></span></div>
+    ${barsSVG(en, d.range)}
+    <div class="stat-chips"><span>Snitt per ${per} <strong>${kwhStr(avg)}</strong></span><span>Høyeste ${per} <strong>${kwhStr(top)}</strong></span><span>${price != null ? 'Kostnad' : 'Totalt'} <strong>${price != null ? esc(nok(Math.round(en.total * price))) : kwhStr(en.total)}</strong></span></div>
+  </section>`;
+}
+
+function lineCard(sr, d) {
+  return `<section class="card stat-card ${sr.type}">
+      <div class="stat-top"><span><span class="t">${esc(sr.label)}</span><span class="s">${esc(sr.sub)}</span></span>
+        <span class="stat-now"><span class="v" data-readout="${sr.id}">${fmtVal(sr.now, sr.unit)}</span><span class="s" data-readout-t="${sr.id}">nå</span></span></div>
+      ${chartSVG(sr, d)}
+      <div class="stat-chips"><span>Laveste <strong>${fmtVal(sr.min, sr.unit)}</strong></span><span>Snitt <strong>${fmtVal(sr.avg, sr.unit)}</strong></span><span>Høyeste <strong>${fmtVal(sr.max, sr.unit)}</strong></span></div>
+      ${sr.type === 'hum' ? '<p class="note">Det grønne feltet (30–60 %) er god luftfuktighet innendørs. Over 60 % over tid kan gi fukt og mugg – luft ut eller bruk høy ventilasjon.</p>' : ''}
+    </section>`;
+}
+
 function statsTab() {
   const st = S.stats;
   if (!st.data && !st.loading && !st.error) loadStats();
@@ -1046,19 +1091,56 @@ function statsTab() {
   if (st.error) return h + `<div class="notice-soft bad">${esc(st.error)}</div>`;
   const d = st.data && st.data.range === st.range ? st.data : null;
   if (!d) return h + `<p class="intro">Henter statistikk …</p>`;
-  if (!d.series.length) return h + `<p class="intro">Ingen temperatur- eller fuktmålinger å vise.</p>`;
-  for (const sr of d.series) {
-    h += `<section class="card stat-card ${sr.type}">
-      <div class="stat-top"><span><span class="t">${esc(sr.label)}</span><span class="s">${esc(sr.sub)}</span></span>
-        <span class="stat-now"><span class="v" data-readout="${sr.id}">${fmtVal(sr.now, sr.unit)}</span><span class="s" data-readout-t="${sr.id}">nå</span></span></div>
-      ${chartSVG(sr, d)}
-      <div class="stat-chips"><span>Laveste <strong>${fmtVal(sr.min, sr.unit)}</strong></span><span>Snitt <strong>${fmtVal(sr.avg, sr.unit)}</strong></span><span>Høyeste <strong>${fmtVal(sr.max, sr.unit)}</strong></span></div>
-      ${sr.type === 'hum' ? '<p class="note">Det grønne feltet (30–60 %) er god luftfuktighet innendørs. Over 60 % over tid kan gi fukt og mugg – luft ut eller bruk høy ventilasjon.</p>' : ''}
-    </section>`;
+  const energy = d.energy || [];
+  if (!d.series.length && !energy.length) return h + `<p class="intro">Ingen målinger å vise.</p>`;
+  // Hurtigoversikt øverst
+  const inne = d.series.filter((x) => x.type === 'temp' || x.type === 'hum' || x.type === 'other');
+  const ute = d.series.filter((x) => x.type === 'out');
+  const totalKwh = energy.reduce((a, e) => a + e.total, 0);
+  const tiles = [];
+  for (const x of inne.filter((x) => x.type !== 'other').slice(0, energy.length && ute.length ? 2 : 3)) tiles.push([x.type === 'hum' ? 'Fukt' : x.label, fmtVal(x.now, x.unit), x.id]);
+  if (energy.length) tiles.push(['Strøm', kwhStr(totalKwh).replace(' kWh', ''), 'stat-strom', 'kWh']);
+  for (const x of ute) tiles.push(['Ute', fmtVal(x.now, x.unit), x.id]);
+  if (tiles.length > 1) h += `<div class="stat-tiles">${tiles.slice(0, 4).map(([k, v, id, u]) => `<a class="stat-tile" href="#sec-${esc(id)}"><span>${esc(k)}</span><strong>${esc(v)}${u ? `<small> ${u}</small>` : ''}</strong></a>`).join('')}</div>`;
+  if (inne.length) {
+    h += `<h2 class="group-title stat-h">Inneklima</h2>`;
+    for (const sr of inne) h += `<div id="sec-${esc(sr.id)}">${lineCard(sr, d)}</div>`;
   }
-  h += `<p class="note" style="margin:0 4px">Dra fingeren over en graf for å se verdien på et bestemt tidspunkt.</p>`;
+  if (energy.length) {
+    h += `<h2 class="group-title stat-h" id="sec-stat-strom">Strømforbruk${energy.length > 1 ? ` <span class="gt-count">Totalt ${kwhStr(totalKwh)}${d.price != null ? ` ≈ ${esc(nok(Math.round(totalKwh * d.price)))}` : ''}</span>` : ''}</h2>`;
+    for (const en of energy) h += energyCard(en, d);
+    h += `<p class="note" style="margin:0 4px">Viser forbruket til utstyr som har egen strømmåler. Prisen er utleiers pris per kWh.</p>`;
+  }
+  if (ute.length) {
+    h += `<h2 class="group-title stat-h">Ute</h2>`;
+    for (const sr of ute) h += `<div id="sec-${esc(sr.id)}">${lineCard(sr, d)}</div>`;
+  }
+  h += `<p class="note" style="margin:0 4px">Trykk eller dra over en graf for å se verdien på et bestemt tidspunkt.</p>`;
   return h;
 }
+
+// Trykk på en stolpe i strømgrafen: vis forbruket den timen/dagen.
+function barTap(ev) {
+  const r = ev.target.closest && ev.target.closest('svg[data-bars] rect.bar');
+  if (!r || !S.stats.data) return;
+  const svgEl = r.closest('svg');
+  const en = (S.stats.data.energy || []).find((x) => x.id === svgEl.dataset.bars);
+  if (!en) return;
+  const i = Number(r.dataset.i);
+  svgEl.querySelectorAll('rect.bar').forEach((b) => b.classList.toggle('sel', b === r));
+  const t = new Date(en.times[i]);
+  const ro = document.querySelector(`[data-readout="${en.id}"]`), rt = document.querySelector(`[data-readout-t="${en.id}"]`);
+  if (ro) ro.textContent = kwhStr(en.points[i]);
+  if (rt) rt.textContent = S.stats.data.range === '7d' ? t.toLocaleDateString('nb-NO', { weekday: 'long', day: 'numeric', month: 'short' }) : `kl. ${String(t.getHours()).padStart(2, '0')}–${String((t.getHours() + 1) % 24).padStart(2, '0')}`;
+  clearTimeout(barTap.t);
+  barTap.t = setTimeout(() => {
+    svgEl.querySelectorAll('rect.bar').forEach((b) => b.classList.remove('sel'));
+    if (ro) ro.textContent = kwhStr(en.total);
+    if (rt) rt.textContent = S.stats.data.price != null ? `≈ ${nok(Math.round(en.total * S.stats.data.price * 100) / 100)}` : 'totalt';
+  }, 2500);
+}
+document.addEventListener('pointerdown', barTap);
+document.addEventListener('pointermove', (ev) => { if (ev.buttons || ev.pointerType === 'mouse') barTap(ev); });
 
 // Dra over grafen: vis verdi og tidspunkt.
 function scrub(ev) {

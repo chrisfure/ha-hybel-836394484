@@ -93,7 +93,7 @@ function handle(c, msg) {
     case 'call_service': if (msg.domain === 'persistent_notification' || msg.domain === 'notify') console.log('[mock]', msg.domain + '.' + msg.service, JSON.stringify(msg.service_data)); callService(msg.domain, msg.service, msg.service_data || {}); return ok({ context: {} });
     case 'config/area_registry/list': return ok([{ area_id: 'hybel', name: 'Hybel' }, { area_id: 'kjokken', name: 'Kjøkken' }]);
     case 'config/device_registry/list': return ok([]);
-    case 'config/entity_registry/list': return ok([...states.keys()].map((id) => ({ entity_id: id, device_id: id.includes('ventilasjon') ? 'dev-vent' : null, area_id: id.includes('hovedhus') || id.includes('benk') ? 'kjokken' : 'hybel' })));
+    case 'config/entity_registry/list': return ok([...states.keys()].map((id) => ({ entity_id: id, device_id: id.includes('ventilasjon') ? 'dev-vent' : id.includes('gulvvarme') ? 'dev-bad' : null, area_id: id.includes('hovedhus') || id.includes('benk') ? 'kjokken' : 'hybel' })));
     case 'history/history_during_period': {
       // Syntetisk historikk: døgnvariasjon hvert 10. minutt.
       const out = {};
@@ -101,7 +101,14 @@ function handle(c, msg) {
       for (const id of msg.entity_ids) {
         const rows = [];
         let k = 0;
+        let acc = 100;
         for (let t = t0 - 600e3; t <= t1; t += 600e3, k++) {
+          if (id.includes('energy')) {
+            const h = new Date(t).getHours();
+            acc += (h >= 6 && h <= 9) || (h >= 18 && h <= 22) ? 0.12 + Math.random() * 0.05 : 0.02;
+            rows.push({ s: String(Math.round(acc * 100) / 100), lu: t / 1000 });
+            continue;
+          }
           const h = (t / 3600e3) % 24;
           const base = id.includes('bad') ? 23 : 21;
           const temp = Math.round((base + 1.5 * Math.sin((h - 9) / 24 * 2 * Math.PI) + (Math.random() - .5) * .4) * 10) / 10;

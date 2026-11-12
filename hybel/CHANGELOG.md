@@ -1,5 +1,11 @@
 # Endringslogg
 
+## 0.12.0
+
+- **Strømforbruk** i statistikken: søylediagram per time (døgn) eller per dag (uke) for termostater og ovner med egen energimåler, med totalt forbruk, kostnad (utleiers kWh-pris), høyeste og snitt, og hvor mye som brukes akkurat nå. Trykk på en søyle for å se forbruket den timen/dagen.
+- Energimålere på samme enhet som termostaten/panelovnen oppdages automatisk – nye målere dukker opp av seg selv. Andre kWh-målere (f.eks. smartplugg) kan legges til under Statistikk på utleiersiden.
+- Statistikk-fanen er organisert i Inneklima, Strømforbruk og Ute, med en hurtigoversikt øverst.
+
 ## 0.11.0
 
 - Ny seksjon **Statistikk** på utleiersiden: velg hvilke målinger leietaker ser. Automatiske målinger (termostater, ventilasjon, ute) kan skjules, og du kan legge til egne sensorer (temperatur, fukt, CO₂, effekt o.l.) med eget navn. Utetermometer er flyttet hit fra Oppsett.

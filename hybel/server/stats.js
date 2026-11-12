@@ -68,9 +68,18 @@ export class Stats {
   // Hvilke måleserier finnes: temperatur fra termostater/varmepumpe (egen føler hvis valgt) og ventilasjonsaggregat.
   async series(includeHidden = false) {
     const out = [];
+    const energy = [];
     const d = this.engine.data;
     for (const e of this.engine.enabled()) {
       if (e.kind === 'heat' || e.kind === 'climate') {
+        // Strømmåling på samme enhet (f.eks. termostat eller panelovn med energimåler).
+        const devs = await this.deviceSensors(e.entity_id);
+        const st = (id) => this.engine.ha.states.get(id)?.attributes || {};
+        const en = devs.find((id) => st(id).device_class === 'energy' && ['kWh', 'Wh'].includes(st(id).unit_of_measurement));
+        if (en) {
+          const pw = devs.find((id) => st(id).device_class === 'power');
+          energy.push({ id: `e-${e.entity_id}`, label: e.label, sub: 'Strømforbruk', unit: 'kWh', type: 'energy', entity_id: en, power: pw || null });
+        }
         if (e.now_sensor) out.push({ id: `t-${e.entity_id}`, label: e.label, sub: 'Temperatur', unit: '°', type: 'temp', entity_id: e.now_sensor, attr: null });
         else out.push({ id: `t-${e.entity_id}`, label: e.label, sub: 'Temperatur', unit: '°', type: 'temp', entity_id: e.entity_id, attr: 'current_temperature' });
       } else if (e.kind === 'vent') {
@@ -91,10 +100,15 @@ export class Stats {
       const st = this.engine.ha.states.get(c.entity_id);
       if (!st) continue;
       const a = st.attributes || {};
+      if (a.device_class === 'energy' && ['kWh', 'Wh'].includes(a.unit_of_measurement)) {
+        energy.push({ id: `c-${c.entity_id}`, label: c.label || a.friendly_name || c.entity_id, sub: 'Strømforbruk', unit: 'kWh', type: 'energy', entity_id: c.entity_id, power: null, custom: true });
+        continue;
+      }
       const type = a.device_class === 'temperature' || ['°C', '°F'].includes(a.unit_of_measurement) ? 'temp' : a.device_class === 'humidity' ? 'hum' : 'other';
       const unit = type === 'temp' ? '°' : type === 'hum' ? '%' : a.unit_of_measurement || '';
       out.push({ id: `c-${c.entity_id}`, label: c.label || a.friendly_name || c.entity_id, sub: a.friendly_name && c.label && c.label !== a.friendly_name ? a.friendly_name : type === 'temp' ? 'Temperatur' : type === 'hum' ? 'Luftfuktighet' : '', unit, type, entity_id: c.entity_id, attr: null, custom: true });
     }
+    out.push(...energy);
     const hidden = new Set(d.stat_hidden || []);
     return includeHidden ? out.map((x) => ({ ...x, hidden: hidden.has(x.id) })) : out.filter((x) => !hidden.has(x.id));
   }
@@ -104,7 +118,9 @@ export class Stats {
     const key = `${range}`;
     const hit = this.cache.get(key);
     if (hit && Date.now() - hit.at < 120e3) return hit.data;
-    const defs = await this.series();
+    const all = await this.series();
+    const defs = all.filter((x) => x.type !== 'energy');
+    const edefs = all.filter((x) => x.type === 'energy');
     const end = Date.now();
     const start = end - R.ms;
     let hist = {};
@@ -173,8 +189,70 @@ export class Stats {
         points: pts
       };
     });
-    const data = { range, start, end, bucket: R.bucket, series };
+    const energy = edefs.length ? await this.energy(edefs, range) : [];
+    const data = { range, start, end, bucket: R.bucket, series, energy, price: this.engine.data.electricity?.price_per_kwh ?? null };
     this.cache.set(key, { at: Date.now(), data });
     return data;
+  }
+
+  // Strømforbruk per time (døgn) eller per dag (uke) fra en kWh-teller (total_increasing).
+  async energy(defs, range) {
+    const now = new Date();
+    const times = [];
+    if (range === '7d') {
+      for (let k = 6; k >= 0; k--) times.push(new Date(now.getFullYear(), now.getMonth(), now.getDate() - k).getTime());
+    } else {
+      const h0 = new Date(now.getFullYear(), now.getMonth(), now.getDate(), now.getHours()).getTime();
+      for (let k = 23; k >= 0; k--) times.push(h0 - k * 3600e3);
+    }
+    const from = times[0] - 12 * 3600e3;
+    let hist = {};
+    try {
+      hist = await this.engine.ha.send({
+        type: 'history/history_during_period',
+        start_time: new Date(from).toISOString(),
+        end_time: now.toISOString(),
+        entity_ids: [...new Set(defs.map((d) => d.entity_id))],
+        minimal_response: true,
+        no_attributes: true,
+        significant_changes_only: false
+      });
+    } catch (err) {
+      log.warn('Kunne ikke hente strømhistorikk:', err.message);
+    }
+    const bucketOf = (t) => {
+      if (t < times[0]) return -1;
+      let b = times.length - 1;
+      while (b > 0 && times[b] > t) b--;
+      return b;
+    };
+    return defs.map((d) => {
+      const unit = this.engine.ha.states.get(d.entity_id)?.attributes?.unit_of_measurement;
+      const k = unit === 'Wh' ? 1 / 1000 : 1;
+      const rows = (hist[d.entity_id] || [])
+        .map((r) => [(r.lu ?? r.lc ?? 0) * 1000 || Date.parse(r.last_updated || r.last_changed), Number(r.s ?? r.state) * k])
+        .filter(([, v]) => Number.isFinite(v))
+        .sort((a, b) => a[0] - b[0]);
+      const pts = times.map(() => 0);
+      let prev = null;
+      for (const [t, v] of rows) {
+        if (prev !== null) {
+          let delta = v - prev;
+          if (delta < 0) delta = v < prev * 0.5 ? v : 0; // nullstilt teller
+          if (delta > 50) delta = 0; // urimelig hopp
+          const b = bucketOf(t);
+          if (b >= 0) pts[b] += delta;
+        }
+        prev = v;
+      }
+      const round = (x) => Math.round(x * 100) / 100;
+      const pw = d.power ? Number(this.engine.ha.states.get(d.power)?.state) : NaN;
+      return {
+        id: d.id, label: d.label, sub: d.sub, unit: 'kWh', type: 'energy',
+        times, points: pts.map(round), total: round(pts.reduce((a, b) => a + b, 0)),
+        power: Number.isFinite(pw) ? Math.round(pw) : null,
+        meter: Number(this.engine.ha.states.get(d.entity_id)?.state) * k || null
+      };
+    });
   }
 }
