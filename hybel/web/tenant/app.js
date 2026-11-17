@@ -822,7 +822,7 @@ function meldHelpHTML() {
       <li>Under meldingen ser du <strong>«Sett av utleier ✓»</strong> når den er lest.</li>
       <li>Har utleier ikke sett meldingen etter <strong>12 timer</strong>${p ? ', dukker det opp en knapp for å sende SMS' : ', send en SMS'} – så vet du at beskjeden kommer fram.</li>
     </ol>
-    <div class="notice-soft bad"><strong>Haster det?</strong> Vannlekkasje, strømbrudd eller noe som kan gi skade: ${p ? 'ring utleier med en gang – ikke vent på svar i appen.' : 'ta kontakt med utleier direkte med en gang.'} <strong>Brann: ring 110.</strong></div>
+    <div class="notice-soft bad"><strong>Haster det?</strong> Vannlekkasje, strømbrudd eller noe som kan gi skade: ${p ? 'ring utleier med en gang – ikke vent på svar i appen.' : 'ta kontakt med utleier direkte med en gang.'}</div>
     ${p ? `<div class="contact-btns"><a class="btn primary" href="tel:${p}">Ring utleier</a><a class="btn ghost" href="${smsHref('Hei! ')}">Send SMS</a></div>` : ''}` : ''}
   </section>`;
 }
