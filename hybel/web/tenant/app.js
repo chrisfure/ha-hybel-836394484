@@ -540,7 +540,7 @@ function autoGroup(key, title, icon, list, body) {
 function autoTab() {
   const m = S.m;
   let h = '';
-  if (!m.automations.length) h += `<p class="intro">Automasjoner gjør ting av seg selv – f.eks. «Kos 30 min før solnedgang» eller «Høy ventilasjon når luftfuktigheten er over 70 %».</p>`;
+  if (!m.automations.length) h += `<p class="intro">Automasjoner gjør ting av seg selv – f.eks. «Kos 30 min før solnedgang» eller «Slå av lyset kl. 23».</p>`;
   const extra = (a) => [a.window ? `${a.window.from}–${a.window.to}` : '', autoDays(a.days) !== 'hver dag' ? autoDays(a.days) : '', a.revert_after ? `tilbake etter ${revertLabel(a.revert_after)}` : ''].filter(Boolean).join(' · ');
 
   // 1. Knapper – én gruppe per knapp, sortert på knappenummer og retning.
@@ -1254,6 +1254,13 @@ function settingsHTML() {
   let html = subHTML('Hybelen', 'Innstillinger') + toastHTML();
   html += pushCardHTML('settings');
 
+  const th = window.hybelTheme ? window.hybelTheme.get() : 'auto';
+  html += `<section><h2 class="group-title">Utseende</h2><div class="card" style="border-radius:22px;padding:16px;display:flex;flex-direction:column;gap:12px">
+    <div class="seg" style="grid-template-columns: repeat(3, minmax(0, 1fr))">
+    ${[['auto', 'Automatisk'], ['light', 'Lys'], ['dark', 'Mørk']].map(([v, l]) => `<button aria-pressed="${th === v}" data-act="theme" data-v="${v}" data-fid="th-${v}">${l}</button>`).join('')}</div>
+    <span class="s" style="font-size:13px;color:var(--muted)">Automatisk følger innstillingen på telefonen.</span>
+  </div></section>`;
+
   html += `<section><h2 class="group-title">Rekkefølge – enheter</h2><div class="list">`;
   m.entities.filter((e) => e.kind !== 'button').forEach((e, i, arr) => {
     const kind = e.kind === 'light' ? 'Lys' : e.kind === 'heat' ? 'Varme' : e.kind === 'vent' ? 'Ventilasjon' : 'Varmepumpe';
@@ -1531,6 +1538,7 @@ function act(a, ds) {
     case 'photo-view': S.photo = ds.id; return render();
     case 'photo-close': S.photo = null; return render();
     case 'push-on': return pushOn();
+    case 'theme': if (window.hybelTheme) window.hybelTheme.set(ds.v); return render();
     case 'push-off': return pushOff();
     case 'push-test':
       if (!S.push.sub) return;

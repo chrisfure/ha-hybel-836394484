@@ -1,5 +1,9 @@
 # Endringslogg
 
+## 0.13.0
+
+- Mørk modus i hybelappen. Under Innstillinger → Utseende kan leietaker velge Automatisk (følger telefonen), Lys eller Mørk. Valget huskes på telefonen.
+
 ## 0.12.5
 
 - Statistikk: rekkefølgen på sensorene kan endres med piler på utleiersiden. Grafene vises i den rekkefølgen innenfor Inneklima, Strømforbruk og Ute.
