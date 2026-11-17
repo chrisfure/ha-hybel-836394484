@@ -109,6 +109,11 @@ export class Stats {
       out.push({ id: `c-${c.entity_id}`, label: c.label || a.friendly_name || c.entity_id, sub: a.friendly_name && c.label && c.label !== a.friendly_name ? a.friendly_name : type === 'temp' ? 'Temperatur' : type === 'hum' ? 'Luftfuktighet' : '', unit, type, entity_id: c.entity_id, attr: null, custom: true });
     }
     out.push(...energy);
+    // Rekkefølge valgt av utleier; nye målinger havner sist.
+    const order = d.stat_order || [];
+    const pos = (id) => { const i = order.indexOf(id); return i < 0 ? 1000 : i; };
+    out.forEach((x, i) => { x._n = i; });
+    out.sort((a, b) => pos(a.id) - pos(b.id) || a._n - b._n);
     const hidden = new Set(d.stat_hidden || []);
     return includeHidden ? out.map((x) => ({ ...x, hidden: hidden.has(x.id) })) : out.filter((x) => !hidden.has(x.id));
   }

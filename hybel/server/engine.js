@@ -945,6 +945,7 @@ export class Engine extends EventEmitter {
       outdoor: { set: d.outdoor_sensor || '', used: this.stats.outdoorSensor() },
       stat_sensors: d.stat_sensors || [],
       stat_hidden: d.stat_hidden || [],
+      stat_order: d.stat_order || [],
       pairing: { enabled: d.pairing_enabled !== false, switch: this.pairing.switchId(), set: d.pairing_switch || '' },
       scenes: this.scenes().map((s) => ({ id: s.id, name: s.name, icon: s.icon, parts: Object.keys(this.sceneValues(s)).map((id) => labels.get(id) || id) })),
       automations: this.allAutomations().map((a) => ({ id: a.id, enabled: a.enabled, fixed: Boolean(a.fixed), label: this.describeAutomation(a), days: a.days })),
@@ -1009,6 +1010,7 @@ export class Engine extends EventEmitter {
         .map((c) => ({ entity_id: c.entity_id, label: String(c.label || '').trim().slice(0, 40) }));
       this.stats.cache.clear();
     }
+    if (Array.isArray(body.stat_order)) { d.stat_order = body.stat_order.map((x) => String(x).slice(0, 120)).slice(0, 60); this.stats.cache.clear(); }
     if (Array.isArray(body.stat_hidden)) { d.stat_hidden = body.stat_hidden.map((x) => String(x).slice(0, 120)).slice(0, 50); this.stats.cache.clear(); }
     if (body.outdoor_sensor !== undefined) {
       const o = String(body.outdoor_sensor || '');

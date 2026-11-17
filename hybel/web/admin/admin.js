@@ -49,6 +49,7 @@ function pickCfg(st) {
     outdoor_sensor: st.outdoor.set,
     stat_sensors: (st.stat_sensors || []).map((c) => ({ ...c })),
     stat_hidden: [...(st.stat_hidden || [])],
+    stat_order: [...(st.stat_order || [])],
     fixed_button: st.fixed_button || { entity_id: '', n: 1, light: '' },
     alerts: st.alerts,
     info: st.extras.info,
@@ -545,22 +546,35 @@ function statsPanel() {
   let h = `<section class="panel"><div class="panel-head"><h2>Statistikk</h2><span>${shown} grafer for leietaker</span></div>
     <p class="help">Velg hvilke målinger leietaker ser under Statistikk. Automatiske målinger kommer fra termostater og ventilasjon; du kan også legge til egne sensorer (temperatur, fukt, CO₂, strøm o.l.).</p>`;
   if (!A.statSeries) h += `<p class="help">Henter …</p>`;
-  for (const x of auto) {
-    const on = !hidden.has(x.id);
-    h += `<div class="srow"><span class="lbl">${esc(x.label)}<br><span class="help">${esc(x.sub || '')} · ${esc(x.entity_id)}</span></span>
-      <span class="ctl"><span class="help">${esc(x.now ?? '')}</span><button class="sbtn ${on ? 'on' : ''}" data-act="stat-toggle" data-id="${esc(x.id)}">${on ? 'Vises' : 'Skjult'}</button></span></div>`;
-  }
-  custom.forEach((c, i) => {
-    const id = `c-${c.entity_id}`;
-    const on = !hidden.has(id);
-    const cand = (A.cand?.numeric || []).find((n) => n.entity_id === c.entity_id);
-    h += `<div class="srow"><span class="lbl" style="flex:1 1 220px"><input class="input" type="text" maxlength="40" placeholder="${esc(cand?.name || 'Navn')}" value="${esc(c.label)}" data-field="stat-label" data-i="${i}"><span class="help">${esc(c.entity_id)}${cand ? ` · ${esc(cand.state)}` : ''}</span></span>
-      <span class="ctl"><button class="sbtn ${on ? 'on' : ''}" data-act="stat-toggle" data-id="${esc(id)}">${on ? 'Vises' : 'Skjult'}</button><button class="sbtn" data-act="stat-remove" data-i="${i}">Fjern</button></span></div>`;
+  const items = statItems();
+  items.forEach((it, k) => {
+    const on = !hidden.has(it.id);
+    const move = `<span class="ord"><button class="tool" data-act="stat-move" data-id="${esc(it.id)}" data-v="-1" ${k === 0 ? 'disabled' : ''} aria-label="Flytt opp">↑</button><button class="tool" data-act="stat-move" data-id="${esc(it.id)}" data-v="1" ${k === items.length - 1 ? 'disabled' : ''} aria-label="Flytt ned">↓</button></span>`;
+    if (!it.custom) {
+      h += `<div class="srow">${move}<span class="lbl">${esc(it.label)} <span class="tpill">${TYPE_LBL[it.type] || ''}</span><br><span class="help">${esc(it.sub || '')} · ${esc(it.entity_id)}</span></span>
+        <span class="ctl"><span class="help">${esc(it.now ?? '')}</span><button class="sbtn ${on ? 'on' : ''}" data-act="stat-toggle" data-id="${esc(it.id)}">${on ? 'Vises' : 'Skjult'}</button></span></div>`;
+    } else {
+      const i = it.i, c = A.cfg.stat_sensors[i];
+      const cand = (A.cand?.numeric || []).find((n) => n.entity_id === c.entity_id);
+      h += `<div class="srow">${move}<span class="lbl" style="flex:1 1 220px"><input class="input" type="text" maxlength="40" placeholder="${esc(cand?.name || 'Navn')}" value="${esc(c.label)}" data-field="stat-label" data-i="${i}"><span class="help">${esc(c.entity_id)}${cand ? ` · ${esc(cand.state)}` : ''}</span></span>
+        <span class="ctl"><button class="sbtn ${on ? 'on' : ''}" data-act="stat-toggle" data-id="${esc(it.id)}">${on ? 'Vises' : 'Skjult'}</button><button class="sbtn" data-act="stat-remove" data-i="${i}">Fjern</button></span></div>`;
+    }
   });
+  if (items.length > 1) h += `<p class="help">Bruk pilene for å endre rekkefølgen. Grafene vises i denne rekkefølgen innenfor Inneklima, Strømforbruk og Ute.</p>`;
   h += A.picker === 'stat' ? statPickerHTML() : `<button class="add" data-act="open-picker" data-kind="stat">+ Legg til sensor</button>`;
   h += `<div style="margin-top:14px">${outdoorHTML()}</div>`;
   h += `<p class="help">Husk «Lagre endringer» øverst.</p>`;
   return h + `</section>`;
+}
+
+// Alle målinger (automatiske + egne) i valgt rekkefølge.
+function statItems() {
+  const auto = (A.statSeries || []).filter((x) => !x.custom).map((x) => ({ ...x }));
+  const custom = A.cfg.stat_sensors.map((c, i) => ({ id: `c-${c.entity_id}`, custom: true, i, type: (A.statSeries || []).find((x) => x.id === `c-${c.entity_id}`)?.type }));
+  const all = [...auto, ...custom];
+  const order = A.cfg.stat_order;
+  const pos = (id) => { const k = order.indexOf(id); return k < 0 ? 1000 : k; };
+  return all.map((x, n) => ({ ...x, n })).sort((a, b) => pos(a.id) - pos(b.id) || a.n - b.n);
 }
 
 function statPickerHTML() {
@@ -753,6 +767,13 @@ document.addEventListener('click', async (ev) => {
       A.picker = null; setDirty(); break;
     }
     case 'stat-remove': A.cfg.stat_sensors.splice(Number(d.i), 1); setDirty(); break;
+    case 'stat-move': {
+      const ids = statItems().map((x) => x.id);
+      const k = ids.indexOf(d.id), j = k + Number(d.v);
+      if (k < 0 || j < 0 || j >= ids.length) break;
+      [ids[k], ids[j]] = [ids[j], ids[k]];
+      A.cfg.stat_order = ids; setDirty(); break;
+    }
     case 'stat-toggle': {
       const hs = new Set(A.cfg.stat_hidden);
       if (hs.has(d.id)) hs.delete(d.id); else hs.add(d.id);

@@ -1,5 +1,9 @@
 # Endringslogg
 
+## 0.12.5
+
+- Statistikk: rekkefølgen på sensorene kan endres med piler på utleiersiden. Grafene vises i den rekkefølgen innenfor Inneklima, Strømforbruk og Ute.
+
 ## 0.12.4
 
 - Fjernet linjen om brann i hjelpeboksen for meldinger.

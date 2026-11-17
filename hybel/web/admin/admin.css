@@ -193,3 +193,7 @@ a.sbtn { display: inline-flex; align-items: center; text-decoration: none; color
 .doc-ic { font-size: 10px; font-weight: 800; letter-spacing: .04em; background: #FBE3DA; color: #7A2A12; border-radius: 8px; padding: 8px 6px; flex: none; }
 .doc-up { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 8px; }
 .doc-up .input { flex: 1 1 200px; width: auto; }
+.ord { display: flex; flex-direction: column; gap: 2px; flex: none; }
+.ord .tool { width: 30px; height: 26px; font-size: 14px; font-weight: 700; color: #5B5045; }
+.ord .tool:disabled { opacity: .3; }
+.tpill { font-size: 11px; font-weight: 600; color: var(--muted); background: var(--bg); border-radius: 8px; padding: 2px 7px; margin-left: 4px; }
