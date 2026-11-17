@@ -44,6 +44,12 @@ export class Extras {
     try { mkdirSync(this.photoDir, { recursive: true }); } catch {}
     try { this.vapid = loadVapid(this.dir); } catch (err) { log.warn('Pushvarsler er ikke tilgjengelige:', err.message); }
     this.checklists = new Checklists(this);
+    // Engangsjustering av lagret vaskeliste: «avkalket» ut, vaskemaskin inn på badet.
+    for (const r of Array.isArray(this.d.clean_template) ? this.d.clean_template : []) {
+      if (r.room !== 'Bad') continue;
+      r.items = r.items.map((x) => (x === 'Dusj og fliser vasket og avkalket' ? 'Dusj og fliser vasket' : x));
+      if (!r.items.some((x) => /vaskemaskin/i.test(x))) r.items.splice(Math.max(0, r.items.length - 1), 0, 'Vaskemaskin rengjort (filter, såpeskuff og gummilist)');
+    }
     this.lease = new Lease(this);
     // Sensor i Home Assistant som viser om leietaker venter på svar (for kort i dashbordet).
     this.attnLast = null;

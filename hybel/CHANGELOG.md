@@ -1,5 +1,9 @@
 # Endringslogg
 
+## 0.12.2
+
+- Vaskelisten for badet: nytt punkt for vaskemaskin (filter, såpeskuff og gummilist), og «avkalket» er fjernet fra dusjpunktet.
+
 ## 0.12.1
 
 - Utflyttingssjekklisten har egne avkrysningsbokser for **vask** under hvert rom (kjøleskap, ovn, bad, sluk, gulv, vinduer m.m.), i tillegg til tilstanden. Leietaker krysser av «Vasket» eller velger «Ikke gjort» med forklaring og bilde. Fremdrift for vask vises for seg, og vasken er med i PDF-en og på utleiersiden.

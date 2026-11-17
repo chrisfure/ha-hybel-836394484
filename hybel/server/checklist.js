@@ -21,7 +21,7 @@ export const DEFAULT_TEMPLATE = [
 // Vask ved utflytting: egne avkrysningspunkter per rom, i tillegg til tilstand.
 export const DEFAULT_CLEAN_TEMPLATE = [
   { room: 'Kjøkken', items: ['Kjøleskap og fryser tømt, vasket og avrimet', 'Komfyr, stekeovn og plater rengjort', 'Kjøkkenvifte og fettfilter rengjort', 'Skap og skuffer vasket inn- og utvendig', 'Benkeplate og oppvaskkum rengjort', 'Oppvaskmaskin tømt, filter rengjort'] },
-  { room: 'Bad', items: ['Toalett vasket (også bak og under)', 'Servant, kraner og speil rengjort', 'Dusj og fliser vasket og avkalket', 'Sluk renset for hår', 'Skap vasket inn- og utvendig'] },
+  { room: 'Bad', items: ['Toalett vasket (også bak og under)', 'Servant, kraner og speil rengjort', 'Dusj og fliser vasket', 'Sluk renset for hår', 'Vaskemaskin rengjort (filter, såpeskuff og gummilist)', 'Skap vasket inn- og utvendig'] },
   { room: 'Soverom', items: ['Skap tømt og vasket'] },
   { room: 'Hele hybelen', items: ['Gulv støvsuget og vasket', 'Lister, dører og karmer tørket av', 'Vinduer pusset innvendig', 'Brytere og stikkontakter tørket av', 'Alt eget innbo og søppel fjernet'] }
 ];
