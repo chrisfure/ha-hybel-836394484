@@ -1,5 +1,12 @@
 # Endringslogg
 
+## 0.16.0
+
+- Oppsigelse i appen: leietaker kan si opp eller søke om å avslutte leieforholdet under Leie. Appen viser tidligste sluttdato etter kontrakten (oppsigelsestid regnet fra utgangen av måneden), og en tidligere dato blir en søknad du må godkjenne. Du godkjenner (og kan justere datoen) eller avslår under Leieforhold – leietaker får pushvarsel.
+- Sluttoppgjør ved utflytting midt i måneden: husleien avregnes per dag. Er måneden allerede betalt fullt, trekkes for mye betalt husleie fra, og strøm fram til siste dag kommer på et eget sluttoppgjør (forfall 14 dager etter utflytting). Blir beløpet negativt, vises det som «til gode leietaker» – marker det som tilbakebetalt når du har betalt.
+- Rettet: strøm som ble lest av etter at en måned var betalt, kunne havne på en allerede betalt faktura.
+- Automatisk strømavlesning (hvis satt opp) tas også på siste dag i leieforholdet.
+
 ## 0.15.0
 
 - Engelsk versjon av hybelappen. Velges under Innstillinger → Språk (Norsk / English); standard følger språket på telefonen. Knapper, hjelpetekster, feilmeldinger og pushvarsler kommer på engelsk. Tekst utleier har skrevet selv (husregler, sjekklistepunkter, meldinger) og fakturaer vises som før, på norsk.

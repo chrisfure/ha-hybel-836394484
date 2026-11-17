@@ -706,11 +706,11 @@ function chartHTML(periods) {
     <span class="note">${L('Høyeste', 'Highest')}: ${esc(kwhFmt(max))}</span></section>`;
 }
 
-const LSTAT = { claimed: [L('Meldt betalt', 'Reported paid'), 'lvl-info'], paid: [L('Betalt', 'Paid'), 'lvl-ok'], overdue: [L('Forfalt', 'Overdue'), 'lvl-bad'], soon: [L('Snart', 'Soon'), 'lvl-warn'], upcoming: [L('Kommende', 'Upcoming'), ''] };
+const LSTAT = { refund: [L('Til gode', 'Owed to you'), 'lvl-ok'], claimed: [L('Meldt betalt', 'Reported paid'), 'lvl-info'], paid: [L('Betalt', 'Paid'), 'lvl-ok'], overdue: [L('Forfalt', 'Overdue'), 'lvl-bad'], soon: [L('Snart', 'Soon'), 'lvl-warn'], upcoming: [L('Kommende', 'Upcoming'), ''] };
 const longDate = (d) => new Date(d).toLocaleDateString(LOC, { day: 'numeric', month: 'long', year: 'numeric' });
 // «2026-11» → «november 2026» / «November 2026», og bare månedsnavnet.
-const monthLabel = (m) => { const s = new Date(`${m}-15T12:00:00`).toLocaleDateString(LOC, { month: 'long', year: 'numeric' }); return EN ? s : s.toLowerCase(); };
-const monthOnly = (m) => new Date(`${m}-15T12:00:00`).toLocaleDateString(LOC, { month: 'long' });
+const monthLabel = (m) => { if (String(m).endsWith('-S')) return L('sluttoppgjør', 'final settlement'); const s = new Date(`${m}-15T12:00:00`).toLocaleDateString(LOC, { month: 'long', year: 'numeric' }); return EN ? s : s.toLowerCase(); };
+const monthOnly = (m) => String(m).endsWith('-S') ? L('sluttoppgjøret', 'the final settlement') : new Date(`${m}-15T12:00:00`).toLocaleDateString(LOC, { month: 'long' });
 const cap = (s) => s.charAt(0).toUpperCase() + s.slice(1);
 const clName = (c) => (EN ? (c.type === 'out' ? 'Move-out' : 'Move-in') : c.label);
 const clTitle = (c) => (EN ? `${clName(c)} checklist` : `${c.label}ssjekkliste`);
@@ -798,7 +798,54 @@ function payLines(r) {
   let h = '';
   if (r.rent) h += `<div class="pay-line"><span>${L('Husleie', 'Rent')} ${esc(monthOnly(r.month))}${r.rent_note ? `<small>${L('Avregnet', 'Prorated')} ${esc(proNote(r.rent_note))}</small>` : ''}</span><span>${esc(nok(r.rent))}</span></div>`;
   for (const p of r.electricity) h += `<div class="pay-line"><span>${L('Strøm', 'Electricity')} ${esc(dateFmt(p.from))} – ${esc(dateFmt(p.to))}<small>${esc(kwhFmt(p.kwh))}${p.price != null ? ` × ${esc(nok(p.price))}` : ''}</small></span><span>${esc(nok(p.amount))}</span></div>`;
+  for (const c of r.credits || []) h += `<div class="pay-line"><span>${L('Tilbake: husleie', 'Refund: rent')} ${esc(monthOnly(c.month))}${c.note ? `<small>${L('Avregnet', 'Prorated')} ${esc(proNote(c.note))}</small>` : ''}</span><span>${esc(nok(c.amount))}</span></div>`;
   return h;
+}
+
+// Si opp / be om å avslutte leieforholdet.
+function endHTML() {
+  const T = S.m.termination;
+  if (!T) return '';
+  const t = T.latest;
+  const F = S.endForm;
+  let h = `<section class="card info-card end-card"><h2>${L('Avslutte leieforholdet', 'Ending your tenancy')}</h2>`;
+  if (t && t.status === 'pending') {
+    h += `<div class="notice-soft info"><strong>${L('Sendt til utleier', 'Sent to the landlord')} ${esc(dateFmt(t.created))}</strong><br>
+      ${L(`Ønsket siste dag: ${esc(longDate(t.requested_end))}.`, `Requested last day: ${esc(longDate(t.requested_end))}.`)} ${t.early ? L('Dette er før oppsigelsestiden er ute, så utleier må godkjenne det.', 'This is before the notice period ends, so the landlord needs to approve it.') : ''} ${L('Venter på svar.', 'Waiting for a reply.')}</div>
+      ${t.reason ? `<p class="pre note">${esc(t.reason)}</p>` : ''}
+      <button class="btn ghost" data-act="end-withdraw" data-id="${t.id}">${S.confirmDelete === `end-${t.id}` ? L('Trykk igjen for å trekke tilbake', 'Tap again to withdraw') : L('Trekk tilbake', 'Withdraw')}</button>`;
+    return h + `</section>`;
+  }
+  if (t && t.status === 'approved') {
+    h += `<div class="notice-soft ok-soft"><strong>${L('Godkjent av utleier', 'Approved by the landlord')}</strong><br>${L(`Leieforholdet avsluttes ${esc(longDate(t.approved_end))}.`, `Your tenancy ends on ${esc(longDate(t.approved_end))}.`)}</div>
+      ${t.comment ? `<div class="msg landlord"><span>${esc(t.comment)}</span><small>${L('Utleier', 'Landlord')}</small></div>` : ''}
+      <ol class="steps">${EN
+        ? '<li>Read the electricity meter on your last day.</li><li>Fill in the move-out checklist when the landlord sends it.</li><li>Rent is calculated per day up to your last day. Anything you have paid too much is paid back in the final settlement.</li>'
+        : '<li>Les av strømmåleren på siste dag.</li><li>Fyll ut utflyttingssjekklisten når utleier sender den.</li><li>Husleien regnes per dag fram til siste dag. Har du betalt for mye, betales det tilbake i sluttoppgjøret.</li>'}</ol>`;
+    return h + `</section>`;
+  }
+  if (t && t.status === 'declined') {
+    h += `<div class="notice-soft bad"><strong>${L('Ikke godkjent', 'Not approved')} ${esc(dateFmt(t.decided_at))}</strong>${t.comment ? `<br>${esc(t.comment)}` : ''}</div>`;
+  }
+  const rule = T.fixed_end
+    ? L(`Kontrakten varer til ${esc(longDate(T.fixed_end))}.`, `The contract runs until ${esc(longDate(T.fixed_end))}.`)
+    : T.notice_months
+      ? L(`Oppsigelsestiden er ${T.notice_months} måned${T.notice_months === 1 ? '' : 'er'}, regnet fra utgangen av måneden.`, `The notice period is ${T.notice_months} month${T.notice_months === 1 ? '' : 's'}, counted from the end of the month.`)
+      : '';
+  if (!F) {
+    h += `<p class="note">${rule} ${T.earliest ? L(`Sier du opp i dag, er siste dag <strong>${esc(longDate(T.earliest))}</strong>.`, `If you give notice today, your last day is <strong>${esc(longDate(T.earliest))}</strong>.`) : ''} ${L('Vil du flytte tidligere, kan du søke om det.', 'If you want to move out earlier, you can ask for it.')}</p>
+      <button class="btn ghost" data-act="end-open">${L('Si opp eller be om å avslutte', 'Give notice or ask to end')}</button>`;
+    return h + `</section>`;
+  }
+  const early = T.earliest && F.date && F.date < T.earliest;
+  h += `<p class="note">${rule}</p>
+    <label class="field"><span class="field-label">${L('Ønsket siste dag', 'Requested last day')}</span><input class="input" type="date" min="${localToday()}" value="${esc(F.date)}" data-field="end-date"></label>
+    <div class="notice-soft end-early" ${early ? '' : 'hidden'}>${L(`Datoen er før oppsigelsestiden er ute (${esc(T.earliest ? longDate(T.earliest) : '')}). Da blir det en søknad som utleier må godkjenne.`, `This date is before the notice period ends (${esc(T.earliest ? longDate(T.earliest) : '')}). It becomes a request the landlord has to approve.`)}</div>
+    <label class="field"><span class="field-label">${L('Begrunnelse eller kommentar (valgfritt)', 'Reason or comment (optional)')}</span><textarea class="input area" rows="3" maxlength="1000" placeholder="${L('F.eks. ny jobb i en annen by', 'E.g. new job in another city')}" data-field="end-reason">${esc(F.reason)}</textarea></label>
+    <button class="btn primary big" data-act="end-send">${S.confirmDelete === 'end-send' ? L('Trykk igjen for å sende', 'Tap again to send') : L('Send til utleier', 'Send to the landlord')}</button>
+    <button class="btn ghost" data-act="end-cancel">${L('Avbryt', 'Cancel')}</button>
+    <p class="note">${L('Utleier får varsel og svarer i appen. Du får beskjed når det er svart.', 'The landlord is notified and replies in the app. You’ll be notified when they reply.')}</p>`;
+  return h + `</section>`;
 }
 
 function contractHTML(c) {
@@ -835,6 +882,14 @@ function stromHTML() {
     ${LS.overdue.map((o) => claimBtn(o)).join('')}</div>`;
   const claimedOld = LS ? (LS.claimed || []).filter((o) => !LS.next || o.month !== LS.next.month) : [];
   if (claimedOld.length) h += `<div class="notice-soft info">${claimedOld.map((o) => L(`Du meldte ${esc(monthLabel(o.month))} som betalt ${esc(dateFmt(o.claimed_at))}.`, `You reported ${esc(monthLabel(o.month))} as paid on ${esc(dateFmt(o.claimed_at))}.`)).join(' ')} ${L('Venter på at utleier bekrefter.', 'Waiting for the landlord to confirm.')}</div>`;
+  if (LS && LS.refund) {
+    const rf = LS.refund;
+    h += `<section class="card info-card next-pay"><span class="field-label">${L('Sluttoppgjør', 'Final settlement')} · ${L('til gode', 'owed to you')}</span>
+      <span class="pay-total">${esc(nok(-rf.total))}</span>
+      <p class="note">${L(`Utleier betaler tilbake beløpet til deg innen ${esc(longDate(rf.due))}. Husleien er avregnet per dag fram til utflytting. Strøm fram til siste avlesning er trukket fra, og avlesningen på siste dag kommer med her.`, `The landlord will pay this amount back to you by ${esc(longDate(rf.due))}. Rent is calculated per day up to moving out. Electricity up to the latest reading has been deducted, and the reading on your last day is included here.`)}</p>
+      <a class="btn ghost inv-btn" href="api/invoice/${rf.month}.pdf" target="_blank" rel="noopener">${L('Se sluttoppgjøret (PDF)', 'View the final settlement (PDF)')}</a>
+    </section>`;
+  }
   if (e.remind && !(c && c.auto_meter)) h += `<div class="notice-soft">${L('Det er snart månedsslutt – husk å lese av strømmåleren.', "It's almost the end of the month – remember to read the electricity meter.")}</div>`;
   if (LS && LS.next) {
     const n = LS.next;
@@ -866,6 +921,7 @@ function stromHTML() {
     </section>`;
   }
   if (c && (c.start || c.end || c.rent || c.deposit || (S.m.docs || []).length)) h += contractHTML(c);
+  if (c && (c.start || c.rent)) h += endHTML();
   if (LS && LS.ledger.length && c.rent) {
     h += `<section><h2 class="group-title">${L('Betalinger', 'Payments')}${LS.year_total ? ` <span class="gt-count">${L('Betalt i år', 'Paid this year')}: ${esc(nok(LS.year_total))}</span>` : ''}</h2><div class="list">${LS.ledger.map((r) => {
       const [lab, cls] = LSTAT[r.status];
@@ -1659,7 +1715,7 @@ function setValueFor(e, next, draft, later = false) {
 function act(a, ds) {
   const m = S.m;
   const draft = ds.mode === 'draft';
-  if (!['scene-delete', 'auto-delete', 'reading-delete', 'cl-status', 'cl-submit'].includes(a)) S.confirmDelete = false;
+  if (!['scene-delete', 'auto-delete', 'reading-delete', 'cl-status', 'cl-submit', 'end-send', 'end-withdraw'].includes(a)) S.confirmDelete = false;
   if (a === 'cl-status' && S.confirmDelete && S.confirmDelete !== `${ds.id}-${ds.i}`) S.confirmDelete = false;
   if (a !== 'pay-claim') S.confirmClaim = null;
   switch (a) {
@@ -1778,6 +1834,19 @@ function act(a, ds) {
     case 'maint-done':
       cmd({ type: 'maint_done', id: ds.id }).then((r) => r.ok && showToast(L('Takk! Utleier har fått beskjed.', 'Thanks! The landlord has been notified.')));
       return;
+    case 'end-open': S.endForm = { date: S.m.termination?.earliest || '', reason: '' }; return render();
+    case 'end-cancel': S.endForm = null; return render();
+    case 'end-send':
+      if (!S.endForm?.date) return showToast(L('Velg ønsket siste dag', 'Choose the requested last day'), true);
+      if (S.confirmDelete !== 'end-send') { S.confirmDelete = 'end-send'; return render(); }
+      S.confirmDelete = false;
+      cmd({ type: 'end_request', date: S.endForm.date, reason: S.endForm.reason }).then((r) => { if (r.ok) { S.endForm = null; showToast(L('Sendt til utleier', 'Sent to the landlord')); } });
+      return render();
+    case 'end-withdraw':
+      if (S.confirmDelete !== `end-${ds.id}`) { S.confirmDelete = `end-${ds.id}`; return render(); }
+      S.confirmDelete = false;
+      cmd({ type: 'end_withdraw', id: ds.id }).then((r) => r.ok && showToast(L('Forespørselen er trukket tilbake', 'Request withdrawn')));
+      return render();
     case 'pay-claim':
       if (S.confirmClaim !== ds.month) { S.confirmClaim = ds.month; return render(); }
       S.confirmClaim = null;
@@ -2052,6 +2121,8 @@ $app.addEventListener('input', (ev) => {
   if (f === 'reply') { S.reply[t.dataset.id] = t.value; return; }
   if (f === 'reading-value') { S.reading.value = t.value; return; }
   if (f === 'reading-date') { S.reading.date = t.value; checkFutureReading(); return; }
+  if (f === 'end-date' && S.endForm) { S.endForm.date = t.value; const w = $app.querySelector('.end-early'); const e = S.m.termination?.earliest; if (w) w.hidden = !(e && t.value && t.value < e); return; }
+  if (f === 'end-reason' && S.endForm) { S.endForm.reason = t.value; return; }
   if (f === 'auto-time') { S.adraft.trigger.at = t.value; return; }
   if (f === 'win-from') { S.adraft.window.from = t.value; return; }
   if (f === 'win-to') { S.adraft.window.to = t.value; return; }

@@ -430,3 +430,5 @@ a.inv-row { color: inherit; text-decoration: none; }
 .notice-soft.maint > span { display: flex; flex-direction: column; gap: 2px; }
 .notice-soft.maint small { font-size: 13px; opacity: .85; }
 .notice-soft.maint .btn { min-height: 40px; padding: 0 18px; flex-shrink: 0; }
+.end-card { display: flex; flex-direction: column; gap: 10px; }
+.notice-soft.ok-soft { background: var(--green-soft); border-color: transparent; color: var(--green-ink); }

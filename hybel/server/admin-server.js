@@ -142,6 +142,13 @@ export function startAdminServer({ engine, ha, webRoot, port, tenantHub, devOpen
           return sendJson(res, 400, { ok: false, error: err.message });
         }
       }
+      if (p === '/api/admin/end-request' && req.method === 'POST') {
+        try {
+          engine.extras.term.decide(await readJson(req));
+          engine.changed();
+          return sendJson(res, 200, { ok: true, state: engine.adminView({ tenant_clients: tenantHub.size }) });
+        } catch (err) { return sendJson(res, 400, { ok: false, error: err.message }); }
+      }
       if (p === '/api/admin/maint' && req.method === 'POST') {
         try {
           engine.extras.maint.save(await readJson(req));
@@ -228,7 +235,7 @@ export function startAdminServer({ engine, ha, webRoot, port, tenantHub, devOpen
           return res.end(buf);
         } catch (err) { return sendJson(res, 400, { ok: false, error: err.message }); }
       }
-      const im = p.match(/^\/api\/admin\/invoice\/(\d{4}-\d{2})\.pdf$/);
+      const im = p.match(/^\/api\/admin\/invoice\/(\d{4}-\d{2}(?:-S)?)\.pdf$/);
       if (im && req.method === 'GET') return sendInvoice(res, engine.extras.lease, im[1]);
       const cm = p.match(/^\/api\/admin\/checklist\/([a-f0-9]{10})\.pdf$/);
       if (cm && req.method === 'GET') return sendPdf(res, engine.extras.checklists, cm[1]);

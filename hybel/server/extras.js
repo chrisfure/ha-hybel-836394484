@@ -6,6 +6,7 @@ import { log } from './log.js';
 import { loadVapid, sendPush } from './webpush.js';
 import { Checklists, DEFAULT_TEMPLATE, DEFAULT_CLEAN_TEMPLATE, parseTemplate, templateToText } from './checklist.js';
 import { Maintenance } from './maintenance.js';
+import { Termination } from './termination.js';
 import { archiveList } from './archive.js';
 import { Lease, defaultLease, localDate } from './lease.js';
 
@@ -60,6 +61,7 @@ export class Extras {
     }
     this.lease = new Lease(this);
     this.maint = new Maintenance(this);
+    this.term = new Termination(this);
     // Sensor i Home Assistant som viser om leietaker venter på svar (for kort i dashbordet).
     this.attnLast = null;
     engine.on('update', () => this.publishAttention());
@@ -516,6 +518,7 @@ export class Extras {
       lease: this.lease.view(),
       docs: this.docsView(),
       maintenance: this.maint.tenantView(),
+      termination: this.term.view(),
       push: { key: this.vapid?.publicKey || null, devices: this.d.push_subs.length }
     };
   }
@@ -523,6 +526,7 @@ export class Extras {
   adminView() {
     return {
       maintenance: this.maint.adminView(),
+      termination: this.term.view(true),
       archives: archiveList(this),
       backup: this.backupStatus(),
       info: this.d.info,
@@ -569,6 +573,8 @@ export class Extras {
       case 'report_seen': this.markSeen(); return true;
       case 'reading_add': this.addReading(cmd); return true;
       case 'reading_delete': this.deleteLastReading(cmd.id); return true;
+      case 'end_request': this.rateCheck(); this.term.request(cmd); return true;
+      case 'end_withdraw': this.term.withdraw(cmd); return true;
       case 'maint_done': this.maint.tenantDone(cmd.id); return true;
       case 'pay_claim': if (cmd.on !== false) this.rateCheck(); this.lease.claimPaid(String(cmd.month || ''), cmd.on !== false); return true;
       default: return false;

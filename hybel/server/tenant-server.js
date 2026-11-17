@@ -98,7 +98,7 @@ export function startTenantServer({ engine, options, webRoot, port }) {
         const doc = engine.extras.docFile(dm[1]);
         return serveDoc(res, doc && doc.visible ? doc : null, FILE_HEADERS);
       }
-      const im = url.pathname.match(/^\/api\/invoice\/(\d{4}-\d{2})\.pdf$/);
+      const im = url.pathname.match(/^\/api\/invoice\/(\d{4}-\d{2}(?:-S)?)\.pdf$/);
       if (im && req.method === 'GET') return sendInvoice(res, engine.extras.lease, im[1], FILE_HEADERS);
       const cm = url.pathname.match(/^\/api\/checklist\/([a-f0-9]{10})\.pdf$/);
       if (cm && req.method === 'GET') return sendPdf(res, engine.extras.checklists, cm[1], FILE_HEADERS);

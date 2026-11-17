@@ -371,7 +371,31 @@ function photoOverlay() {
   return A.photo ? `<div class="lightbox" data-act="photo-close"><img src="api/admin/photo/${A.photo}" alt="Bilde fra leietaker"></div>` : '';
 }
 
-const LSTAT_A = { claimed: ['Leietaker: betalt', 'info'], paid: ['Betalt', 'ok'], overdue: ['Forfalt', 'bad'], soon: ['Forfaller snart', 'warn'], upcoming: ['Kommende', ''] };
+const LSTAT_A = { refund: ['Til gode leietaker', 'info'], claimed: ['Leietaker: betalt', 'info'], paid: ['Betalt', 'ok'], overdue: ['Forfalt', 'bad'], soon: ['Forfaller snart', 'warn'], upcoming: ['Kommende', ''] };
+
+// Oppsigelse / søknad om å avslutte fra leietaker.
+function endRequestHTML() {
+  const T = A.st.extras.termination;
+  const t = T && T.latest;
+  if (!t) return '';
+  if (t.status === 'pending') {
+    if (!A.endDec || A.endDec.id !== t.id) A.endDec = { id: t.id, date: t.requested_end, comment: '' };
+    return `<div class="end-req">
+      <strong>${t.early ? 'Leietaker søker om å avslutte leieforholdet' : 'Leietaker har sagt opp leieforholdet'}</strong>
+      <span>Sendt ${esc(fmtDate(t.created))} · ønsket siste dag <strong>${esc(fmtDate(t.requested_end))}</strong>${t.earliest ? ` · tidligste dato etter kontrakten ${esc(fmtDate(t.earliest))}` : ''}</span>
+      ${t.early ? '<span class="pill2 warn">Før oppsigelsestiden er ute – du bestemmer</span>' : ''}
+      ${t.reason ? `<p class="pre">${esc(t.reason)}</p>` : ''}
+      <div class="form-grid">
+        <label class="lbl-col">Siste dag i leieforholdet<input class="input" type="date" value="${esc(A.endDec.date)}" data-field="end-dec-date"></label>
+        <label class="lbl-col">Kommentar til leietaker (valgfritt)<input class="input" maxlength="1000" value="${esc(A.endDec.comment)}" placeholder="F.eks. Greit! Vi avtaler nøkkelinnlevering." data-field="end-dec-comment"></label>
+      </div>
+      <p class="help">Godkjenner du, settes sluttdatoen i leieforholdet. Husleien avregnes per dag, og et sluttoppgjør med strøm og eventuell tilbakebetaling kommer under Økonomi. Husk å sende utflyttingssjekklisten.</p>
+      <div class="row-btns"><button class="sbtn on" data-act="end-approve">Godkjenn</button><button class="sbtn" data-act="end-decline">${A.confirmDel === 'end-decline' ? 'Bekreft avslag' : 'Avslå'}</button></div>
+    </div>`;
+  }
+  if (t.status === 'approved') return `<p class="help end-ok">✓ Oppsigelse godkjent ${esc(fmtDate(t.decided_at))} – siste dag ${esc(fmtDate(t.approved_end))}.</p>`;
+  return '';
+}
 
 function leasePanel() {
   const l = A.cfg.lease;
@@ -379,6 +403,7 @@ function leasePanel() {
   const f = (k, label, ph = '', type = 'text', extra = '') => `<label class="lbl-col">${label}<input class="input" type="${type}" ${extra} value="${esc(l[k] ?? '')}" placeholder="${esc(ph)}" data-field="lease.${k}"></label>`;
   const head = c.end ? (c.days_left >= 0 ? `${c.days_left} dager igjen` : 'Utløpt') : c.start ? 'Tidsubestemt' : 'Kontrakt og depositum';
   return `<section class="panel"><div class="panel-head"><h2>Leieforhold</h2><span>${esc(head)}</span></div>
+    ${endRequestHTML()}
     ${c.end && c.notice_by && c.days_left >= 0 ? `<p class="help">Kontrakten løper til ${esc(fmtDate(c.end))}. Frist for oppsigelse ved kontraktsslutt: ${esc(fmtDate(c.notice_by))}.</p>` : ''}
     <div class="form-grid">
       ${f('start', 'Innflytting', '', 'date')}
@@ -461,10 +486,11 @@ function economyPanel() {
       ${L.ledger.map((r) => {
         const el = r.electricity.reduce((a, p) => a + (p.amount || 0), 0);
         const [lab, cls] = LSTAT_A[r.status];
-        return `<tr><td>${esc(r.label)}<br><span class="help">Forfall ${esc(fmtDate(r.due))}</span></td><td>${r.rent ? esc(kr(r.rent)) : '–'}${r.rent_note ? `<br><span class="help">Avregnet ${esc(r.rent_note)}</span>` : ''}</td>
+        const cr = (r.credits || []).map((c) => `${esc(kr(c.amount))}<br><span class="help">Tilbake for ${esc(c.month)}${c.note ? ` (avregnet ${esc(c.note)})` : ''}</span>`).join('<br>');
+        return `<tr><td>${esc(r.label.charAt(0).toUpperCase() + r.label.slice(1))}<br><span class="help">${r.refund ? 'Betales tilbake innen' : 'Forfall'} ${esc(fmtDate(r.due))}</span></td><td>${r.rent ? esc(kr(r.rent)) : cr ? '' : '–'}${r.rent_note ? `<br><span class="help">Avregnet ${esc(r.rent_note)}</span>` : ''}${cr}</td>
           <td>${el ? esc(kr(el)) : '–'}${r.electricity.map((p) => `<br><span class="help">${p.kwh.toLocaleString('nb-NO')} kWh</span>`).join('')}</td>
           <td><strong>${esc(kr(r.total))}</strong><br><span class="pill2 ${cls}">${lab}</span></td>
-          <td><button class="sbtn ${r.paid ? 'on' : ''}" data-act="month-paid" data-v="${r.month}" data-paid="${r.paid ? '0' : '1'}">${r.paid ? 'Betalt ✓' : 'Marker betalt'}</button>
+          <td><button class="sbtn ${r.paid ? 'on' : ''}" data-act="month-paid" data-v="${r.month}" data-paid="${r.paid ? '0' : '1'}">${r.paid ? (r.refund ? 'Tilbakebetalt ✓' : 'Betalt ✓') : r.refund ? 'Marker tilbakebetalt' : 'Marker betalt'}</button>
             <a class="sbtn" href="api/admin/invoice/${r.month}.pdf" target="_blank" rel="noopener">Faktura</a>
             ${r.paid ? '' : `<button class="sbtn" data-act="inv-delete" data-v="${r.month}">${A.confirmDel === `inv-${r.month}` ? 'Bekreft sletting' : 'Slett'}</button>`}</td></tr>`;
       }).join('')}
@@ -685,6 +711,7 @@ function isOpen(key) {
   // Standard: alt lukket, unntatt meldinger når noe venter.
   if (key === 'Meldinger') return (A.st?.extras?.reports || []).some((r) => r.status === 'new' || r.status === 'in_progress' || r.landlord_unread);
   if (key === 'Økonomi') return (A.st?.extras?.lease?.overdue || []).length > 0 || (A.st?.extras?.lease?.claimed || []).length > 0;
+  if (key === 'Leieforhold') return A.st?.extras?.termination?.latest?.status === 'pending';
   if (key === 'Inn- og utflytting') return (A.st?.extras?.checklists || []).some((c) => c.status === 'submitted');
   return false;
 }
@@ -701,6 +728,9 @@ function todos() {
   if (working) add('Meldinger', 'info', `${working} under arbeid`);
   const L = x.lease;
   if (L.overdue.length) add('Økonomi', 'bad', `${L.overdue.length} ikke betalt`);
+  const tr = x.termination?.latest;
+  if (tr && tr.status === 'pending') add('Leieforhold', 'bad', tr.early ? 'Søknad om å avslutte' : 'Oppsigelse fra leietaker');
+  if (L.refund) add('Økonomi', 'warn', `Betal tilbake ${kr(-L.refund.total)} til leietaker`);
   if ((L.claimed || []).length) add('Økonomi', 'warn', `${L.claimed.length} meldt betalt – bekreft`);
   if (L.next && L.next.status === 'soon') add('Økonomi', 'info', `Forfall ${fmtDate(L.next.due)}`);
   const c = L.contract;
@@ -847,6 +877,20 @@ document.addEventListener('click', async (ev) => {
     }
     case 'doc-upload': uploadDoc(); return;
     case 'doc-visible':
+    case 'end-approve':
+    case 'end-decline': {
+      if (d.act === 'end-decline' && A.confirmDel !== 'end-decline') { A.confirmDel = 'end-decline'; break; }
+      const t = A.st.extras.termination.latest;
+      try {
+        const r = await api('api/admin/end-request', { method: 'POST', body: JSON.stringify({ id: t.id, action: d.act === 'end-approve' ? 'approve' : 'decline', date: A.endDec.date, comment: A.endDec.comment }) });
+        if (!r.ok) { message(esc(r.error), true); break; }
+        A.st = r.state; A.confirmDel = null;
+        if (d.act === 'end-approve') { A.cfg.lease.end = A.endDec.date; message(`Godkjent. Leieforholdet avsluttes ${esc(fmtDate(A.endDec.date))}, og leietaker har fått beskjed.`); }
+        else message('Leietaker har fått beskjed om avslaget.');
+        A.endDec = null;
+      } catch (e) { message(esc(e.message), true); }
+      break;
+    }
     case 'mt-add':
     case 'mt-done':
     case 'mt-tenant':
@@ -1046,6 +1090,8 @@ document.addEventListener('input', (ev) => {
   else if (f === 'notify') { A.cfg.alerts.notify_service = el.value.trim(); setDirty(); }
   else if (f === 'offline-hours') { A.cfg.alerts.offline_hours = Number(el.value); setDirty(); }
   else if (f === 'q') { A.q = el.value; render(); }
+  else if (f === 'end-dec-date' && A.endDec) { A.endDec.date = el.value; }
+  else if (f === 'end-dec-comment' && A.endDec) { A.endDec.comment = el.value; }
   else if (f === 'mt.title') { A.mt.title = el.value; }
   else if (f === 'mt.months') { A.mt.months = Number(el.value); }
   else if (f === 'mt.tenant') { A.mt.tenant = el.checked; }

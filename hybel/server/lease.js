@@ -15,9 +15,10 @@ const addMonths = (m, n) => {
 const daysIn = (m) => { const [y, mo] = m.split('-').map(Number); return new Date(y, mo, 0).getDate(); };
 const dueDate = (m, day) => `${m}-${pad(Math.min(day, daysIn(m)))}`;
 const MONTHS_EN = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
-const monthNameEn = (m) => `${MONTHS_EN[Number(m.slice(5)) - 1]} ${m.slice(0, 4)}`;
+const monthNameEn = (m) => (String(m).endsWith('-S') ? 'the final settlement' : `${MONTHS_EN[Number(m.slice(5, 7)) - 1]} ${m.slice(0, 4)}`);
 const MONTHS = ['januar', 'februar', 'mars', 'april', 'mai', 'juni', 'juli', 'august', 'september', 'oktober', 'november', 'desember'];
-export const monthName = (m) => `${MONTHS[Number(m.slice(5)) - 1]} ${m.slice(0, 4)}`;
+export const monthName = (m) => (String(m).endsWith('-S') ? 'sluttoppgjør' : `${MONTHS[Number(m.slice(5, 7)) - 1]} ${m.slice(0, 4)}`);
+const MONTH_RX = /^\d{4}-\d{2}(-S)?$/;
 const addDays = (iso, n) => { const d = new Date(`${iso}T12:00:00`); d.setDate(d.getDate() + n); return localDate(d); };
 const daysBetween = (a, b) => Math.round((new Date(b) - new Date(a)) / 86400000);
 const kr = (n) => `${n.toLocaleString('nb-NO', Number.isInteger(n) ? { maximumFractionDigits: 0 } : { minimumFractionDigits: 2, maximumFractionDigits: 2 })} kr`;
@@ -79,7 +80,21 @@ export class Lease {
     }
   }
 
+  // Husleie for én måned, avregnet per dag ved innflytting/utflytting midt i måneden.
+  rentFor(m) {
+    const l = this.l;
+    if (!l.rent || (l.start && m < monthKey(l.start)) || (l.end && m > monthKey(l.end))) return { rent: 0, note: null };
+    const dim = daysIn(m);
+    const from = l.start && monthKey(l.start) === m ? Number(l.start.slice(8)) : 1;
+    const to = l.end && monthKey(l.end) === m ? Number(l.end.slice(8)) : dim;
+    const days = Math.max(0, to - from + 1);
+    if (days >= dim) return { rent: Math.round(l.rent), note: null };
+    return { rent: Math.round((l.rent * days) / dim), note: `${from}.–${to}. ${MONTHS[Number(m.slice(5)) - 1].slice(0, 3)}: ${days} av ${dim} dager` };
+  }
+
   // Betalingsplan: husleie forskuddsvis per måned, strøm på etterskudd med første forfall etter avlesningen.
+  // Ved avsluttet leieforhold kommer et sluttoppgjør (måned «YYYY-MM-S») 14 dager etter siste dag:
+  // strøm fram til utflytting og tilbakebetaling av husleie som er betalt for dager etter utflytting.
   ledger() {
     const l = this.l;
     const periods = [...this.x.periods()].reverse(); // eldste først
@@ -88,8 +103,9 @@ export class Lease {
     let first = l.start ? monthKey(l.start) : periods.length ? monthKey(periods[0].to) : null;
     if (!l.rent && !periods.length) return [];
     if (!first) first = thisMonth;
+    const endM = l.end ? monthKey(l.end) : null;
     let last = addMonths(thisMonth, 1);
-    if (l.end && monthKey(l.end) < last) last = monthKey(l.end);
+    if (endM && endM < last) last = endM;
     const months = [];
     for (let m = first, i = 0; m <= last && i < 240; m = addMonths(m, 1), i++) months.push(m);
     if (!months.length) return [];
@@ -97,44 +113,63 @@ export class Lease {
     const rows = months.map((m) => {
       let due = dueDate(m, l.due_day);
       if (l.start && m === monthKey(l.start) && l.start > due) due = l.start;
-      return { month: m, due, rent: null, electricity: [] };
+      return { month: m, due, rent: null, electricity: [], credits: [] };
     });
+    const final = endM ? { month: `${endM}-S`, due: addDays(l.end, 14), rent: null, electricity: [], credits: [], final: true } : null;
+    const all = final ? [...rows, final] : rows;
+    const isPaid = (m) => Boolean(this.pay[m]?.paid);
+
+    // Strøm: betalte perioder blir på fakturaen de ble betalt med; ubetalte går til første ubetalte faktura med forfall etter avlesningen.
+    const paidIn = new Map();
+    for (const [m, rec] of Object.entries(this.pay)) if (rec.paid && Array.isArray(rec.periods)) for (const id of rec.periods) paidIn.set(id, m);
     for (const p of periods) {
-      const row = rows.find((r) => r.due > p.to) || rows[rows.length - 1];
-      if (row.due < p.to && !(l.end && p.to >= l.end)) continue; // avlest etter siste forfall – kommer med neste måned
+      const pm = paidIn.get(p.id);
+      const known = pm && all.find((r) => r.month === pm);
+      if (known) { known.electricity.push(p); continue; }
+      if (p.paid) { // betalt før perioder ble lagret på betalingen
+        const r = rows.find((x) => x.due > p.to) || rows[rows.length - 1];
+        r.electricity.push(p);
+        continue;
+      }
+      let row = rows.find((r) => r.due > p.to && !isPaid(r.month) && !(final && p.to >= l.end));
+      if (!row && final && !isPaid(final.month)) row = final;
+      if (!row) continue; // avlest etter siste forfall – kommer med neste måned
       row.electricity.push(p);
     }
-    return rows.map((r) => {
+
+    // Husleie som allerede er betalt for dager etter utflytting, trekkes fra i sluttoppgjøret.
+    if (final) {
+      for (const [m, rec] of Object.entries(this.pay).sort()) {
+        if (!rec.paid || !/^\d{4}-\d{2}$/.test(m) || m < endM || rec.rent == null) continue;
+        const due = this.rentFor(m).rent;
+        const back = Math.round(rec.rent - due);
+        if (back > 0) final.credits.push({ month: m, paid: rec.rent, due, amount: -back, note: m === endM ? this.rentFor(m).note : null });
+      }
+    }
+
+    return all.map((r) => {
       const rec = this.pay[r.month] || {};
-      const inLease = !l.start || r.month >= monthKey(l.start);
       r.rent = null;
       r.rent_note = null;
-      if (rec.paid) { r.rent = rec.rent ?? null; r.rent_note = rec.rent_note || null; }
-      else if (inLease && l.rent) {
-        // Avregning for delvis måned ved innflytting eller utflytting.
-        const dim = daysIn(r.month);
-        const from = l.start && monthKey(l.start) === r.month ? Number(l.start.slice(8)) : 1;
-        const to = l.end && monthKey(l.end) === r.month ? Number(l.end.slice(8)) : dim;
-        const days = Math.max(0, to - from + 1);
-        if (days < dim) {
-          r.rent = Math.round((l.rent * days) / dim);
-          r.rent_note = `${from}.–${to}. ${MONTHS[Number(r.month.slice(5)) - 1].slice(0, 3)}: ${days} av ${dim} dager`;
-        } else r.rent = Math.round(l.rent);
-      }
+      if (rec.paid && !r.final) { r.rent = rec.rent ?? null; r.rent_note = rec.rent_note || null; }
+      else if (!r.final) { const x = this.rentFor(r.month); r.rent = x.rent || null; r.rent_note = x.note; }
+      if (r.final && rec.paid) r.credits = rec.credits || [];
       const el = r.electricity.reduce((s, p) => s + (p.amount || 0), 0);
-      r.total = Math.round(((r.rent || 0) + el) * 100) / 100;
+      const cr = r.credits.reduce((s, c) => s + c.amount, 0);
+      r.total = rec.paid && rec.total != null && r.final ? rec.total : Math.round(((r.rent || 0) + el + cr) * 100) / 100;
       r.paid = Boolean(rec.paid);
       r.paid_at = rec.paid ? rec.at || null : null;
       r.claimed_at = !rec.paid && rec.claimed_at ? rec.claimed_at : null;
-      r.status = r.paid ? 'paid' : r.claimed_at ? 'claimed' : r.due < today ? 'overdue' : daysBetween(today, r.due) <= 10 ? 'soon' : 'upcoming';
+      r.refund = r.total < 0;
+      r.status = r.paid ? 'paid' : r.refund ? 'refund' : r.claimed_at ? 'claimed' : r.due < today ? 'overdue' : daysBetween(today, r.due) <= 10 ? 'soon' : 'upcoming';
       r.label = monthName(r.month);
       return r;
-    }).filter((r) => (r.total > 0 || r.paid) && !this.pay[r.month]?.void);
+    }).filter((r) => (r.total !== 0 || r.paid) && !this.pay[r.month]?.void);
   }
 
   // Slett (annuller) en faktura. Kan gjenopprettes. Strømmen i måneden blir da ikke fakturert.
   setVoid(month, on) {
-    if (!/^\d{4}-\d{2}$/.test(String(month))) throw new Error('Ugyldig måned');
+    if (!MONTH_RX.test(String(month))) throw new Error('Ugyldig måned');
     if (on) {
       if (this.pay[month]?.paid) throw new Error('Fakturaen er markert som betalt – fjern betalingen først');
       this.pay[month] = { void: true, at: new Date().toISOString() };
@@ -149,10 +184,11 @@ export class Lease {
 
   // Leietaker melder at en faktura er betalt. Utleier bekrefter (setPaid) eller avviser.
   claimPaid(month, on = true) {
-    if (!/^\d{4}-\d{2}$/.test(String(month))) throw new Error('Ugyldig måned');
+    if (!MONTH_RX.test(String(month))) throw new Error('Ugyldig måned');
     const row = this.ledger().find((r) => r.month === month);
     if (!row) throw new Error('Fant ikke fakturaen');
     if (row.paid) throw new Error('Fakturaen er allerede registrert som betalt');
+    if (row.total <= 0) throw new Error('Her er det utleier som skal betale tilbake');
     if (!on) {
       if (row.claimed_at) { delete this.pay[month]; this.x.engine.dismissNotice(`betalt_${month}`); this.x.save(); }
       return;
@@ -175,12 +211,12 @@ export class Lease {
   }
 
   setPaid(month, paid) {
-    if (!/^\d{4}-\d{2}$/.test(String(month))) throw new Error('Ugyldig måned');
+    if (!MONTH_RX.test(String(month))) throw new Error('Ugyldig måned');
     const row = this.ledger().find((r) => r.month === month);
     if (!row) throw new Error('Fant ikke måneden');
     this.x.engine.dismissNotice(`betalt_${month}`);
     if (paid && row.claimed_at) this.x.pushTenant({ title: 'Betalingen er mottatt ✓', body: `Utleier har bekreftet betalingen for ${monthName(month)}.`, tag: `betaling-${month}`, url: '/?vis=strom', en: { title: 'Payment received ✓', body: `The landlord has confirmed the payment for ${monthNameEn(month)}.` } });
-    if (paid) this.pay[month] = { paid: true, at: new Date().toISOString(), rent: row.rent, rent_note: row.rent_note, total: row.total };
+    if (paid) this.pay[month] = { paid: true, at: new Date().toISOString(), rent: row.rent, rent_note: row.rent_note, total: row.total, periods: row.electricity.map((p) => p.id), ...(row.final ? { credits: row.credits } : {}) };
     else delete this.pay[month];
     for (const p of row.electricity) {
       const rd = this.d.readings.find((x) => x.id === p.id);
@@ -209,7 +245,7 @@ export class Lease {
     const right = (t, x, y, size = 10, bold = false, color = null) => doc.text(t, x - textWidth(t, size, bold), y, size, bold, color);
 
     // Topp
-    doc.text('Faktura', M, doc.y - 26, 28, true);
+    doc.text(row.final ? (row.refund ? 'Sluttoppgjør – til gode' : 'Sluttoppgjør') : 'Faktura', M, doc.y - 26, 28, true);
     right(this.invoiceNo(month), W - M, doc.y - 14, 11, true);
     right(`Fakturadato ${d(new Date(Math.min(Date.now(), new Date(row.due).getTime() - 7 * 86400000)).toISOString())}`, W - M, doc.y - 28, 9.5, false, GRAY);
     doc.y -= 50;
@@ -227,7 +263,9 @@ export class Lease {
 
     // Nøkkeltall
     doc.rect(M, doc.y - 46, CW, 46, '0.96 0.94 0.91');
-    const cells = [['Forfallsdato', d(row.due)], ['Kontonummer', l.account || '–'], ['Merk betalingen', this.invoiceNo(month)], ['Å betale', `${kr2(row.total)} kr`]];
+    const cells = row.refund
+      ? [['Utflytting', d(l.end)], ['Tilbakebetales innen', d(row.due)], ['Referanse', this.invoiceNo(month)], ['Til gode leietaker', `${kr2(-row.total)} kr`]]
+      : [['Forfallsdato', d(row.due)], ['Kontonummer', l.account || '–'], ['Merk betalingen', this.invoiceNo(month)], ['Å betale', `${kr2(row.total)} kr`]];
     cells.forEach(([k, v], i) => {
       const x = M + 12 + i * (CW / 4);
       doc.text(k, x, doc.y - 16, 8.5, false, GRAY);
@@ -254,18 +292,24 @@ export class Lease {
       line(`Strøm ${new Date(p.from).toLocaleDateString('nb-NO', { day: 'numeric', month: 'short' })} – ${new Date(p.to).toLocaleDateString('nb-NO', { day: 'numeric', month: 'short', year: 'numeric' })}`,
         `Målerstand ${p.start.toLocaleString('nb-NO')} → ${p.end.toLocaleString('nb-NO')} = ${p.kwh.toLocaleString('nb-NO')} kWh × ${p.price != null ? kr2(p.price) : '–'} kr/kWh`, p.amount || 0);
     }
+    for (const c of row.credits || []) {
+      line(`Tilbake: husleie ${monthName(c.month)}`, c.note ? `Betalt ${kr2(c.paid)} kr – avregnet til utflytting ${c.note} = ${kr2(c.due)} kr` : `Betalt ${kr2(c.paid)} kr for måned etter utflytting`, c.amount);
+    }
     doc.y -= 8;
-    doc.text('Totalt å betale', M + CW / 2, doc.y - 14, 12, true);
-    right(`${kr2(row.total)} kr`, W - M, doc.y - 14, 13, true);
+    doc.text(row.refund ? 'Til gode leietaker' : 'Totalt å betale', M + CW / 2, doc.y - 14, 12, true);
+    right(`${kr2(Math.abs(row.total))} kr`, W - M, doc.y - 14, 13, true);
     doc.y -= 34;
 
     if (row.paid) {
       doc.rect(M, doc.y - 30, CW, 30, '0.89 0.93 0.89');
-      doc.text(`Betalt${row.paid_at ? ` – registrert ${d(row.paid_at)}` : ''}`, M + 12, doc.y - 19, 11, true, '0.18 0.37 0.25');
+      doc.text(`${row.refund ? 'Tilbakebetalt' : 'Betalt'}${row.paid_at ? ` – registrert ${d(row.paid_at)}` : ''}`, M + 12, doc.y - 19, 11, true, '0.18 0.37 0.25');
       doc.y -= 44;
     }
     const notes = [
-      l.account ? `Betal til kontonummer ${l.account} innen ${d(row.due)}, og merk betalingen med ${this.invoiceNo(month)}.` : `Forfall ${d(row.due)}.`,
+      row.final ? `Sluttoppgjør for leieforholdet som ble avsluttet ${d(l.end)}. Husleie er avregnet per dag fram til utflytting.` : '',
+      row.refund ? `Utleier betaler tilbake ${kr2(-row.total)} kr til leietakers konto innen ${d(row.due)}.`
+        : l.account ? `Betal til kontonummer ${l.account} innen ${d(row.due)}, og merk betalingen med ${this.invoiceNo(month)}.` : `Forfall ${d(row.due)}.`,
+      row.final && l.deposit ? `Depositum (${kr2(l.deposit)} kr) er ikke med her og frigis etter avtale når utflyttingen er godkjent.` : '',
       row.electricity.length ? 'Strøm faktureres på etterskudd etter avlesning av måleren i hybelen.' : '',
       l.includes ? `Inkludert i leien: ${l.includes}` : ''
     ].filter(Boolean).join(' ');
@@ -289,7 +333,7 @@ export class Lease {
     for (const r of this.ledger()) {
       if (!r.month.startsWith(y)) continue;
       const el = r.electricity.reduce((s, p) => s + (p.amount || 0), 0);
-      rows.push({ month: r.month, tenant: cur, rent: r.rent || 0, electricity: Math.round(el * 100) / 100, kwh: r.electricity.reduce((s, p) => s + (p.kwh || 0), 0) || null, total: r.total, paid: r.paid, paid_at: r.paid_at, claimed: Boolean(r.claimed_at) });
+      rows.push({ month: r.month, tenant: cur, rent: (r.rent || 0) + (r.credits || []).reduce((a, c) => a + c.amount, 0), electricity: Math.round(el * 100) / 100, kwh: r.electricity.reduce((s, p) => s + (p.kwh || 0), 0) || null, total: r.total, paid: r.paid, paid_at: r.paid_at, claimed: Boolean(r.claimed_at) });
     }
     return rows.sort((a, b) => a.month.localeCompare(b.month));
   }
@@ -390,14 +434,15 @@ export class Lease {
     const ledger = this.ledger();
     const today = localDate();
     const open = ledger.filter((r) => !r.paid);
-    const next = open.find((r) => r.due >= today) || null;
+    const next = open.find((r) => r.due >= today && !r.refund) || null;
     return {
       contract: this.contract(),
       ledger: [...ledger].reverse(),
       deleted: this.deletedMonths(),
+      refund: open.find((r) => r.refund) || null,
       years: this.years(),
       next,
-      overdue: open.filter((r) => r.due < today && !r.claimed_at).map((r) => ({ month: r.month, label: r.label, total: r.total, due: r.due })),
+      overdue: open.filter((r) => r.due < today && !r.claimed_at && !r.refund).map((r) => ({ month: r.month, label: r.label, total: r.total, due: r.due })),
       claimed: open.filter((r) => r.claimed_at).map((r) => ({ month: r.month, label: r.label, total: r.total, due: r.due, claimed_at: r.claimed_at })),
       year_total: ledger.filter((r) => r.paid && r.month.startsWith(today.slice(0, 4))).reduce((s, r) => s + r.total, 0)
     };
@@ -412,7 +457,8 @@ export class Lease {
     let ch = false;
 
     // Automatisk avlesning fra strømmåler i Home Assistant: siste dag i måneden kl. 23:45.
-    if (l.meter_sensor && now.getDate() === daysIn(monthKey(today)) && now.getHours() === 23 && now.getMinutes() >= 45) {
+    // Også på siste dag i leieforholdet, så sluttoppgjøret får riktig strøm.
+    if (l.meter_sensor && (now.getDate() === daysIn(monthKey(today)) || today === l.end) && now.getHours() === 23 && now.getMinutes() >= 45) {
       const last = this.d.readings[this.d.readings.length - 1];
       if (!last || last.date !== today) {
         const st = this.x.engine.ha.states.get(l.meter_sensor);
@@ -443,7 +489,8 @@ export class Lease {
     }
 
     // Kontrakten nærmer seg slutten: varsel 90 og 30 dager før.
-    if (l.end && now.getHours() >= 10) {
+    // Ikke ved godkjent oppsigelse – da vet leietaker allerede sluttdatoen.
+    if (l.end && now.getHours() >= 10 && !(this.d.terminations || []).some((t) => t.status === 'approved' && t.approved_end === l.end)) {
       const left = daysBetween(today, l.end);
       for (const n of [90, 30]) {
         const key = `end-${l.end}-${n}`;
