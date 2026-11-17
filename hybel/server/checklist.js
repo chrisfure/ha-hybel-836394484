@@ -183,7 +183,7 @@ export class Checklists {
     const lines = notes.slice(0, 6).map((r) => `• ${r.room} – ${r.item}${r.kind === 'clean' ? ' (ikke vasket)' : ''}${r.note ? `: ${r.note.slice(0, 80)}` : ''}`);
     this.x.engine.notify(
       `${notes.length ? `${notes.length} merknad${notes.length === 1 ? '' : 'er'}` : 'Alt merket som i orden'}${photos ? `, ${photos} bilde${photos === 1 ? '' : 'r'}` : ''}.${lines.length ? `\n${lines.join('\n')}${notes.length > 6 ? '\n…' : ''}` : ''}\n\nSe hele listen på utleiersiden.`,
-      { title: `${TYPE_LABEL[c.type]}ssjekkliste sendt inn`, inbox: true, id: `sjekk_${c.id}`, event: 'sjekkliste' }
+      { untrusted: true, title: `${TYPE_LABEL[c.type]}ssjekkliste sendt inn`, inbox: true, id: `sjekk_${c.id}`, event: 'sjekkliste' }
     ).catch(() => {});
   }
 

@@ -1102,7 +1102,11 @@ export class Engine extends EventEmitter {
       jobs.push(['push', svc, this.ha.callService(domain, service, { title, message })]);
     }
     if (!svc || opts.inbox) {
-      const data = { title, message };
+      // Bjella i Home Assistant viser Markdown: tekst fra leietaker får lenker/bilder/formatering nøytralisert.
+      const safe = opts.untrusted
+        ? message.replace(/([\\`*_{}\[\]()#+!|<>~])/g, '\\$1').replace(/https?:\/\//gi, (m) => m.replace('://', ':\u200b//'))
+        : message;
+      const data = { title, message: safe };
       if (opts.id) data.notification_id = `hybel_${opts.id}`;
       jobs.push(['bjella', 'persistent_notification', this.ha.callService('persistent_notification', 'create', data)]);
     }

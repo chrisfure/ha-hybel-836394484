@@ -1,5 +1,11 @@
 # Endringslogg
 
+## 0.12.3
+
+- Meldinger: ny boks «Slik fungerer meldinger» med hva leietaker kan forvente, og tydelig beskjed om å ringe utleier ved noe som haster (brann: 110). Knapper for å ringe og sende SMS.
+- Hver melding viser «Sett av utleier ✓» eller «Sendt – ikke åpnet ennå». Er den ikke sett etter 12 timer (30 min hvis den haster), kommer en knapp for SMS med ferdig utfylt tekst.
+- Sikkerhet: tekst fra leietaker kan ikke lenger lage lenker, bilder eller formatering i varselet i Home Assistant; usynlige tegn som kan forfalske tekst fjernes; maks 15 meldinger/svar per time; samtaler og lagrede meldinger har tak.
+
 ## 0.12.2
 
 - Vaskelisten for badet: nytt punkt for vaskemaskin (filter, såpeskuff og gummilist), og «avkalket» er fjernet fra dusjpunktet.

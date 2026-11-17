@@ -41,6 +41,7 @@ const S = {
   uploading: null,     // nøkkel for punkt som laster opp bilde
   photo: null,         // bilde som vises i stort format
   pdf: null,           // { key, file } – ferdig hentet PDF av sjekklisten
+  meldHelp: store.get('hybel-meld-help') !== '0',
   autoOpen: (() => { try { return JSON.parse(localStorage.getItem('hybel-auto-open') || '{}'); } catch { return {}; } })(),
   reply: {},
   reading: { date: (() => { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`; })(), value: '' }
@@ -800,10 +801,51 @@ function pushCardHTML(where) {
   return `<section class="card info-card push-card"><h2>Varsler</h2>${body}</section>`;
 }
 
+// Kontaktinfo til utleier fra Info (telefon brukes til «ring» og «SMS»).
+function landlordPhone() {
+  const p = (S.m.info && S.m.info.contact_phone) || '';
+  return p.replace(/[^\d+]/g, '');
+}
+
+function smsHref(text) {
+  const p = landlordPhone();
+  return p ? `sms:${p}?&body=${encodeURIComponent(text)}` : '';
+}
+
+function meldHelpHTML() {
+  const p = landlordPhone();
+  const open = S.meldHelp !== false;
+  return `<section class="card info-card meld-help">
+    <button class="meld-help-head" data-act="meld-help"><span class="t">Slik fungerer meldinger</span><span class="chev-s ${open ? 'open' : ''}">${svg(UI.down, 18, 2)}</span></button>
+    ${open ? `<ol class="steps">
+      <li>Utleier får <strong>varsel på telefonen</strong> med en gang du sender.</li>
+      <li>Under meldingen ser du <strong>«Sett av utleier ✓»</strong> når den er lest.</li>
+      <li>Har utleier ikke sett meldingen etter <strong>12 timer</strong>${p ? ', dukker det opp en knapp for å sende SMS' : ', send en SMS'} – så vet du at beskjeden kommer fram.</li>
+    </ol>
+    <div class="notice-soft bad"><strong>Haster det?</strong> Vannlekkasje, strømbrudd eller noe som kan gi skade: ${p ? 'ring utleier med en gang – ikke vent på svar i appen.' : 'ta kontakt med utleier direkte med en gang.'} <strong>Brann: ring 110.</strong></div>
+    ${p ? `<div class="contact-btns"><a class="btn primary" href="tel:${p}">Ring utleier</a><a class="btn ghost" href="${smsHref('Hei! ')}">Send SMS</a></div>` : ''}` : ''}
+  </section>`;
+}
+
+// «Sendt / Sett av utleier» – og påminnelse om SMS hvis det tar tid.
+function seenHTML(r) {
+  if (r.seen) return `<span class="seen ok">Sett av utleier ✓</span>`;
+  const since = r.waiting_since ? Date.now() - new Date(r.waiting_since).getTime() : 0;
+  const late = r.urgent ? since > 30 * 60e3 : since > 12 * 3600e3;
+  let h = `<span class="seen">Sendt – utleier har fått varsel, men har ikke åpnet den ennå</span>`;
+  if (late && landlordPhone()) {
+    const sms = smsHref(`Hei! Jeg har sendt en melding i hybel-appen${r.urgent ? ' som haster' : ''}: «${r.text.slice(0, 80)}${r.text.length > 80 ? '…' : ''}». Kan du se på den?`);
+    h += `<div class="notice-soft"><span>${r.urgent ? 'Det haster og utleier har ikke sett meldingen.' : 'Utleier har ikke sett meldingen ennå.'} Send en SMS så du er sikker på at den kommer fram.</span>
+      <div class="contact-btns"><a class="btn primary" href="${sms}">Send SMS</a>${r.urgent ? `<a class="btn ghost" href="tel:${landlordPhone()}">Ring</a>` : ''}</div></div>`;
+  }
+  return h;
+}
+
 function meldHTML() {
   const m = S.m;
   const f = S.report;
   let h = pushCardHTML('meld');
+  h += meldHelpHTML();
   h += `<section class="card info-card"><h2>Ny melding til utleier</h2>
     <span class="field-label">Hva gjelder det?</span>
     <div class="chips">${m.report_categories.map((c) => `<button class="chip" aria-pressed="${f.category === c}" data-act="report-cat" data-v="${esc(c)}">${esc(c)}</button>`).join('')}</div>
@@ -811,6 +853,7 @@ function meldHTML() {
     ${photoThumbs(f.photos, { act: 'report-photo-rm', attrs: '' })}
     ${f.photos.length < 3 ? `<button class="chip-btn add-photo" data-act="report-photo" ${S.uploading === 'report' ? 'disabled' : ''}>${S.uploading === 'report' ? 'Laster opp …' : '+ Legg ved bilde'}</button>` : ''}
     <div class="row between"><span class="status">Haster</span><button class="switch" role="switch" aria-checked="${f.urgent}" aria-label="Haster" data-act="report-urgent"></button></div>
+    ${f.urgent && landlordPhone() ? `<p class="note">Haster det veldig? <a href="tel:${landlordPhone()}">Ring utleier</a> i tillegg.</p>` : ''}
     <button class="btn primary big" data-act="report-send" ${S.uploading ? 'disabled' : ''}>Send til utleier</button>
   </section>`;
   if (m.reports.length) {
@@ -823,6 +866,7 @@ function meldHTML() {
         <span class="note">${esc(dateFmt(r.created))}</span>
         <p class="pre">${esc(r.text)}</p>
         ${photoThumbs(r.photos)}
+        ${mine || r.updates.some((u) => u.from === 'tenant') ? seenHTML(r) : ''}
         ${r.updates.length ? `<div class="thread">${r.updates.map((u) => `<div class="msg ${u.from} ${u.status ? 'sys' : ''}"><span>${esc(u.text)}</span><small>${u.from === 'landlord' ? 'Utleier' : 'Deg'} · ${esc(dateFmt(u.at))}</small></div>`).join('')}</div>` : ''}
         ${r.status !== 'done' ? `<div class="reply"><textarea class="input area" rows="2" maxlength="1000" placeholder="Skriv et svar …" data-field="reply" data-id="${r.id}">${esc(S.reply[r.id] || '')}</textarea><button class="chip-btn" data-act="report-reply" data-id="${r.id}">Send</button></div>` : ''}
       </article>`;
@@ -1527,6 +1571,7 @@ function act(a, ds) {
       cmd({ type: 'pair_start', key: ds.key }).then((r) => { if (r.ok) showToast('Tilkobling åpen i 10 min – slå bryteren av og på 7 ganger'); });
       return;
     case 'pair-stop': cmd({ type: 'pair_stop' }); return;
+    case 'meld-help': S.meldHelp = S.meldHelp === false; store.set('hybel-meld-help', S.meldHelp ? '1' : '0'); return render();
     case 'cl-full': S.clFull = S.clFull === ds.id ? null : ds.id; return render();
     case 'cl-sel': S.clSel = ds.id; window.scrollTo(0, 0); return render();
     case 'cl-mail': {

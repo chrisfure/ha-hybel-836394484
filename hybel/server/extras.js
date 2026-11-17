@@ -15,7 +15,12 @@ export const isPhotoId = (id) => /^[a-f0-9]{16}$/.test(String(id));
 const MAX_OPEN_REPORTS = 20;
 
 const newId = () => randomBytes(5).toString('hex');
-const str = (v, max) => String(v ?? '').trim().slice(0, max);
+// Rens tekst: fjern kontrolltegn og usynlige retnings-/nullbreddetegn (kan brukes til å forfalske tekst).
+const str = (v, max) => String(v ?? '')
+  .replace(/[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f]/g, '')
+  .replace(/[\u200b-\u200f\u202a-\u202e\u2066-\u2069\ufeff]/g, '')
+  .trim().slice(0, max);
+const RATE_MAX = 15; // meldinger/svar fra leietaker per time
 const isDate = (v) => /^\d{4}-\d{2}-\d{2}$/.test(String(v)) && !Number.isNaN(new Date(v).getTime());
 
 export function defaultExtras() {
@@ -288,7 +293,16 @@ export class Extras {
 
   // ---------- meldinger ----------
 
+  // Enkel bremse mot spam: maks RATE_MAX meldinger og svar fra leietaker i løpet av en time.
+  rateCheck() {
+    const now = Date.now();
+    this.rate = (this.rate || []).filter((t) => now - t < 3600e3);
+    if (this.rate.length >= RATE_MAX) throw new Error('Du har sendt mange meldinger på kort tid – vent litt, eller ring utleier hvis det haster');
+    this.rate.push(now);
+  }
+
   createReport(cmd) {
+    this.rateCheck();
     const category = REPORT_CATEGORIES.includes(cmd.category) ? cmd.category : 'Annet';
     const text = str(cmd.text, 2000);
     if (text.length < 3) throw new Error('Skriv litt om hva det gjelder');
@@ -298,8 +312,21 @@ export class Extras {
     for (const p of photos) this.claimPhoto(p);
     const r = { id: newId(), created: new Date().toISOString(), category, text, urgent: Boolean(cmd.urgent), status: 'new', updates: [], tenant_unread: false, landlord_unread: true, photos };
     this.d.reports.unshift(r);
+    this.pruneReports();
     this.engine.store.save();
-    this.engine.notify(`${category}: ${text.slice(0, 300)}`, { title: r.urgent ? 'HASTER – melding fra hybel' : 'Melding fra hybel', inbox: true, id: `melding_${r.id}`, event: 'melding' }).catch((e) => log.warn('Varsling feilet:', e.message));
+    this.engine.notify(`${category}: ${text.slice(0, 300)}`, { untrusted: true, title: r.urgent ? 'HASTER – melding fra hybel' : 'Melding fra hybel', inbox: true, id: `melding_${r.id}`, event: 'melding' }).catch((e) => log.warn('Varsling feilet:', e.message));
+  }
+
+  // Hold lagringen nede: maks 150 meldinger (eldste løste fjernes først).
+  pruneReports() {
+    const list = this.d.reports;
+    while (list.length > 150) {
+      let i = list.length - 1;
+      while (i >= 0 && list[i].status !== 'done' && list[i].status !== 'info') i--;
+      if (i < 0) break;
+      const [old] = list.splice(i, 1);
+      this.deletePhotos(old.photos);
+    }
   }
 
   tenantReply(cmd) {
@@ -307,11 +334,14 @@ export class Extras {
     if (!r) throw new Error('Meldingen finnes ikke');
     const text = str(cmd.text, 1000);
     if (!text) throw new Error('Skriv et svar');
+    if (r.updates.length >= 200) throw new Error('Samtalen er for lang – start en ny melding');
+    this.rateCheck();
     r.updates.push({ from: 'tenant', text, at: new Date().toISOString() });
     if (r.status === 'done') r.status = r.origin === 'landlord' ? 'info' : 'new';
     r.landlord_unread = true;
+    r.seen_at = null;
     this.engine.store.save();
-    this.engine.notify(`${r.category} – «${r.text.slice(0, 60)}»\n\nLeietaker svarer: ${text.slice(0, 300)}`, { title: 'Svar fra hybel', inbox: true, id: `melding_${r.id}`, event: 'svar' }).catch(() => {});
+    this.engine.notify(`${r.category} – «${r.text.slice(0, 60)}»\n\nLeietaker svarer: ${text.slice(0, 300)}`, { untrusted: true, title: 'Svar fra hybel', inbox: true, id: `melding_${r.id}`, event: 'svar' }).catch(() => {});
   }
 
   markSeen() {
@@ -332,7 +362,7 @@ export class Extras {
   adminUpdateReport(body) {
     const r = this.d.reports.find((x) => x.id === body.id);
     if (!r) throw new Error('Meldingen finnes ikke');
-    if (body.seen === true) { r.landlord_unread = false; this.save(); return; }
+    if (body.seen === true) { r.landlord_unread = false; r.seen_at = new Date().toISOString(); this.save(); return; }
     if (body.delete === true) {
       this.deletePhotos(r.photos);
       this.d.reports = this.d.reports.filter((x) => x.id !== r.id);
@@ -353,6 +383,7 @@ export class Extras {
       r.updates.push({ from: 'landlord', text, at: new Date().toISOString() });
       r.tenant_unread = true;
     }
+    if (r.landlord_unread || !r.seen_at) r.seen_at = new Date().toISOString();
     r.landlord_unread = false;
     this.engine.store.save();
     if (text || statusChanged) {
@@ -454,7 +485,7 @@ export class Extras {
     const i = this.d.info;
     return {
       info: { wifi_ssid: i.wifi_ssid, wifi_password: i.wifi_password, contact_name: i.contact_name, contact_phone: i.contact_phone, contact_email: i.contact_email, garbage: i.garbage, rules: i.rules, emergency: i.emergency, other: i.other, safety: this.safetyView() },
-      reports: this.d.reports.map((r) => ({ id: r.id, created: r.created, origin: r.origin || 'tenant', category: r.category, text: r.text, urgent: r.urgent, status: r.status, updates: r.updates, unread: r.tenant_unread, photos: r.photos || [] })),
+      reports: this.d.reports.map((r) => ({ id: r.id, created: r.created, origin: r.origin || 'tenant', category: r.category, text: r.text, urgent: r.urgent, status: r.status, updates: r.updates, unread: r.tenant_unread, photos: r.photos || [], seen: !r.landlord_unread && Boolean(r.seen_at || r.updates.some((u) => u.from === 'landlord')), waiting_since: r.landlord_unread ? ([...r.updates].reverse().find((u) => u.from === 'tenant')?.at || r.created) : null })),
       report_categories: REPORT_CATEGORIES,
       electricity: this.electricityView(),
       checklists: this.checklists.view(),
