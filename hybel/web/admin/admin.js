@@ -54,6 +54,7 @@ function pickCfg(st) {
     info: st.extras.info,
     electricity: { price_per_kwh: st.extras.electricity.price, note: st.extras.electricity.note },
     checklist_template: st.extras.checklist_template,
+    clean_template: st.extras.clean_template,
     lease: st.extras.lease.settings
   }));
 }
@@ -286,11 +287,13 @@ function checklistPanel() {
       h += `<div class="cl-body">`;
       for (const room of rooms) {
         const rows = c.rows.filter((r) => r.room === room);
-        const ok = rows.filter((r) => r.status === 'ok').length;
+        const cond = rows.filter((r) => r.kind !== 'clean');
+        const cln = rows.filter((r) => r.kind === 'clean');
+        const ok = cond.filter((r) => r.status === 'ok').length;
         const rn = rows.filter((r) => r.status === 'note');
         const miss = rows.filter((r) => !r.status).length;
-        h += `<div class="cl-room"><div class="cl-room-h"><strong>${esc(room)}</strong><span class="help">${ok} OK${miss ? ` · ${miss} ikke sjekket` : ''}</span></div>
-          ${rn.map((r) => `<div class="cl-note"><span class="t">${esc(r.item)}</span>${r.note ? `<p class="pre">${esc(r.note)}</p>` : ''}${photoThumbs(r.photos)}</div>`).join('')}
+        h += `<div class="cl-room"><div class="cl-room-h"><strong>${esc(room)}</strong><span class="help">${cond.length ? `${ok} OK` : ''}${cln.length ? `${cond.length ? ' · ' : ''}vask ${cln.filter((r) => r.status === 'ok').length}/${cln.length}` : ''}${miss ? ` · ${miss} ikke sjekket` : ''}</span></div>
+          ${rn.map((r) => `<div class="cl-note"><span class="t">${esc(r.item)}${r.kind === 'clean' ? ' – ikke vasket' : ''}</span>${r.note ? `<p class="pre">${esc(r.note)}</p>` : ''}${photoThumbs(r.photos)}</div>`).join('')}
         </div>`;
       }
       if (c.comment) h += `<div class="cl-room"><strong>Kommentar fra leietaker</strong><p class="pre">${esc(c.comment)}</p></div>`;
@@ -311,6 +314,8 @@ function checklistPanel() {
   h += `<details class="cl-tpl"><summary>Rediger punktene i sjekklisten</summary>
       <p class="help">Ett rom per linje: <code>Rom: punkt, punkt, punkt</code>. Endringer gjelder nye sjekklister. Husk «Lagre endringer» øverst.</p>
       <textarea class="input area mono-area" rows="9" data-field="cl-template">${esc(A.cfg.checklist_template || '')}</textarea>
+      <p class="help" style="margin-top:10px"><strong>Vask ved utflytting</strong> – egne avkrysningspunkter som kommer i tillegg på utflyttingssjekklisten, under samme rom. Tøm feltet for å ikke ha vaskeliste.</p>
+      <textarea class="input area mono-area" rows="6" data-field="cl-clean-template">${esc(A.cfg.clean_template || '')}</textarea>
     </details>`;
   return h + `</section>`;
 }
@@ -943,6 +948,7 @@ document.addEventListener('input', (ev) => {
   else if (f === 'compose') { A.compose = el.value; }
   else if (f === 'cl-comment') { A.clComment[el.dataset.id] = el.value; }
   else if (f === 'cl-template') { A.cfg.checklist_template = el.value; setDirty(); }
+  else if (f === 'cl-clean-template') { A.cfg.clean_template = el.value; setDirty(); }
   else if (f === 'admin-reply') { A.replies[el.dataset.id] = el.value; }
   else if (f === 'notify') { A.cfg.alerts.notify_service = el.value.trim(); setDirty(); }
   else if (f === 'q') { A.q = el.value; render(); }

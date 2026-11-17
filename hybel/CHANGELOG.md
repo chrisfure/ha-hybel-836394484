@@ -1,5 +1,10 @@
 # Endringslogg
 
+## 0.12.1
+
+- Utflyttingssjekklisten har egne avkrysningsbokser for **vask** under hvert rom (kjøleskap, ovn, bad, sluk, gulv, vinduer m.m.), i tillegg til tilstanden. Leietaker krysser av «Vasket» eller velger «Ikke gjort» med forklaring og bilde. Fremdrift for vask vises for seg, og vasken er med i PDF-en og på utleiersiden.
+- Vaskepunktene kan redigeres under «Rediger punktene i sjekklisten» på utleiersiden.
+
 ## 0.12.0
 
 - **Strømforbruk** i statistikken: søylediagram per time (døgn) eller per dag (uke) for termostater og ovner med egen energimåler, med totalt forbruk, kostnad (utleiers kWh-pris), høyeste og snitt, og hvor mye som brukes akkurat nå. Trykk på en søyle for å se forbruket den timen/dagen.

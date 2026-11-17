@@ -848,7 +848,8 @@ function sjekkHTML() {
   h += `<section class="card info-card cl-top"><h2>${esc(c.label)}ssjekkliste</h2>`;
   if (editable) {
     h += `<p class="note">Gå gjennom hybelen og trykk <strong>OK</strong> når noe er i orden, eller <strong>Merknad</strong> hvis du ser riper, flekker, skader eller noe som ikke virker. Ta gjerne bilder – det gjør det enklere for begge senere.</p>
-      <div class="progress"><span style="width:${pct}%"></span></div><span class="note">${c.done} av ${c.total} punkter</span>`;
+      <div class="progress"><span style="width:${pct}%"></span></div><span class="note">${c.done} av ${c.total} punkter${(() => { const cl = c.rows.filter((r) => r.kind === 'clean'); return cl.length ? ` · vask ${cl.filter((r) => r.status === 'ok').length} av ${cl.length}` : ''; })()}</span>
+      ${c.rows.some((r) => r.kind === 'clean') ? '<p class="note">Under hvert rom står også det som skal vaskes. Kryss av når det er gjort – ta gjerne et bilde av kjøleskap, ovn og bad når det er ferdig.</p>' : ''}`;
   } else {
     h += `<p class="note">${c.status === 'approved' ? `Godkjent av utleier ${esc(dateFmt(c.approved_at))}.` : `Sendt inn ${esc(dateFmt(c.submitted_at))}. Utleier går gjennom den.`}</p>
       ${c.landlord_comment ? `<div class="msg landlord"><span>${esc(c.landlord_comment)}</span><small>Utleier</small></div>` : ''}`;
@@ -867,17 +868,26 @@ function sjekkHTML() {
     const rows = c.rows.map((r, i) => ({ ...r, i })).filter((r) => r.room === room);
     const done = rows.filter((r) => r.status).length;
     h += `<section><h2 class="group-title">${esc(room)} <span class="gt-count">${done}/${rows.length}</span></h2><div class="card cl-list">`;
+    let cleanHead = false;
     for (const r of rows) {
       const key = `${c.id}-${r.i}`;
-      h += `<div class="cl-row ${r.status || ''}">
-        <div class="cl-line"><span class="t">${esc(r.item)}</span>
+      const clean = r.kind === 'clean';
+      if (clean && !cleanHead) {
+        cleanHead = true;
+        h += `<div class="cl-sub">${svg('M3 21h18M6 21V10l6-6 6 6v11', 14, 2)} Vask før utflytting</div>`;
+      }
+      const okLbl = clean ? 'Vasket' : 'OK', noteLbl = clean ? 'Ikke gjort' : 'Merknad';
+      h += `<div class="cl-row ${r.status || ''} ${clean ? 'clean' : ''}">
+        <div class="cl-line">${clean && editable
+            ? `<button class="cl-check" role="checkbox" aria-checked="${r.status === 'ok'}" data-act="cl-status" data-id="${c.id}" data-i="${r.i}" data-v="ok"><span class="box"></span><span class="t">${esc(r.item)}</span></button>`
+            : `<span class="t">${esc(r.item)}</span>`}
           ${editable ? `<span class="cl-btns">
-            <button class="cl-b ok" aria-pressed="${r.status === 'ok'}" data-act="cl-status" data-id="${c.id}" data-i="${r.i}" data-v="ok">OK</button>
-            <button class="cl-b note" aria-pressed="${r.status === 'note'}" data-act="cl-status" data-id="${c.id}" data-i="${r.i}" data-v="note">Merknad</button></span>`
-            : `<span class="pill ${r.status === 'ok' ? 'st-done' : r.status === 'note' ? 'st-new' : ''}">${r.status === 'ok' ? 'OK' : r.status === 'note' ? 'Merknad' : '–'}</span>`}
+            ${clean ? '' : `<button class="cl-b ok" aria-pressed="${r.status === 'ok'}" data-act="cl-status" data-id="${c.id}" data-i="${r.i}" data-v="ok">${okLbl}</button>`}
+            <button class="cl-b note ${clean ? 'small' : ''}" aria-pressed="${r.status === 'note'}" data-act="cl-status" data-id="${c.id}" data-i="${r.i}" data-v="note">${noteLbl}</button></span>`
+            : `<span class="pill ${r.status === 'ok' ? 'st-done' : r.status === 'note' ? 'st-new' : ''}">${r.status === 'ok' ? okLbl : r.status === 'note' ? noteLbl : '–'}</span>`}
         </div>
         ${r.status === 'note' ? (editable
-          ? `<textarea class="input area" rows="2" maxlength="1000" placeholder="Hva ser du? F.eks. ripe i gulvet ved døra" data-field="cl-note" data-id="${c.id}" data-i="${r.i}">${esc(r.note)}</textarea>
+          ? `<textarea class="input area" rows="2" maxlength="1000" placeholder="${clean ? 'Hvorfor ikke? F.eks. avtalt med utleier' : 'Hva ser du? F.eks. ripe i gulvet ved døra'}" data-field="cl-note" data-id="${c.id}" data-i="${r.i}">${esc(r.note)}</textarea>
              ${photoThumbs(r.photos, { act: 'cl-photo-rm', attrs: `data-id="${c.id}" data-i="${r.i}"` })}
              ${r.photos.length < 4 ? `<button class="chip-btn add-photo" data-act="cl-photo" data-id="${c.id}" data-i="${r.i}" ${S.uploading ? 'disabled' : ''}>${S.uploading === key ? 'Laster opp …' : '+ Ta bilde'}</button>` : ''}`
           : `${r.note ? `<p class="pre note">${esc(r.note)}</p>` : ''}${photoThumbs(r.photos)}`) : ''}

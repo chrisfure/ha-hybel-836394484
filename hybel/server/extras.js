@@ -4,7 +4,7 @@ import { mkdirSync, writeFileSync, unlinkSync, existsSync } from 'node:fs';
 import { join } from 'node:path';
 import { log } from './log.js';
 import { loadVapid, sendPush } from './webpush.js';
-import { Checklists, DEFAULT_TEMPLATE, parseTemplate, templateToText } from './checklist.js';
+import { Checklists, DEFAULT_TEMPLATE, DEFAULT_CLEAN_TEMPLATE, parseTemplate, templateToText } from './checklist.js';
 import { Lease, defaultLease, localDate } from './lease.js';
 
 export const REPORT_CATEGORIES = ['Vann og rør', 'Elektrisk', 'Varme og ventilasjon', 'Hvitevarer', 'Dører, vinduer og lås', 'Annet'];
@@ -467,11 +467,17 @@ export class Extras {
       lease: { ...this.lease.view(), settings: this.d.lease },
       docs: this.docsView(true),
       checklist_template: templateToText(this.d.checklist_template?.length ? this.d.checklist_template : DEFAULT_TEMPLATE),
+      clean_template: templateToText(Array.isArray(this.d.clean_template) ? this.d.clean_template : DEFAULT_CLEAN_TEMPLATE),
       push_devices: this.d.push_subs.map((x) => ({ device: x.device, created: x.created }))
     };
   }
 
   saveTemplate(body, errors) {
+    if (body.clean_template !== undefined) {
+      const c = parseTemplate(body.clean_template);
+      this.d.clean_template = c.length ? c : [];
+      if (!c.length && String(body.clean_template).trim()) errors.push('Vaskelisten må skrives som «Rom: oppgave, oppgave»');
+    }
     if (body.checklist_template === undefined) return;
     const t = parseTemplate(body.checklist_template);
     if (!t.length) errors.push('Sjekklisten må ha minst ett rom, f.eks. «Bad: Gulv, Dusj»');

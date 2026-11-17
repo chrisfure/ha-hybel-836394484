@@ -18,6 +18,14 @@ export const DEFAULT_TEMPLATE = [
   { room: 'Annet', items: ['Nøkler mottatt', 'Røykvarsler testet', 'Brannslukker eller brannteppe'] }
 ];
 
+// Vask ved utflytting: egne avkrysningspunkter per rom, i tillegg til tilstand.
+export const DEFAULT_CLEAN_TEMPLATE = [
+  { room: 'Kjøkken', items: ['Kjøleskap og fryser tømt, vasket og avrimet', 'Komfyr, stekeovn og plater rengjort', 'Kjøkkenvifte og fettfilter rengjort', 'Skap og skuffer vasket inn- og utvendig', 'Benkeplate og oppvaskkum rengjort', 'Oppvaskmaskin tømt, filter rengjort'] },
+  { room: 'Bad', items: ['Toalett vasket (også bak og under)', 'Servant, kraner og speil rengjort', 'Dusj og fliser vasket og avkalket', 'Sluk renset for hår', 'Skap vasket inn- og utvendig'] },
+  { room: 'Soverom', items: ['Skap tømt og vasket'] },
+  { room: 'Hele hybelen', items: ['Gulv støvsuget og vasket', 'Lister, dører og karmer tørket av', 'Vinduer pusset innvendig', 'Brytere og stikkontakter tørket av', 'Alt eget innbo og søppel fjernet'] }
+];
+
 export function templateToText(t) {
   return (t || []).map((r) => `${r.room}: ${r.items.join(', ')}`).join('\n');
 }
@@ -71,9 +79,21 @@ export class Checklists {
     if (!TYPE_LABEL[type]) throw new Error('Ukjent type');
     if (this.list.some((c) => c.status === 'open')) throw new Error('Det finnes allerede en sjekkliste som ikke er sendt inn');
     const tpl = this.d.checklist_template?.length ? this.d.checklist_template : DEFAULT_TEMPLATE;
+    const rows = tpl.flatMap((r) => r.items.map((item) => ({ room: r.room, item, status: null, note: '', photos: [] })));
+    if (type === 'out') {
+      // Vaskepunkter legges under samme rom som tilstanden; rom som bare finnes i vaskelisten kommer til slutt.
+      const clean = Array.isArray(this.d.clean_template) ? this.d.clean_template : DEFAULT_CLEAN_TEMPLATE;
+      for (const r of clean) {
+        const cleanRows = r.items.map((item) => ({ room: r.room, item, kind: 'clean', status: null, note: '', photos: [] }));
+        let at = -1;
+        rows.forEach((x, i) => { if (x.room === r.room) at = i; });
+        if (at >= 0) rows.splice(at + 1, 0, ...cleanRows);
+        else rows.push(...cleanRows);
+      }
+    }
     const c = {
       id: newId(), type, status: 'open', created: new Date().toISOString(),
-      rows: tpl.flatMap((r) => r.items.map((item) => ({ room: r.room, item, status: null, note: '', photos: [] }))),
+      rows,
       comment: '', landlord_comment: ''
     };
     this.list.unshift(c);
@@ -160,7 +180,7 @@ export class Checklists {
     this.x.save();
     const notes = c.rows.filter((r) => r.status === 'note');
     const photos = c.rows.reduce((s, r) => s + r.photos.length, 0);
-    const lines = notes.slice(0, 6).map((r) => `• ${r.room} – ${r.item}${r.note ? `: ${r.note.slice(0, 80)}` : ''}`);
+    const lines = notes.slice(0, 6).map((r) => `• ${r.room} – ${r.item}${r.kind === 'clean' ? ' (ikke vasket)' : ''}${r.note ? `: ${r.note.slice(0, 80)}` : ''}`);
     this.x.engine.notify(
       `${notes.length ? `${notes.length} merknad${notes.length === 1 ? '' : 'er'}` : 'Alt merket som i orden'}${photos ? `, ${photos} bilde${photos === 1 ? '' : 'r'}` : ''}.${lines.length ? `\n${lines.join('\n')}${notes.length > 6 ? '\n…' : ''}` : ''}\n\nSe hele listen på utleiersiden.`,
       { title: `${TYPE_LABEL[c.type]}ssjekkliste sendt inn`, inbox: true, id: `sjekk_${c.id}`, event: 'sjekkliste' }
@@ -212,7 +232,10 @@ export class Checklists {
     const ok = c.rows.filter((r) => r.status === 'ok').length;
     doc.y -= 6;
     doc.rect(M, doc.y - 26, CW, 26, '0.96 0.94 0.91');
-    doc.text(`${c.rows.length} punkter: ${ok} OK, ${notes} med merknad${c.rows.length - ok - notes ? `, ${c.rows.length - ok - notes} ikke besvart` : ''}.`, M + 10, doc.y - 17, 10, true);
+    const cl = c.rows.filter((r) => r.kind === 'clean');
+    const tilst = c.rows.filter((r) => r.kind !== 'clean');
+    const tOk = tilst.filter((r) => r.status === 'ok').length, tNote = tilst.filter((r) => r.status === 'note').length;
+    doc.text(`Tilstand: ${tOk} OK, ${tNote} med merknad${cl.length ? `   ·   Vask: ${cl.filter((r) => r.status === 'ok').length} av ${cl.length} vasket` : ''}${c.rows.length - ok - notes ? `   ·   ${c.rows.length - ok - notes} ikke besvart` : ''}`, M + 10, doc.y - 17, 10, true);
     doc.y -= 38;
 
     const COL = 170;
@@ -223,14 +246,23 @@ export class Checklists {
       doc.y -= 20;
       doc.line(M, doc.y, M + CW, doc.y, 0.75, 0.8);
       doc.y -= 4;
+      let cleanHead = false;
       for (const r of c.rows.filter((x) => x.room === room)) {
+        if (r.kind === 'clean' && !cleanHead) {
+          cleanHead = true;
+          doc.ensure(30);
+          doc.text('Vask', M, doc.y - 12, 9.5, true, GRAY);
+          doc.y -= 16;
+        }
         const itemLines = wrap(r.item, COL - 8, 10);
         const noteLines = r.note ? wrap(r.note, CW - COL, 9.5) : [];
         const h = Math.max(itemLines.length * 13, 13 + noteLines.length * 12.5) + 8;
         doc.ensure(h);
         const top = doc.y;
         itemLines.forEach((l, i) => doc.text(l, M, top - 12 - i * 13, 10));
-        const st = r.status === 'ok' ? ['OK', GREEN] : r.status === 'note' ? ['Merknad', AMBER] : ['Ikke besvart', GRAY];
+        const st = r.kind === 'clean'
+          ? (r.status === 'ok' ? ['Vasket', GREEN] : r.status === 'note' ? ['Ikke vasket', AMBER] : ['Ikke besvart', GRAY])
+          : (r.status === 'ok' ? ['OK', GREEN] : r.status === 'note' ? ['Merknad', AMBER] : ['Ikke besvart', GRAY]);
         doc.text(st[0], M + COL, top - 12, 10, true, st[1]);
         noteLines.forEach((l, i) => doc.text(l, M + COL, top - 25 - i * 12.5, 9.5));
         doc.y = top - h;
