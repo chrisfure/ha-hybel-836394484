@@ -98,7 +98,7 @@ export class Checklists {
     };
     this.list.unshift(c);
     this.x.save();
-    this.x.pushTenant({ title: `${TYPE_LABEL[type]}ssjekkliste`, body: 'Gå gjennom hybelen og merk det som er i orden, eller skriv hva du ser. Ta gjerne bilder.', tag: `sjekk-${c.id}`, url: '/?vis=sjekk' });
+    this.x.pushTenant({ title: `${TYPE_LABEL[type]}ssjekkliste`, body: 'Gå gjennom hybelen og merk det som er i orden, eller skriv hva du ser. Ta gjerne bilder.', tag: `sjekk-${c.id}`, url: '/?vis=sjekk', en: { title: `${type === 'out' ? 'Move-out' : 'Move-in'} checklist`, body: 'Go through the flat and mark what is fine, or describe what you see. Feel free to take photos.' } });
   }
 
   approve(id, comment) {
@@ -110,7 +110,7 @@ export class Checklists {
     c.tenant_unread = true;
     this.x.save();
     this.x.engine.dismissNotice(`sjekk_${c.id}`);
-    this.x.pushTenant({ title: `${TYPE_LABEL[c.type]}ssjekklisten er godkjent`, body: c.landlord_comment || 'Utleier har gått gjennom sjekklisten.', tag: `sjekk-${c.id}`, url: '/?vis=sjekk' });
+    this.x.pushTenant({ title: `${TYPE_LABEL[c.type]}ssjekklisten er godkjent`, body: c.landlord_comment || 'Utleier har gått gjennom sjekklisten.', tag: `sjekk-${c.id}`, url: '/?vis=sjekk', en: { title: `The ${c.type === 'out' ? 'move-out' : 'move-in'} checklist is approved`, body: c.landlord_comment || 'The landlord has reviewed the checklist.' } });
   }
 
   reopen(id) {
@@ -120,7 +120,7 @@ export class Checklists {
     delete c.submitted_at;
     delete c.approved_at;
     this.x.save();
-    this.x.pushTenant({ title: 'Sjekklisten er åpnet igjen', body: 'Utleier har åpnet sjekklisten slik at du kan gjøre endringer.', tag: `sjekk-${c.id}`, url: '/?vis=sjekk' });
+    this.x.pushTenant({ title: 'Sjekklisten er åpnet igjen', body: 'Utleier har åpnet sjekklisten slik at du kan gjøre endringer.', tag: `sjekk-${c.id}`, url: '/?vis=sjekk', en: { title: 'The checklist has been reopened', body: 'The landlord has reopened the checklist so you can make changes.' } });
   }
 
   remove(id) {

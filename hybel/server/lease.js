@@ -14,6 +14,8 @@ const addMonths = (m, n) => {
 };
 const daysIn = (m) => { const [y, mo] = m.split('-').map(Number); return new Date(y, mo, 0).getDate(); };
 const dueDate = (m, day) => `${m}-${pad(Math.min(day, daysIn(m)))}`;
+const MONTHS_EN = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
+const monthNameEn = (m) => `${MONTHS_EN[Number(m.slice(5)) - 1]} ${m.slice(0, 4)}`;
 const MONTHS = ['januar', 'februar', 'mars', 'april', 'mai', 'juni', 'juli', 'august', 'september', 'oktober', 'november', 'desember'];
 export const monthName = (m) => `${MONTHS[Number(m.slice(5)) - 1]} ${m.slice(0, 4)}`;
 const addDays = (iso, n) => { const d = new Date(`${iso}T12:00:00`); d.setDate(d.getDate() + n); return localDate(d); };
@@ -169,7 +171,7 @@ export class Lease {
     delete this.pay[month];
     this.x.engine.dismissNotice(`betalt_${month}`);
     this.x.save();
-    this.x.pushTenant({ title: 'Betalingen er ikke kommet fram ennå', body: `Utleier finner ikke betalingen for ${monthName(month)} ennå. Sjekk at den er sendt, eller send en melding.`, tag: `betaling-${month}`, url: '/?vis=strom' });
+    this.x.pushTenant({ title: 'Betalingen er ikke kommet fram ennå', body: `Utleier finner ikke betalingen for ${monthName(month)} ennå. Sjekk at den er sendt, eller send en melding.`, tag: `betaling-${month}`, url: '/?vis=strom', en: { title: "The payment hasn't arrived yet", body: `The landlord can't find the payment for ${monthNameEn(month)} yet. Check that it has been sent, or send a message.` } });
   }
 
   setPaid(month, paid) {
@@ -177,7 +179,7 @@ export class Lease {
     const row = this.ledger().find((r) => r.month === month);
     if (!row) throw new Error('Fant ikke måneden');
     this.x.engine.dismissNotice(`betalt_${month}`);
-    if (paid && row.claimed_at) this.x.pushTenant({ title: 'Betalingen er mottatt ✓', body: `Utleier har bekreftet betalingen for ${monthName(month)}.`, tag: `betaling-${month}`, url: '/?vis=strom' });
+    if (paid && row.claimed_at) this.x.pushTenant({ title: 'Betalingen er mottatt ✓', body: `Utleier har bekreftet betalingen for ${monthName(month)}.`, tag: `betaling-${month}`, url: '/?vis=strom', en: { title: 'Payment received ✓', body: `The landlord has confirmed the payment for ${monthNameEn(month)}.` } });
     if (paid) this.pay[month] = { paid: true, at: new Date().toISOString(), rent: row.rent, rent_note: row.rent_note, total: row.total };
     else delete this.pay[month];
     for (const p of row.electricity) {
@@ -436,7 +438,7 @@ export class Lease {
         flags[key] = today;
         ch = true;
         const parts = [r.rent ? `husleie ${kr(r.rent)}` : null, r.electricity.length ? `strøm ${kr(r.electricity.reduce((s, p) => s + (p.amount || 0), 0))}` : null].filter(Boolean).join(' + ');
-        this.x.pushTenant({ title: `Betaling ${days === 0 ? 'i dag' : `om ${days} dag${days === 1 ? '' : 'er'}`}: ${kr(r.total)}`, body: `${parts}${l.account ? `. Kontonr. ${l.account}` : ''}`, tag: `betaling-${r.month}`, url: '/?vis=strom' });
+        this.x.pushTenant({ title: `Betaling ${days === 0 ? 'i dag' : `om ${days} dag${days === 1 ? '' : 'er'}`}: ${kr(r.total)}`, body: `${parts}${l.account ? `. Kontonr. ${l.account}` : ''}`, tag: `betaling-${r.month}`, url: '/?vis=strom', en: { title: `Payment ${days === 0 ? 'today' : `in ${days} day${days === 1 ? '' : 's'}`}: ${kr(r.total)}`, body: `${parts.replace('husleie', 'rent').replace('strøm', 'electricity')}${l.account ? `. Account ${l.account}` : ''}` } });
       }
     }
 
@@ -450,7 +452,7 @@ export class Lease {
           ch = true;
           const when = new Date(l.end).toLocaleDateString('nb-NO', { day: 'numeric', month: 'long', year: 'numeric' });
           this.x.engine.notify(`Leiekontrakten for hybelen utløper ${when} (om ${left} dager).`, { title: 'Leiekontrakt utløper snart', inbox: true, id: `kontrakt_${n}`, event: 'kontrakt' }).catch(() => {});
-          this.x.pushTenant({ title: 'Leiekontrakten utløper snart', body: `Kontrakten løper til ${when}. Ta kontakt med utleier om veien videre.`, tag: 'kontrakt', url: '/?vis=strom' });
+          this.x.pushTenant({ title: 'Leiekontrakten utløper snart', body: `Kontrakten løper til ${when}. Ta kontakt med utleier om veien videre.`, tag: 'kontrakt', url: '/?vis=strom', en: { title: 'Your lease ends soon', body: `The contract runs until ${new Date(l.end).toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric' })}. Contact the landlord about what happens next.` } });
         }
       }
     }

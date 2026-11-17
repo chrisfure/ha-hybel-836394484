@@ -12,6 +12,7 @@ import { Lease, defaultLease, localDate } from './lease.js';
 export const REPORT_CATEGORIES = ['Vann og rør', 'Elektrisk', 'Varme og ventilasjon', 'Hvitevarer', 'Dører, vinduer og lås', 'Annet'];
 export const REPORT_STATUS = ['new', 'in_progress', 'done'];
 const STATUS_LABEL = { new: 'Mottatt', in_progress: 'Under arbeid', done: 'Løst', info: 'Fra utleier' };
+const STATUS_EN = { new: 'Received', in_progress: 'In progress', done: 'Resolved', info: 'From the landlord' };
 const MAX_REPORT_PHOTOS = 3;
 export const isPhotoId = (id) => /^[a-f0-9]{16}$/.test(String(id));
 const MAX_OPEN_REPORTS = 20;
@@ -127,7 +128,7 @@ export class Extras {
     const doc = { id, name: clean, ext, type, size: buf.length, at: new Date().toISOString(), visible: true };
     docs.unshift(doc);
     this.save();
-    this.pushTenant({ title: 'Nytt dokument fra utleier', body: clean, tag: `doc-${id}`, url: '/?vis=strom' });
+    this.pushTenant({ title: 'Nytt dokument fra utleier', body: clean, tag: `doc-${id}`, url: '/?vis=strom', en: { title: 'New document from the landlord', body: clean } });
     return doc;
   }
 
@@ -188,7 +189,7 @@ export class Extras {
     if (!/^https:\/\/[^\s]{10,800}$/.test(endpoint)) throw new Error('Ugyldig abonnement');
     if (!sub.keys?.p256dh || !sub.keys?.auth) throw new Error('Ugyldig abonnement');
     const subs = this.d.push_subs;
-    const entry = { endpoint, keys: { p256dh: String(sub.keys.p256dh).slice(0, 200), auth: String(sub.keys.auth).slice(0, 100) }, created: new Date().toISOString(), device: str(cmd.device, 60) };
+    const entry = { endpoint, keys: { p256dh: String(sub.keys.p256dh).slice(0, 200), auth: String(sub.keys.auth).slice(0, 100) }, created: new Date().toISOString(), device: str(cmd.device, 60), lang: cmd.lang === 'en' ? 'en' : 'no' };
     this.d.push_subs = [...subs.filter((s) => s.endpoint !== endpoint), entry].slice(-8);
     if (ctx?.origin) this.d.push_subject = ctx.origin;
     this.save();
@@ -207,7 +208,8 @@ export class Extras {
     let ok = 0;
     const gone = [];
     await Promise.all(subs.map(async (s) => {
-      const r = await sendPush(this.vapid, s, { title: msg.title, body: msg.body, tag: msg.tag || 'hybel', url: msg.url || '/' }, subject, { urgency: msg.urgency });
+      const m = s.lang === 'en' && msg.en ? msg.en : msg;
+      const r = await sendPush(this.vapid, s, { title: m.title, body: m.body, tag: msg.tag || 'hybel', url: msg.url || '/' }, subject, { urgency: msg.urgency });
       if (r === 'ok') ok++;
       if (r === 'gone') gone.push(s.endpoint);
     }));
@@ -237,7 +239,7 @@ export class Extras {
       if (!last || !last.date.startsWith(month) || Number(last.date.slice(8)) < 20) {
         this.d.push_reminded = month;
         ch = true;
-        this.pushTenant({ title: 'Les av strømmen', body: 'Det er slutten av måneden – husk å lese av strømmåleren.', tag: 'strom', url: '/?vis=strom' });
+        this.pushTenant({ title: 'Les av strømmen', body: 'Det er slutten av måneden – husk å lese av strømmåleren.', tag: 'strom', url: '/?vis=strom', en: { title: 'Read the electricity meter', body: "It's the end of the month – remember to read the electricity meter." } });
       }
     }
     if (this.maint.tick(now)) ch = true;
@@ -374,7 +376,7 @@ export class Extras {
     const r = { id: newId(), created: new Date().toISOString(), origin: 'landlord', category: 'Fra utleier', text, urgent: false, status: 'info', updates: [], tenant_unread: true, photos: [] };
     this.d.reports.unshift(r);
     this.save();
-    this.pushTenant({ title: 'Melding fra utleier', body: text.slice(0, 240), tag: `melding-${r.id}`, url: '/?vis=meld' });
+    this.pushTenant({ title: 'Melding fra utleier', body: text.slice(0, 240), tag: `melding-${r.id}`, url: '/?vis=meld', en: { title: 'Message from the landlord', body: text.slice(0, 240) } });
   }
 
   adminUpdateReport(body) {
@@ -410,7 +412,11 @@ export class Extras {
         title: text ? 'Svar fra utleier' : `Status: ${STATUS_LABEL[r.status]}`,
         body: text ? text.slice(0, 240) : `Gjelder ${what}`,
         tag: `melding-${r.id}`,
-        url: '/?vis=meld'
+        url: '/?vis=meld',
+        en: {
+          title: text ? 'Reply from the landlord' : `Status: ${STATUS_EN[r.status] || r.status}`,
+          body: text ? text.slice(0, 240) : `About ${r.origin === 'landlord' ? 'the message from the landlord' : `“${r.text.slice(0, 50)}”`}`
+        }
       });
     }
   }
@@ -548,8 +554,13 @@ export class Extras {
     switch (cmd.type) {
       case 'push_subscribe': this.pushSubscribe(cmd, ctx); return true;
       case 'push_unsubscribe': this.pushUnsubscribe(cmd); return true;
+      case 'push_lang': {
+        const s = this.d.push_subs.find((x) => x.endpoint === String(cmd.endpoint || ''));
+        if (s) { s.lang = cmd.lang === 'en' ? 'en' : 'no'; this.save(); }
+        return true;
+      }
       case 'push_test': {
-        const n = await this.pushTenant({ title: 'Varsler er på 👍', body: 'Slik ser det ut når utleier sender deg en melding.', tag: 'test' }, String(cmd.endpoint || ''));
+        const n = await this.pushTenant({ title: 'Varsler er på 👍', body: 'Slik ser det ut når utleier sender deg en melding.', tag: 'test', en: { title: 'Notifications are on 👍', body: 'This is what it looks like when the landlord sends you a message.' } }, String(cmd.endpoint || ''));
         if (!n) throw new Error('Testvarselet kom ikke fram. Prøv å slå varsler av og på igjen.');
         return true;
       }

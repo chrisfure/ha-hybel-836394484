@@ -120,7 +120,7 @@ export class Maintenance {
       ch = true;
       this.x.engine.notify(`Det er tid for: ${t.title} (${t.months === 1 ? 'hver måned' : `hver ${t.months}. måned`}).${t.tenant ? ' Leietaker har også fått påminnelse.' : ''} Marker som utført under Vedlikehold i Hybel.`,
         { title: 'Hybel: vedlikehold', inbox: true, id: `vedlikehold_${t.id}`, event: 'vedlikehold' }).catch(() => {});
-      if (t.tenant) this.x.pushTenant({ title: 'Påminnelse', body: `${t.title}. Trykk «Gjort» i appen når det er ordnet.`, tag: `vedlikehold-${t.id}`, url: '/?vis=info' });
+      if (t.tenant) this.x.pushTenant({ title: 'Påminnelse', body: `${t.title}. Trykk «Gjort» i appen når det er ordnet.`, tag: `vedlikehold-${t.id}`, url: '/?vis=info', en: { title: 'Reminder', body: `${t.title}. Tap “Done” in the app when it’s taken care of.` } });
     }
     return ch;
   }

@@ -1,5 +1,9 @@
 # Endringslogg
 
+## 0.15.0
+
+- Engelsk versjon av hybelappen. Velges under Innstillinger → Språk (Norsk / English); standard følger språket på telefonen. Knapper, hjelpetekster, feilmeldinger og pushvarsler kommer på engelsk. Tekst utleier har skrevet selv (husregler, sjekklistepunkter, meldinger) og fakturaer vises som før, på norsk.
+
 ## 0.14.0
 
 - «Jeg har betalt»: leietaker kan melde fra om at en faktura er betalt. Du får varsel og bekrefter med «Bekreft mottatt» (leietaker får pushvarsel) eller «Ikke mottatt». Meldte fakturaer regnes ikke som forfalt og får ingen betalingspåminnelse.
