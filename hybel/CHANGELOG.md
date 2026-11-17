@@ -1,5 +1,14 @@
 # Endringslogg
 
+## 0.14.0
+
+- «Jeg har betalt»: leietaker kan melde fra om at en faktura er betalt. Du får varsel og bekrefter med «Bekreft mottatt» (leietaker får pushvarsel) eller «Ikke mottatt». Meldte fakturaer regnes ikke som forfalt og får ingen betalingspåminnelse.
+- Årsoversikt (PDF) til skattemeldingen under Økonomi: husleie og strøm per måned, betalt og ikke betalt, også fra tidligere leieforhold.
+- Varsel når en synlig enhet har vært uten kontakt lenge (standard 2 timer, kan endres under «Varsle meg»), og ny melding når den er tilbake.
+- Vedlikehold: gjentakende oppgaver med intervall (filterbytte, rens av sluk, kjøkkenvifte …). Du får påminnelse når noe forfaller. Oppgaver merket «Leietaker» vises i hybelappen med en «Gjort»-knapp.
+- Mørk modus på utleiersiden (velg tema øverst – automatisk følger systemet).
+- Sikkerhetskopi: viser når Home Assistant sist tok automatisk sikkerhetskopi, og arkiv (ZIP) av leieforholdet med alle fakturaer, årsoversikter, sjekklister, dokumenter, bilder og meldinger – også for tidligere leietakere.
+
 ## 0.13.0
 
 - Mørk modus i hybelappen. Under Innstillinger → Utseende kan leietaker velge Automatisk (følger telefonen), Lys eller Mørk. Valget huskes på telefonen.

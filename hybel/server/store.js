@@ -14,7 +14,7 @@ export function defaultData() {
     automations: [],
     tenant_prefs: { boost_minutes: 30 },
     boost: null,
-    alerts: { notify_service: '', entities: [] },
+    alerts: { notify_service: '', entities: [], offline_hours: 2 },
     last_tenant_activity: null,
     auto_runs: {},
     auto_last: {},

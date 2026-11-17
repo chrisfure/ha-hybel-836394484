@@ -5,6 +5,8 @@ import { join } from 'node:path';
 import { log } from './log.js';
 import { loadVapid, sendPush } from './webpush.js';
 import { Checklists, DEFAULT_TEMPLATE, DEFAULT_CLEAN_TEMPLATE, parseTemplate, templateToText } from './checklist.js';
+import { Maintenance } from './maintenance.js';
+import { archiveList } from './archive.js';
 import { Lease, defaultLease, localDate } from './lease.js';
 
 export const REPORT_CATEGORIES = ['Vann og rør', 'Elektrisk', 'Varme og ventilasjon', 'Hvitevarer', 'Dører, vinduer og lås', 'Annet'];
@@ -56,6 +58,7 @@ export class Extras {
       if (!r.items.some((x) => /vaskemaskin/i.test(x))) r.items.splice(Math.max(0, r.items.length - 1), 0, 'Vaskemaskin rengjort (filter, såpeskuff og gummilist)');
     }
     this.lease = new Lease(this);
+    this.maint = new Maintenance(this);
     // Sensor i Home Assistant som viser om leietaker venter på svar (for kort i dashbordet).
     this.attnLast = null;
     engine.on('update', () => this.publishAttention());
@@ -237,12 +240,27 @@ export class Extras {
         this.pushTenant({ title: 'Les av strømmen', body: 'Det er slutten av måneden – husk å lese av strømmåleren.', tag: 'strom', url: '/?vis=strom' });
       }
     }
+    if (this.maint.tick(now)) ch = true;
     if (ch) this.save();
     this.lease.tick();
   }
 
   get d() {
     return this.engine.data;
+  }
+
+  // Siste/neste automatiske sikkerhetskopi fra Backup-integrasjonen i Home Assistant (sensor.backup_*).
+  backupStatus() {
+    const now = Date.now();
+    let last = null, next = null;
+    for (const [id, st] of this.engine.ha.states) {
+      if (!id.startsWith('sensor.backup') || st.attributes?.device_class !== 'timestamp') continue;
+      const t = Date.parse(st.state);
+      if (!Number.isFinite(t)) continue;
+      if (t <= now && (!last || t > last)) last = t;
+      if (t > now && (!next || t < next)) next = t;
+    }
+    return { last: last ? new Date(last).toISOString() : null, next: next ? new Date(next).toISOString() : null, days: last ? Math.floor((now - last) / 86400000) : null };
   }
 
   // ---------- info ----------
@@ -491,12 +509,16 @@ export class Extras {
       checklists: this.checklists.view(),
       lease: this.lease.view(),
       docs: this.docsView(),
+      maintenance: this.maint.tenantView(),
       push: { key: this.vapid?.publicKey || null, devices: this.d.push_subs.length }
     };
   }
 
   adminView() {
     return {
+      maintenance: this.maint.adminView(),
+      archives: archiveList(this),
+      backup: this.backupStatus(),
       info: this.d.info,
       reports: this.d.reports,
       electricity: { ...this.electricityView(), readings: this.d.readings },
@@ -536,6 +558,8 @@ export class Extras {
       case 'report_seen': this.markSeen(); return true;
       case 'reading_add': this.addReading(cmd); return true;
       case 'reading_delete': this.deleteLastReading(cmd.id); return true;
+      case 'maint_done': this.maint.tenantDone(cmd.id); return true;
+      case 'pay_claim': if (cmd.on !== false) this.rateCheck(); this.lease.claimPaid(String(cmd.month || ''), cmd.on !== false); return true;
       default: return false;
     }
   }

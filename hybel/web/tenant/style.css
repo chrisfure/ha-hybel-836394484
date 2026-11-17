@@ -418,3 +418,15 @@ a.inv-row { color: inherit; text-decoration: none; }
 .seen.ok { color: var(--green-ink); font-weight: 600; }
 .report .notice-soft { display: flex; flex-direction: column; gap: 8px; margin-top: 6px; }
 .report .notice-soft .btn { text-decoration: none; display: flex; align-items: center; justify-content: center; }
+
+/* Meldt betalt */
+.lvl-info { background: var(--info-soft); color: var(--info-ink); }
+.notice-soft.info { background: var(--info-soft); border-color: transparent; color: var(--info-ink); }
+.claim-box { display: flex; flex-direction: column; gap: 10px; }
+.claim-box .claim-btn { background: var(--surface); }
+.claim-btn { width: 100%; }
+.claim-done { display: flex; align-items: center; gap: 10px; justify-content: space-between; background: var(--info-soft); color: var(--info-ink); border-radius: 14px; padding: 10px 12px; font-size: 14px; font-weight: 500; }
+.notice-soft.maint { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 12px; }
+.notice-soft.maint > span { display: flex; flex-direction: column; gap: 2px; }
+.notice-soft.maint small { font-size: 13px; opacity: .85; }
+.notice-soft.maint .btn { min-height: 40px; padding: 0 18px; flex-shrink: 0; }

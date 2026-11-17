@@ -596,7 +596,7 @@ const STATUS = { new: ['Mottatt', 'st-new'], in_progress: ['Under arbeid', 'st-w
 
 function infoBadge() {
   const m = S.m;
-  return (m.reports || []).some((r) => r.unread) || (m.electricity && m.electricity.remind) || (m.checklists || []).some((c) => c.status === 'open' || c.unread);
+  return (m.maintenance || []).some((t) => t.due) || (m.reports || []).some((r) => r.unread) || (m.electricity && m.electricity.remind) || (m.checklists || []).some((c) => c.status === 'open' || c.unread);
 }
 
 function infoTab() {
@@ -626,6 +626,10 @@ function infoHTML() {
   const i = S.m.info;
   let h = '';
   const openCl = (S.m.checklists || []).find((c) => c.status === 'open');
+  for (const t of S.m.maintenance || []) {
+    h += `<div class="notice-soft maint ${t.due ? '' : 'info'}"><span><strong>${esc(t.title)}</strong><small>${t.due ? 'Påminnelse fra utleier – nå er det tid' : `Påminnelse fra utleier – ${t.days === 1 ? 'i morgen' : `om ${t.days} dager`}`}</small></span>
+      <button class="btn ${t.due ? 'primary' : 'ghost'}" data-act="maint-done" data-id="${t.id}">Gjort</button></div>`;
+  }
   if (openCl) h += `<button class="notice-soft notice-btn" data-act="info-sub" data-v="sjekk"><strong>${esc(openCl.label)}ssjekkliste</strong><span>${openCl.done} av ${openCl.total} punkter – trykk for å fortsette</span></button>`;
   if (i.wifi_ssid) {
     let qr = '';
@@ -680,9 +684,14 @@ function chartHTML(periods) {
     <span class="note">Høyeste: ${esc(kwhFmt(max))}</span></section>`;
 }
 
-const LSTAT = { paid: ['Betalt', 'lvl-ok'], overdue: ['Forfalt', 'lvl-bad'], soon: ['Snart', 'lvl-warn'], upcoming: ['Kommende', ''] };
+const LSTAT = { claimed: ['Meldt betalt', 'lvl-info'], paid: ['Betalt', 'lvl-ok'], overdue: ['Forfalt', 'lvl-bad'], soon: ['Snart', 'lvl-warn'], upcoming: ['Kommende', ''] };
 const longDate = (d) => new Date(d).toLocaleDateString('nb-NO', { day: 'numeric', month: 'long', year: 'numeric' });
 const elSum = (r) => r.electricity.reduce((s, p) => s + (p.amount || 0), 0);
+
+function claimBtn(o) {
+  const confirm = S.confirmClaim === o.month;
+  return `<button class="btn ${confirm ? 'primary' : 'ghost'} claim-btn" data-act="pay-claim" data-month="${o.month}">${confirm ? `Bekreft: jeg har betalt ${esc(nok(o.total))}` : `Jeg har betalt ${esc(o.label.split(' ')[0])}`}</button>`;
+}
 
 function payLines(r) {
   let h = '';
@@ -721,7 +730,10 @@ function stromHTML() {
   const L = S.m.lease;
   const c = L && L.contract;
   let h = '';
-  if (L && L.overdue.length) h += `<div class="notice-soft bad">Ikke registrert betalt: ${L.overdue.map((o) => `${esc(o.label)} (${esc(nok(o.total))})`).join(', ')}. Har du betalt, kan utleier markere det.</div>`;
+  if (L && L.overdue.length) h += `<div class="notice-soft bad claim-box"><span>Ikke registrert betalt: ${L.overdue.map((o) => `${esc(o.label)} (${esc(nok(o.total))})`).join(', ')}.</span>
+    ${L.overdue.map((o) => claimBtn(o)).join('')}</div>`;
+  const claimedOld = L ? (L.claimed || []).filter((o) => !L.next || o.month !== L.next.month) : [];
+  if (claimedOld.length) h += `<div class="notice-soft info">${claimedOld.map((o) => `Du meldte ${esc(o.label)} som betalt ${esc(dateFmt(o.claimed_at))}.`).join(' ')} Venter på at utleier bekrefter.</div>`;
   if (e.remind && !(c && c.auto_meter)) h += `<div class="notice-soft">Det er snart månedsslutt – husk å lese av strømmåleren.</div>`;
   if (L && L.next) {
     const n = L.next;
@@ -731,6 +743,9 @@ function stromHTML() {
       <div class="pay-lines">${payLines(n)}</div>
       ${c.rent && !n.electricity.length && e.price != null ? `<p class="note">Strøm for siste periode kommer i tillegg når måleren er lest av.</p>` : ''}
       ${c.account ? `<div class="mail-to"><span>Kontonr. <strong>${esc(c.account)}</strong></span><button class="chip-btn" data-act="copy" data-v="${esc(c.account.replace(/\s/g, ''))}" data-msg="Kontonummeret er kopiert">Kopier</button></div>` : ''}
+      ${n.claimed_at
+        ? `<div class="claim-done"><span>✓ Du meldte betalt ${esc(dateFmt(n.claimed_at))}. Venter på at utleier bekrefter.</span><button class="chip-btn" data-act="pay-unclaim" data-month="${n.month}">Angre</button></div>`
+        : claimBtn(n)}
       <a class="btn ghost inv-btn" href="api/invoice/${n.month}.pdf" target="_blank" rel="noopener">Se faktura (PDF)</a>
     </section>`;
   }
@@ -1531,6 +1546,7 @@ function act(a, ds) {
   const draft = ds.mode === 'draft';
   if (!['scene-delete', 'auto-delete', 'reading-delete', 'cl-status', 'cl-submit'].includes(a)) S.confirmDelete = false;
   if (a === 'cl-status' && S.confirmDelete && S.confirmDelete !== `${ds.id}-${ds.i}`) S.confirmDelete = false;
+  if (a !== 'pay-claim') S.confirmClaim = null;
   switch (a) {
     case 'relogin':
       location.reload();
@@ -1637,6 +1653,17 @@ function act(a, ds) {
         S.reading = { date: localToday(), value: '' };
         showToast('Avlesningen er lagret');
       });
+      return;
+    case 'maint-done':
+      cmd({ type: 'maint_done', id: ds.id }).then((r) => r.ok && showToast('Takk! Utleier har fått beskjed.'));
+      return;
+    case 'pay-claim':
+      if (S.confirmClaim !== ds.month) { S.confirmClaim = ds.month; return render(); }
+      S.confirmClaim = null;
+      cmd({ type: 'pay_claim', month: ds.month }).then((r) => r.ok && showToast('Takk! Utleier får beskjed og bekrefter når pengene er kommet.'));
+      return render();
+    case 'pay-unclaim':
+      cmd({ type: 'pay_claim', month: ds.month, on: false }).then((r) => r.ok && showToast('Meldingen om betaling er trukket tilbake'));
       return;
     case 'reading-delete':
       if (!S.confirmDelete) { S.confirmDelete = true; return render(); }

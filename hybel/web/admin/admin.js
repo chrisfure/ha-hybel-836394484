@@ -27,6 +27,7 @@ const A = {
   photo: null,
   newReading: { value: '', date: '' },
   confirmDel: null,
+  mt: { title: '', months: 6, tenant: false },
   confirmScenes: false,
   confirmReset: false
 };
@@ -211,6 +212,30 @@ function limitsPanel() {
   </section>`;
 }
 
+// Vedlikehold: gjentakende oppgaver med påminnelse.
+function maintPanel() {
+  const list = A.st.extras.maintenance || [];
+  const due = list.filter((t) => t.due).length;
+  const every = (m) => (m === 1 ? 'Hver måned' : m === 12 ? 'Hvert år' : m % 12 === 0 ? `Hvert ${m / 12}. år` : `Hver ${m}. måned`);
+  let h = `<section class="panel"><div class="panel-head"><h2>Vedlikehold</h2><span>${due ? `${due} forfalt` : list.length ? `Neste ${esc(fmtDate(list[0].next))}` : 'Ingen oppgaver'}</span></div>
+    <p class="help">Du får påminnelse når noe skal gjøres. Oppgaver merket «Leietaker» vises også i hybelappen en uke før, med en «Gjort»-knapp.</p>`;
+  if (list.length) {
+    h += `<table class="tbl"><thead><tr><th>Oppgave</th><th>Neste</th><th></th></tr></thead><tbody>${list.map((t) => `<tr>
+      <td><strong>${esc(t.title)}</strong><br><span class="help">${every(t.months)} · sist ${esc(fmtDate(t.last))}${t.history.length && t.history[t.history.length - 1].by === 'tenant' ? ' av leietaker' : ''}</span></td>
+      <td>${esc(fmtDate(t.next))}<br><span class="pill2 ${t.due ? 'bad' : t.soon ? 'warn' : ''}">${t.due ? 'Forfalt' : t.days === 0 ? 'I dag' : `Om ${t.days} d`}</span></td>
+      <td><button class="sbtn ${t.due ? 'on' : ''}" data-act="mt-done" data-id="${t.id}">Utført i dag</button>
+        <button class="sbtn ${t.tenant ? 'on' : ''}" data-act="mt-tenant" data-id="${t.id}" title="Vis i hybelappen">Leietaker${t.tenant ? ' ✓' : ''}</button>
+        <button class="sbtn" data-act="mt-delete" data-id="${t.id}">${A.confirmDel === `mt-${t.id}` ? 'Bekreft' : 'Slett'}</button></td></tr>`).join('')}</tbody></table>`;
+  }
+  h += `<div class="mt-add">
+      <input class="input" placeholder="Ny oppgave, f.eks. Test røykvarsleren" maxlength="80" value="${esc(A.mt.title)}" data-field="mt.title">
+      <select class="input" data-field="mt.months">${[1, 2, 3, 4, 6, 12, 24].map((m) => `<option value="${m}" ${A.mt.months === m ? 'selected' : ''}>${every(m)}</option>`).join('')}</select>
+      <label class="mt-check"><input type="checkbox" data-field="mt.tenant" ${A.mt.tenant ? 'checked' : ''}> Leietaker</label>
+      <button class="sbtn on" data-act="mt-add">Legg til</button>
+    </div></section>`;
+  return h;
+}
+
 function alertsPanel() {
   const al = A.cfg.alerts;
   const names = new Map((A.cand?.entities || []).map((c) => [c.entity_id, c.name]));
@@ -218,6 +243,8 @@ function alertsPanel() {
     <label for="notify" class="help">Varslingstjeneste (tom = varsel i Home Assistant)</label>
     <input id="notify" class="input" list="notify-list" placeholder="notify.mobile_app_telefon" value="${esc(al.notify_service)}" data-field="notify">
     <datalist id="notify-list">${(A.cand?.notify_services || []).map((s) => `<option value="${esc(s)}">`).join('')}</datalist>
+    <label for="offline-h" class="help" style="margin-top:10px">Varsle når en synlig enhet har vært uten kontakt i</label>
+    <select id="offline-h" class="input" data-field="offline-hours">${[[0, 'Aldri'], [1, '1 time'], [2, '2 timer'], [6, '6 timer'], [12, '12 timer'], [24, '1 døgn']].map(([v, l]) => `<option value="${v}" ${(al.offline_hours ?? 2) === v ? 'selected' : ''}>${l}</option>`).join('')}</select>
     <span class="help" style="margin-top:10px">Varsle når disse slår seg på (f.eks. filter- eller frostalarm):</span>
     <div class="chips">${al.entities.map((id) => `<span class="chip">${esc(names.get(id) || id)}<button data-act="alarm-remove" data-id="${esc(id)}" aria-label="Fjern">×</button></span>`).join('') || '<span class="help">Ingen valgt.</span>'}</div>
     ${A.picker === 'alarm' ? pickerHTML('alarm') : `<button class="add" data-act="open-picker" data-kind="alarm">+ Legg til alarm</button>`}
@@ -344,7 +371,7 @@ function photoOverlay() {
   return A.photo ? `<div class="lightbox" data-act="photo-close"><img src="api/admin/photo/${A.photo}" alt="Bilde fra leietaker"></div>` : '';
 }
 
-const LSTAT_A = { paid: ['Betalt', 'ok'], overdue: ['Forfalt', 'bad'], soon: ['Forfaller snart', 'warn'], upcoming: ['Kommende', ''] };
+const LSTAT_A = { claimed: ['Leietaker: betalt', 'info'], paid: ['Betalt', 'ok'], overdue: ['Forfalt', 'bad'], soon: ['Forfaller snart', 'warn'], upcoming: ['Kommende', ''] };
 
 function leasePanel() {
   const l = A.cfg.lease;
@@ -423,8 +450,11 @@ function economyPanel() {
       <div class="eco-tile"><span>Betalt i år</span><strong>${esc(kr(L.year_total || 0))}</strong></div>
       <div class="eco-tile"><span>Strømpris</span><strong>${e.price != null ? `${esc(kr(e.price))}` : 'Ikke satt'}</strong>${e.price != null ? '<small>per kWh</small>' : ''}</div>
     </div>`;
+  for (const cl of L.claimed || []) h += `<div class="claim-row"><span><strong>Leietaker har meldt betalt</strong> ${esc(cl.label)} – ${esc(kr(cl.total))}, ${esc(fmtDate(cl.claimed_at))}. Sjekk kontoen.</span>
+    <span class="row-btns"><button class="sbtn on" data-act="month-paid" data-v="${cl.month}" data-paid="1">Bekreft mottatt</button><button class="sbtn" data-act="claim-reject" data-v="${cl.month}">Ikke mottatt</button></span></div>`;
   if (L.overdue.length > 1) h += `<div class="row-btns"><button class="sbtn" data-act="pay-all-overdue">Marker alle forfalte som betalt (${L.overdue.length})</button></div>`;
 
+  if ((L.years || []).length) h += `<div class="row-btns year-row"><span class="help">Årsoversikt til skattemeldingen:</span>${L.years.slice(0, 4).map((y) => `<a class="sbtn" href="api/admin/year/${y}.pdf" target="_blank" rel="noopener">${y} (PDF)</a>`).join('')}</div>`;
   // Betalinger per måned (husleie + strøm)
   if (L.ledger.length && hasRent) {
     h += `<h3 class="sub-h">Betalinger</h3><table class="tbl"><thead><tr><th>Måned</th><th>Husleie</th><th>Strøm</th><th>Sum</th><th></th></tr></thead><tbody>
@@ -608,8 +638,20 @@ function outdoorHTML() {
 }
 
 function resetPanel() {
-  return `<section class="panel soft"><div class="panel-head"><h2>Leietakerbytte</h2></div>
-    <p class="help">Sletter leietakerens scener og automasjoner og lager nye forslag. Husk å fjerne forrige leietaker i Cloudflare Access og legge inn den nye.</p>
+  const bk = A.st.extras.backup || {};
+  const arch = A.st.extras.archives || [];
+  const bkLine = bk.last
+    ? `<span class="pill2 ${bk.days > 8 ? 'warn' : 'ok'}">${bk.days > 8 ? '!' : '✓'}</span> Siste automatiske sikkerhetskopi i Home Assistant: <strong>${esc(fmtDate(bk.last))}</strong>${bk.next ? ` · neste ${esc(fmtDate(bk.next))}` : ''}`
+    : `<span class="pill2 warn">!</span> Fant ingen automatisk sikkerhetskopi i Home Assistant. Slå det på under Innstillinger → System → Sikkerhetskopier.`;
+  return `<section class="panel soft"><div class="panel-head"><h2>Sikkerhetskopi</h2></div>
+    <p class="help bk-line">${bkLine}</p>
+    <p class="help">Kontrakter, fakturaer, sjekklister, bilder og meldinger ligger i appens egen datamappe. De blir med i sikkerhetskopien når den tar med apper – sjekk at <strong>Hybelstyring</strong> er huket av under «Apper» i innstillingene for sikkerhetskopier.</p>
+    <a class="sbtn on" href="api/admin/archive.zip" download>Last ned arkiv for dette leieforholdet (ZIP)</a>
+    <p class="help">Inneholder alle fakturaer, årsoversikter, sjekklister (PDF), dokumenter, bilder og meldinger.</p>
+    ${arch.length ? `<span class="help" style="margin-top:8px"><strong>Tidligere leieforhold</strong></span>${arch.map((a) => `<a class="sbtn" href="api/admin/archive/${a.i}.zip" download>${esc(a.tenant || 'Leietaker')} · ${esc(a.start ? fmtDate(a.start) : '')}${a.start ? ' – ' : ''}${esc(fmtDate(a.end || a.at))}</a>`).join('')}` : ''}
+  </section>
+  <section class="panel soft"><div class="panel-head"><h2>Leietakerbytte</h2></div>
+    <p class="help">Sletter leietakerens scener og automasjoner og lager nye forslag. Kontrakt, betalinger, meldinger og sjekklister flyttes til «Tidligere leieforhold» over. Last gjerne ned arkivet først. Husk å fjerne forrige leietaker i Cloudflare Access og legge inn den nye.</p>
     <button class="danger ${A.confirmReset ? 'confirm' : ''}" data-act="tenant-reset">${A.confirmReset ? 'Trykk igjen for å bekrefte' : 'Klargjør for ny leietaker'}</button>
   </section>
   <section class="panel soft"><div class="panel-head"><h2>Oppsett</h2></div>
@@ -626,7 +668,7 @@ function render() {
   const focusId = document.activeElement?.id || (document.activeElement?.dataset?.field === 'q' ? '__q' : null);
   A.todo = todos();
   $('todo').innerHTML = todoBar();
-  $('main').innerHTML = `<div class="col-main">${reportsPanel()}${economyPanel()}${leasePanel()}${checklistPanel()}${entitiesPanel()}${scenesPanel()}${statsPanel()}${infoPanel()}</div><div class="col-side">${limitsPanel()}${alertsPanel()}${resetPanel()}</div>${photoOverlay()}`;
+  $('main').innerHTML = `<div class="col-main">${reportsPanel()}${economyPanel()}${leasePanel()}${checklistPanel()}${entitiesPanel()}${scenesPanel()}${statsPanel()}${maintPanel()}${infoPanel()}</div><div class="col-side">${limitsPanel()}${alertsPanel()}${resetPanel()}</div>${photoOverlay()}`;
   if (focusId === '__q') {
     const q = document.querySelector('[data-field="q"]');
     if (q) { q.focus(); q.setSelectionRange(q.value.length, q.value.length); }
@@ -642,7 +684,7 @@ function isOpen(key) {
   if (key in folds) return folds[key];
   // Standard: alt lukket, unntatt meldinger når noe venter.
   if (key === 'Meldinger') return (A.st?.extras?.reports || []).some((r) => r.status === 'new' || r.status === 'in_progress' || r.landlord_unread);
-  if (key === 'Økonomi') return (A.st?.extras?.lease?.overdue || []).length > 0;
+  if (key === 'Økonomi') return (A.st?.extras?.lease?.overdue || []).length > 0 || (A.st?.extras?.lease?.claimed || []).length > 0;
   if (key === 'Inn- og utflytting') return (A.st?.extras?.checklists || []).some((c) => c.status === 'submitted');
   return false;
 }
@@ -659,6 +701,7 @@ function todos() {
   if (working) add('Meldinger', 'info', `${working} under arbeid`);
   const L = x.lease;
   if (L.overdue.length) add('Økonomi', 'bad', `${L.overdue.length} ikke betalt`);
+  if ((L.claimed || []).length) add('Økonomi', 'warn', `${L.claimed.length} meldt betalt – bekreft`);
   if (L.next && L.next.status === 'soon') add('Økonomi', 'info', `Forfall ${fmtDate(L.next.due)}`);
   const c = L.contract;
   if (c.end && c.days_left != null && c.days_left <= 90) add('Leieforhold', c.days_left <= 30 ? 'bad' : 'warn', c.days_left < 0 ? 'Kontrakten er utløpt' : `Kontrakt utløper om ${c.days_left} d`);
@@ -676,6 +719,9 @@ function todos() {
   const i = x.info;
   const missing = [!i.wifi_ssid && 'wifi', !(i.contact_phone || i.contact_email) && 'kontakt'].filter(Boolean);
   if (missing.length) add('Info til leietaker', 'info', `Mangler ${missing.join(' og ')}`);
+  if (!x.backup?.last || x.backup.days > 8) add('Sikkerhetskopi', 'info', x.backup?.last ? `${x.backup.days} d gammel` : 'Ikke funnet');
+  const mDue = (x.maintenance || []).filter((m) => m.due);
+  if (mDue.length) add('Vedlikehold', 'warn', mDue.length === 1 ? mDue[0].title : `${mDue.length} oppgaver forfalt`);
   if (!st.alerts.notify_service) add('Varsle meg', 'info', 'Bare bjella – ingen push');
   return t;
 }
@@ -801,6 +847,25 @@ document.addEventListener('click', async (ev) => {
     }
     case 'doc-upload': uploadDoc(); return;
     case 'doc-visible':
+    case 'mt-add':
+    case 'mt-done':
+    case 'mt-tenant':
+    case 'mt-delete': {
+      if (d.act === 'mt-delete' && A.confirmDel !== `mt-${d.id}`) { A.confirmDel = `mt-${d.id}`; break; }
+      const t = (A.st.extras.maintenance || []).find((x) => x.id === d.id);
+      const body = d.act === 'mt-add' ? { action: 'add', ...A.mt }
+        : d.act === 'mt-done' ? { action: 'done', id: d.id }
+        : d.act === 'mt-delete' ? { action: 'delete', id: d.id }
+        : { action: 'update', id: d.id, title: t.title, months: t.months, last: t.last, tenant: !t.tenant };
+      try {
+        const r = await api('api/admin/maint', { method: 'POST', body: JSON.stringify(body) });
+        if (!r.ok) { message(esc(r.error), true); break; }
+        A.st = r.state; A.confirmDel = null;
+        if (d.act === 'mt-add') A.mt = { title: '', months: 6, tenant: false };
+        if (d.act === 'mt-done') message('Registrert som utført i dag.');
+      } catch (e) { message(esc(e.message), true); }
+      break;
+    }
     case 'doc-delete': {
       if (d.act === 'doc-delete' && A.confirmDel !== `doc-${d.id}`) { A.confirmDel = `doc-${d.id}`; break; }
       try {
@@ -820,6 +885,13 @@ document.addEventListener('click', async (ev) => {
         message(d.act === 'inv-delete' ? 'Fakturaen er slettet.' : 'Fakturaen er gjenopprettet.');
       } catch (e) { message(esc(e.message), true); }
       break;
+    }
+    case 'claim-reject': {
+      try {
+        const r = await api('api/admin/payment', { method: 'POST', body: JSON.stringify({ month: d.v, reject: true }) });
+        A.st = r.state; message('Leietaker har fått beskjed om at betalingen ikke er funnet ennå.');
+      } catch (e) { message(esc(e.message), true); }
+      return render();
     }
     case 'pay-all-overdue': {
       try {
@@ -972,7 +1044,11 @@ document.addEventListener('input', (ev) => {
   else if (f === 'cl-clean-template') { A.cfg.clean_template = el.value; setDirty(); }
   else if (f === 'admin-reply') { A.replies[el.dataset.id] = el.value; }
   else if (f === 'notify') { A.cfg.alerts.notify_service = el.value.trim(); setDirty(); }
+  else if (f === 'offline-hours') { A.cfg.alerts.offline_hours = Number(el.value); setDirty(); }
   else if (f === 'q') { A.q = el.value; render(); }
+  else if (f === 'mt.title') { A.mt.title = el.value; }
+  else if (f === 'mt.months') { A.mt.months = Number(el.value); }
+  else if (f === 'mt.tenant') { A.mt.tenant = el.checked; }
 });
 
 document.addEventListener('change', (ev) => {
@@ -1033,3 +1109,12 @@ async function refresh(full = false) {
 refresh(true);
 loadCandidates();
 setInterval(() => refresh(false), 5000);
+
+// Lys/mørk modus (følger systemet som standard, samme som Home Assistant gjør med «Automatisk»).
+{
+  const sel = document.getElementById('theme');
+  if (sel && window.hybelTheme) {
+    sel.value = window.hybelTheme.get();
+    sel.addEventListener('change', () => window.hybelTheme.set(sel.value));
+  }
+}

@@ -1,6 +1,7 @@
 // Utleiersiden. Nås kun via Home Assistant ingress (Supervisor-proxyen), aldri via Cloudflare.
 import http from 'node:http';
 import { join } from 'node:path';
+import { currentArchive, pastArchive } from './archive.js';
 import { serveStatic, sendJson, readJson, readBody, servePhoto, sendPdf, sendInvoice, serveDoc } from './http.js';
 import { log } from './log.js';
 
@@ -141,6 +142,13 @@ export function startAdminServer({ engine, ha, webRoot, port, tenantHub, devOpen
           return sendJson(res, 400, { ok: false, error: err.message });
         }
       }
+      if (p === '/api/admin/maint' && req.method === 'POST') {
+        try {
+          engine.extras.maint.save(await readJson(req));
+          engine.changed();
+          return sendJson(res, 200, { ok: true, state: engine.adminView({ tenant_clients: tenantHub.size }) });
+        } catch (err) { return sendJson(res, 400, { ok: false, error: err.message }); }
+      }
       if (p === '/api/admin/test-notify' && req.method === 'POST') {
         const results = await engine.notify('Dette er en test fra Hybelstyring. Kommer denne fram, virker varslene.', { title: 'Testvarsel fra hybel', inbox: true, id: 'test' });
         return sendJson(res, 200, { ok: results.every((r) => r.ok), results });
@@ -148,7 +156,8 @@ export function startAdminServer({ engine, ha, webRoot, port, tenantHub, devOpen
       if (p === '/api/admin/payment' && req.method === 'POST') {
         const body = await readJson(req);
         try {
-          if (body.void !== undefined) engine.extras.lease.setVoid(body.month, Boolean(body.void));
+          if (body.reject) engine.extras.lease.rejectClaim(String(body.month || ''));
+          else if (body.void !== undefined) engine.extras.lease.setVoid(body.month, Boolean(body.void));
           else engine.extras.lease.setPaid(body.month, body.paid);
           engine.changed();
           return sendJson(res, 200, { ok: true, state: engine.adminView({ tenant_clients: tenantHub.size }) });
@@ -203,6 +212,22 @@ export function startAdminServer({ engine, ha, webRoot, port, tenantHub, devOpen
       }
       const dm = p.match(/^\/api\/admin\/doc\/([a-f0-9]{16})$/);
       if (dm && req.method === 'GET') return serveDoc(res, engine.extras.docFile(dm[1]));
+      const am = p.match(/^\/api\/admin\/archive(?:\/(\d{1,2}))?\.zip$/);
+      if (am && req.method === 'GET') {
+        try {
+          const { buf, name } = am[1] === undefined ? currentArchive(engine.extras) : pastArchive(engine.extras, Number(am[1]));
+          res.writeHead(200, { 'Content-Type': 'application/zip', 'Content-Length': buf.length, 'Content-Disposition': `attachment; filename="${name.replace(/[^\x20-\x7e]/g, '_')}"; filename*=UTF-8''${encodeURIComponent(name)}`, 'Cache-Control': 'no-store' });
+          return res.end(buf);
+        } catch (err) { return sendJson(res, 400, { ok: false, error: err.message }); }
+      }
+      const ym = p.match(/^\/api\/admin\/year\/(\d{4})\.pdf$/);
+      if (ym && req.method === 'GET') {
+        try {
+          const buf = engine.extras.lease.yearPdf(ym[1]);
+          res.writeHead(200, { 'Content-Type': 'application/pdf', 'Content-Length': buf.length, 'Content-Disposition': `inline; filename="Arsoversikt-hybel-${ym[1]}.pdf"`, 'Cache-Control': 'no-store' });
+          return res.end(buf);
+        } catch (err) { return sendJson(res, 400, { ok: false, error: err.message }); }
+      }
       const im = p.match(/^\/api\/admin\/invoice\/(\d{4}-\d{2})\.pdf$/);
       if (im && req.method === 'GET') return sendInvoice(res, engine.extras.lease, im[1]);
       const cm = p.match(/^\/api\/admin\/checklist\/([a-f0-9]{10})\.pdf$/);

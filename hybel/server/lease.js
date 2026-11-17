@@ -16,6 +16,7 @@ const daysIn = (m) => { const [y, mo] = m.split('-').map(Number); return new Dat
 const dueDate = (m, day) => `${m}-${pad(Math.min(day, daysIn(m)))}`;
 const MONTHS = ['januar', 'februar', 'mars', 'april', 'mai', 'juni', 'juli', 'august', 'september', 'oktober', 'november', 'desember'];
 export const monthName = (m) => `${MONTHS[Number(m.slice(5)) - 1]} ${m.slice(0, 4)}`;
+const addDays = (iso, n) => { const d = new Date(`${iso}T12:00:00`); d.setDate(d.getDate() + n); return localDate(d); };
 const daysBetween = (a, b) => Math.round((new Date(b) - new Date(a)) / 86400000);
 const kr = (n) => `${n.toLocaleString('nb-NO', Number.isInteger(n) ? { maximumFractionDigits: 0 } : { minimumFractionDigits: 2, maximumFractionDigits: 2 })} kr`;
 
@@ -121,8 +122,9 @@ export class Lease {
       const el = r.electricity.reduce((s, p) => s + (p.amount || 0), 0);
       r.total = Math.round(((r.rent || 0) + el) * 100) / 100;
       r.paid = Boolean(rec.paid);
-      r.paid_at = rec.at || null;
-      r.status = r.paid ? 'paid' : r.due < today ? 'overdue' : daysBetween(today, r.due) <= 10 ? 'soon' : 'upcoming';
+      r.paid_at = rec.paid ? rec.at || null : null;
+      r.claimed_at = !rec.paid && rec.claimed_at ? rec.claimed_at : null;
+      r.status = r.paid ? 'paid' : r.claimed_at ? 'claimed' : r.due < today ? 'overdue' : daysBetween(today, r.due) <= 10 ? 'soon' : 'upcoming';
       r.label = monthName(r.month);
       return r;
     }).filter((r) => (r.total > 0 || r.paid) && !this.pay[r.month]?.void);
@@ -143,10 +145,39 @@ export class Lease {
     return Object.entries(this.pay).filter(([, v]) => v.void).map(([m, v]) => ({ month: m, label: monthName(m), at: v.at })).sort((a, b) => b.month.localeCompare(a.month));
   }
 
+  // Leietaker melder at en faktura er betalt. Utleier bekrefter (setPaid) eller avviser.
+  claimPaid(month, on = true) {
+    if (!/^\d{4}-\d{2}$/.test(String(month))) throw new Error('Ugyldig måned');
+    const row = this.ledger().find((r) => r.month === month);
+    if (!row) throw new Error('Fant ikke fakturaen');
+    if (row.paid) throw new Error('Fakturaen er allerede registrert som betalt');
+    if (!on) {
+      if (row.claimed_at) { delete this.pay[month]; this.x.engine.dismissNotice(`betalt_${month}`); this.x.save(); }
+      return;
+    }
+    if (row.claimed_at) return;
+    if (row.due > addDays(localDate(), 45)) throw new Error('Denne fakturaen kan ikke betales ennå');
+    this.pay[month] = { claimed_at: new Date().toISOString() };
+    this.x.save();
+    this.x.engine.notify(`Leietaker har meldt at fakturaen for ${monthName(month)} (${kr(row.total)}) er betalt. Sjekk kontoen og bekreft under Økonomi i Hybel.`,
+      { title: 'Husleie meldt betalt', inbox: true, id: `betalt_${month}`, event: 'betalt' }).catch(() => {});
+  }
+
+  // Utleier finner ikke betalingen: fjern meldingen og si fra til leietaker.
+  rejectClaim(month) {
+    if (!this.pay[month]?.claimed_at || this.pay[month]?.paid) return;
+    delete this.pay[month];
+    this.x.engine.dismissNotice(`betalt_${month}`);
+    this.x.save();
+    this.x.pushTenant({ title: 'Betalingen er ikke kommet fram ennå', body: `Utleier finner ikke betalingen for ${monthName(month)} ennå. Sjekk at den er sendt, eller send en melding.`, tag: `betaling-${month}`, url: '/?vis=strom' });
+  }
+
   setPaid(month, paid) {
     if (!/^\d{4}-\d{2}$/.test(String(month))) throw new Error('Ugyldig måned');
     const row = this.ledger().find((r) => r.month === month);
     if (!row) throw new Error('Fant ikke måneden');
+    this.x.engine.dismissNotice(`betalt_${month}`);
+    if (paid && row.claimed_at) this.x.pushTenant({ title: 'Betalingen er mottatt ✓', body: `Utleier har bekreftet betalingen for ${monthName(month)}.`, tag: `betaling-${month}`, url: '/?vis=strom' });
     if (paid) this.pay[month] = { paid: true, at: new Date().toISOString(), rent: row.rent, rent_note: row.rent_note, total: row.total };
     else delete this.pay[month];
     for (const p of row.electricity) {
@@ -240,6 +271,103 @@ export class Lease {
     return doc.build({ footer: `Faktura ${this.invoiceNo(month)}${l.address ? ` · ${l.address}` : ''}` });
   }
 
+  // Alle fakturerte måneder for et år – nåværende leietaker og arkiverte leieforhold.
+  yearRows(year) {
+    const y = String(year);
+    const rows = [];
+    for (const a of this.d.archive || []) {
+      const name = a.lease?.tenant_name || 'Tidligere leietaker';
+      for (const [m, rec] of Object.entries(a.payments || {})) {
+        if (!m.startsWith(y) || !rec.paid) continue;
+        const rent = rec.rent || 0;
+        rows.push({ month: m, tenant: name, rent, electricity: Math.round(((rec.total || 0) - rent) * 100) / 100, kwh: null, total: rec.total || 0, paid: true, paid_at: rec.at || null });
+      }
+    }
+    const cur = this.l.tenant_name || 'Leietaker';
+    for (const r of this.ledger()) {
+      if (!r.month.startsWith(y)) continue;
+      const el = r.electricity.reduce((s, p) => s + (p.amount || 0), 0);
+      rows.push({ month: r.month, tenant: cur, rent: r.rent || 0, electricity: Math.round(el * 100) / 100, kwh: r.electricity.reduce((s, p) => s + (p.kwh || 0), 0) || null, total: r.total, paid: r.paid, paid_at: r.paid_at, claimed: Boolean(r.claimed_at) });
+    }
+    return rows.sort((a, b) => a.month.localeCompare(b.month));
+  }
+
+  years() {
+    const set = new Set([localDate().slice(0, 4)]);
+    for (const a of this.d.archive || []) for (const m of Object.keys(a.payments || {})) set.add(m.slice(0, 4));
+    for (const r of this.ledger()) set.add(r.month.slice(0, 4));
+    return [...set].sort().reverse();
+  }
+
+  // Årsoversikt (PDF) – grunnlag for skattemeldingen.
+  yearPdf(year) {
+    if (!/^\d{4}$/.test(String(year))) throw new Error('Ugyldig år');
+    const rows = this.yearRows(year);
+    const doc = new PdfDoc();
+    const { W, M } = PAGE;
+    const CW = W - 2 * M;
+    const GRAY = '0.42 0.38 0.35';
+    const kr2 = (n) => n.toLocaleString('nb-NO', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+    const right = (t, x, y, size = 10, bold = false, color = null) => doc.text(t, x - textWidth(t, size, bold), y, size, bold, color);
+    const d = (iso) => new Date(iso).toLocaleDateString('nb-NO', { day: 'numeric', month: 'short', year: 'numeric' });
+    const sum = (f, list = rows) => Math.round(list.reduce((s, r) => s + f(r), 0) * 100) / 100;
+    const l = this.l;
+
+    doc.text(`Årsoversikt ${year}`, M, doc.y - 26, 26, true);
+    doc.text(['Utleie av hybel', l.address].filter(Boolean).join(' · '), M, doc.y - 44, 10.5, false, GRAY);
+    doc.text(`Laget ${d(new Date().toISOString())}`, M, doc.y - 58, 9, false, GRAY);
+    doc.y -= 80;
+
+    const paid = rows.filter((r) => r.paid);
+    const cells = [['Husleie betalt', sum((r) => r.rent, paid)], ['Strøm betalt', sum((r) => r.electricity, paid)], ['Sum betalt', sum((r) => r.total, paid)], ['Ikke betalt', sum((r) => r.total, rows.filter((r) => !r.paid))]];
+    doc.rect(M, doc.y - 46, CW, 46, '0.96 0.94 0.91');
+    cells.forEach(([k, v], i) => {
+      const x = M + 12 + i * (CW / 4);
+      doc.text(k, x, doc.y - 16, 8.5, false, GRAY);
+      doc.text(`${kr2(v)} kr`, x, doc.y - 33, i === 2 ? 12 : 10.5, true);
+    });
+    doc.y -= 68;
+
+    const cols = [M, M + 120, M + 230, M + 320, M + 410];
+    const head = () => {
+      doc.text('Måned', cols[0], doc.y - 10, 9, true, GRAY);
+      right('Husleie', cols[2] - 10, doc.y - 10, 9, true, GRAY);
+      right('Strøm', cols[3] - 10, doc.y - 10, 9, true, GRAY);
+      right('Sum', cols[4] - 10, doc.y - 10, 9, true, GRAY);
+      doc.text('Betalt', cols[4] + 6, doc.y - 10, 9, true, GRAY);
+      doc.y -= 16;
+      doc.line(M, doc.y, W - M, doc.y, 0.75, 0.8);
+    };
+    if (!rows.length) doc.para('Ingen fakturaer dette året.', M, CW, 10.5);
+    else head();
+    const multi = new Set(rows.map((r) => r.tenant)).size > 1;
+    for (const r of rows) {
+      doc.ensure(30);
+      if (doc.y > PAGE.H - M - 5) head();
+      const name = monthName(r.month);
+      doc.text(name.charAt(0).toUpperCase() + name.slice(1), cols[0], doc.y - 14, 10);
+      if (multi) doc.text(r.tenant, cols[0], doc.y - 25, 8, false, GRAY);
+      right(r.rent ? kr2(r.rent) : '–', cols[2] - 10, doc.y - 14, 10);
+      right(r.electricity ? kr2(r.electricity) : '–', cols[3] - 10, doc.y - 14, 10);
+      if (r.kwh) right(`${Math.round(r.kwh).toLocaleString('nb-NO')} kWh`, cols[3] - 10, doc.y - 25, 8, false, GRAY);
+      right(kr2(r.total), cols[4] - 10, doc.y - 14, 10, true);
+      doc.text(r.paid ? (r.paid_at ? d(r.paid_at) : 'Ja') : r.claimed ? 'Meldt betalt' : 'Ikke betalt', cols[4] + 6, doc.y - 14, 9.5, !r.paid, r.paid ? null : '0.6 0.2 0.1');
+      doc.y -= multi || r.kwh ? 30 : 22;
+      doc.line(M, doc.y, W - M, doc.y, 0.9);
+    }
+    if (rows.length) {
+      doc.y -= 6;
+      doc.text('Totalt fakturert', cols[0], doc.y - 14, 10.5, true);
+      right(kr2(sum((r) => r.rent)), cols[2] - 10, doc.y - 14, 10.5, true);
+      right(kr2(sum((r) => r.electricity)), cols[3] - 10, doc.y - 14, 10.5, true);
+      right(kr2(sum((r) => r.total)), cols[4] - 10, doc.y - 14, 10.5, true);
+      doc.y -= 34;
+    }
+    doc.ensure(60);
+    doc.para('Oversikten viser fakturaer etter måneden de gjelder. Strøm er viderefakturert etter målt forbruk. Betalingsdato er datoen betalingen ble registrert i Hybel. Les mer om skatteregler for utleie av egen bolig på skatteetaten.no.', M, CW, 9, false, 1.4, GRAY);
+    return doc.build({ footer: `Årsoversikt ${year}${l.address ? ` · ${l.address}` : ''}` });
+  }
+
   contract() {
     const l = this.l;
     const today = localDate();
@@ -265,8 +393,10 @@ export class Lease {
       contract: this.contract(),
       ledger: [...ledger].reverse(),
       deleted: this.deletedMonths(),
+      years: this.years(),
       next,
-      overdue: open.filter((r) => r.due < today).map((r) => ({ month: r.month, label: r.label, total: r.total, due: r.due })),
+      overdue: open.filter((r) => r.due < today && !r.claimed_at).map((r) => ({ month: r.month, label: r.label, total: r.total, due: r.due })),
+      claimed: open.filter((r) => r.claimed_at).map((r) => ({ month: r.month, label: r.label, total: r.total, due: r.due, claimed_at: r.claimed_at })),
       year_total: ledger.filter((r) => r.paid && r.month.startsWith(today.slice(0, 4))).reduce((s, r) => s + r.total, 0)
     };
   }
@@ -298,7 +428,7 @@ export class Lease {
     // Påminnelse om betaling noen dager før forfall, kl. 10.
     if (l.remind_days && now.getHours() >= 10) {
       for (const r of this.ledger()) {
-        if (r.paid || r.total <= 0) continue;
+        if (r.paid || r.claimed_at || r.total <= 0) continue;
         const days = daysBetween(today, r.due);
         if (days < 0 || days > l.remind_days) continue;
         const key = `pay-${r.month}`;

@@ -72,6 +72,13 @@ Slå av **Krev Cloudflare Access** og aktiver port `8100` under **Nettverk** i a
 - **Sjekkliste**: «Inn- og utflytting» på utleiersiden. Trykk «Send innflyttingssjekkliste». Leietaker finner den under Info → Sjekkliste. Bilder lagres i appens datamappe og blir med i sikkerhetskopien.
 - **Pushvarsler**: leietaker slår på varsler under Info → Meldinger eller i innstillingene i appen. På iPhone må appen først legges på Hjem-skjermen (Del → Legg til på Hjem-skjerm). Nøklene lages automatisk og lagres i datamappen.
 
+## Vedlikehold, betaling og sikkerhetskopi
+
+- **Vedlikehold:** legg inn gjentakende oppgaver med intervall. Du får varsel når noe forfaller; oppgaver merket «Leietaker» vises i hybelappen en uke før.
+- **Jeg har betalt:** leietaker kan melde en faktura som betalt. Bekreft under Økonomi når pengene er kommet.
+- **Årsoversikt:** PDF per år under Økonomi – grunnlag for skattemeldingen.
+- **Sikkerhetskopi:** all data ligger i appens datamappe og blir med i sikkerhetskopier av Home Assistant når Hybelstyring er tatt med under «Apper». Arkiv (ZIP) av leieforholdet kan lastes ned under «Sikkerhetskopi».
+
 ## Kort i dashbordet
 
 Appen lager sensoren `sensor.hybel_leietaker_venter` (antall ting som venter på svar, med attributtene `text`, `items` og `urgent`). Bruk et «Betinget kort» som vises når sensoren ikke er `0`. Sensoren går tilbake til 0 når du svarer, setter status eller godkjenner sjekklisten.

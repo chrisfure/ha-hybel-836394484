@@ -1029,6 +1029,10 @@ export class Engine extends EventEmitter {
       const svc = String(body.alerts.notify_service || '').trim();
       if (svc && !/^notify\.[a-z0-9_]+$/.test(svc)) errors.push('Varslingstjenesten må se ut som notify.mobile_app_telefon');
       else d.alerts.notify_service = svc;
+      if (body.alerts.offline_hours !== undefined) {
+        const h = Number(body.alerts.offline_hours);
+        if ([0, 1, 2, 6, 12, 24].includes(h)) d.alerts.offline_hours = h;
+      }
       if (Array.isArray(body.alerts.entities)) {
         d.alerts.entities = [...new Set(body.alerts.entities.map(String).filter((id) => /^binary_sensor\.[a-z0-9_]+$/.test(id)))];
       }
@@ -1143,6 +1147,38 @@ export class Engine extends EventEmitter {
     }
     await this.runReverts();
     await this.checkAutomations();
+    this.checkOffline();
+  }
+
+  // Varsle utleier når en synlig enhet har vært uten kontakt lenge (f.eks. falt ut av Zigbee-nettet).
+  checkOffline() {
+    const d = this.data;
+    const hours = d.alerts.offline_hours ?? 2;
+    const track = d.offline || (d.offline = {});
+    const now = Date.now();
+    let ch = false;
+    const seen = new Set();
+    for (const e of this.enabled()) {
+      seen.add(e.entity_id);
+      const st = this.state(e);
+      const down = !st || st.state === 'unavailable'; // «unknown» er normalt for knapper som ikke er trykket
+      const t = track[e.entity_id];
+      if (down && !t) { track[e.entity_id] = { since: now, notified: false }; ch = true; }
+      else if (!down && t) {
+        if (t.notified) {
+          this.dismissNotice(`offline_${keyOf(e.entity_id)}`);
+          this.notify(`${e.label} har fått kontakt igjen.`, { title: 'Hybel: enhet tilbake' }).catch(() => {});
+        }
+        delete track[e.entity_id]; ch = true;
+      } else if (down && t && !t.notified && hours > 0 && now - t.since >= hours * 3600e3) {
+        t.notified = true; ch = true;
+        const since = new Date(t.since).toLocaleString('nb-NO', { weekday: 'long', hour: '2-digit', minute: '2-digit' });
+        this.notify(`${e.label} har vært uten kontakt siden ${since}. Er det et Zigbee-lys, må det ofte kobles til på nytt (slå på strømmen, åpne for tilkobling og trykk bryteren av/på raskt).`,
+          { title: 'Hybel: enhet uten kontakt', inbox: true, id: `offline_${keyOf(e.entity_id)}`, event: 'offline' }).catch(() => {});
+      }
+    }
+    for (const id of Object.keys(track)) if (!seen.has(id)) { delete track[id]; ch = true; }
+    if (ch) this.store.save();
   }
 
   changed() {
