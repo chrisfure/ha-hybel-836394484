@@ -212,3 +212,10 @@ a.sbtn { display: inline-flex; align-items: center; text-decoration: none; color
 .end-req { display: flex; flex-direction: column; gap: 8px; background: var(--warn-bg); border: 1px solid var(--warn-line); color: var(--ink); border-radius: 14px; padding: 14px; margin: 6px 0 12px; font-size: 14px; }
 .end-req .pill2 { align-self: flex-start; }
 .end-ok { color: var(--green-ink); }
+.ct-status { display: flex; flex-direction: column; gap: 2px; background: var(--info-soft); color: var(--info-ink); border-radius: 12px; padding: 12px 14px; font-size: 14px; }
+.ct-status.ok { background: var(--green-soft); color: var(--green-ink); }
+.ct-warn { margin: 4px 0; padding: 10px 14px 10px 30px; background: var(--warn-bg); border: 1px solid var(--warn-line); border-radius: 12px; font-size: 13.5px; color: var(--warn-ink); }
+.ct-h { margin-top: 10px; font-weight: 600; }
+.ct-flags { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 6px 14px; }
+.ct-flag { display: flex; align-items: center; gap: 8px; font-size: 14px; }
+.ct-flag input { flex-shrink: 0; width: 18px; height: 18px; accent-color: var(--btn); }

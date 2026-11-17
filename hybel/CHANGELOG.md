@@ -1,5 +1,11 @@
 # Endringslogg
 
+## 0.17.0
+
+- Leiekontrakt: ny seksjon på utleiersiden der du krysser av for vanlige vilkår (type bolig, møblering, leietid, strøm, depositum, dyrehold, røyking, tvangsfravikelse, husordensregler, personvern for smarthus-appen, særlige bestemmelser). Navn, adresse, datoer, husleie, depositum og oppsigelsestid hentes fra Leieforhold og Økonomi. Appen varsler om ting som mangler eller strider mot vanlige regler (f.eks. for kort tidsbestemt leie eller for høyt depositum).
+- Forhåndsvis som PDF, og send til leietaker. Leietaker leser kontrakten i appen og godtar den; tidspunkt, innlogget e-post og en dokumentkode lagres i PDF-en. Godtatt kontrakt ligger under Leieforholdet og blir med i arkivet.
+- Vil dere signere med BankID, kan PDF-en signeres i en BankID-tjeneste og lastes opp under Dokumenter.
+
 ## 0.16.0
 
 - Oppsigelse i appen: leietaker kan si opp eller søke om å avslutte leieforholdet under Leie. Appen viser tidligste sluttdato etter kontrakten (oppsigelsestid regnet fra utgangen av måneden), og en tidligere dato blir en søknad du må godkjenne. Du godkjenner (og kan justere datoen) eller avslår under Leieforhold – leietaker får pushvarsel.

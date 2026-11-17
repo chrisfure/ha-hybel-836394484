@@ -90,6 +90,18 @@ export function sendPdf(res, checklists, id, headers = {}) {
   }
 }
 
+export function sendContract(res, contract, which = 'sent', headers = {}) {
+  try {
+    if (which !== 'draft' && !contract.sent) throw new Error('Ingen kontrakt');
+    const buf = contract.pdf(which);
+    const name = contract.filename(which);
+    res.writeHead(200, { 'Content-Type': 'application/pdf', 'Content-Length': buf.length, 'Content-Disposition': `inline; filename="${name}"`, 'Cache-Control': 'no-store', ...headers });
+    res.end(buf);
+  } catch (err) {
+    sendJson(res, 404, { ok: false, error: err.message });
+  }
+}
+
 export function sendInvoice(res, lease, month, headers = {}) {
   try {
     const buf = lease.invoicePdf(month);

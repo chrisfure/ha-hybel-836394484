@@ -617,7 +617,7 @@ const STATUS = { new: [L('Mottatt', 'Received'), 'st-new'], in_progress: [L('Und
 
 function infoBadge() {
   const m = S.m;
-  return (m.maintenance || []).some((t) => t.due) || (m.reports || []).some((r) => r.unread) || (m.electricity && m.electricity.remind) || (m.checklists || []).some((c) => c.status === 'open' || c.unread);
+  return (m.contract && !m.contract.tenant_accept) || (m.maintenance || []).some((t) => t.due) || (m.reports || []).some((r) => r.unread) || (m.electricity && m.electricity.remind) || (m.checklists || []).some((c) => c.status === 'open' || c.unread);
 }
 
 function infoTab() {
@@ -629,7 +629,7 @@ function infoTab() {
   const clActive = cls.some((c) => c.status !== 'approved' || c.unread);
   if (clActive || S.infoSub === 'sjekk') subs.push(['sjekk', L('Sjekkliste', 'Checklist')]);
   if (S.infoSub === 'sjekk' && !cls.length) S.infoSub = 'info';
-  const dot = (k) => (k === 'strom' && (m.electricity.remind || (m.lease && m.lease.overdue.length))) || (k === 'meld' && unread > 0) || (k === 'sjekk' && cls.some((c) => c.status === 'open' || c.unread));
+  const dot = (k) => (k === 'strom' && (m.electricity.remind || (m.lease && m.lease.overdue.length) || (m.contract && !m.contract.tenant_accept))) || (k === 'meld' && unread > 0) || (k === 'sjekk' && cls.some((c) => c.status === 'open' || c.unread));
   let h = `<div class="seg subnav ${subs.length > 3 ? 'four' : ''}" style="grid-template-columns: repeat(${subs.length}, minmax(0, 1fr))">${subs.map(([k, l]) => `<button aria-pressed="${S.infoSub === k}" data-act="info-sub" data-v="${k}">${esc(l)}${dot(k) ? ' •' : ''}</button>`).join('')}</div>`;
   if (S.infoSub === 'strom') h += stromHTML();
   else if (S.infoSub === 'meld') h += meldHTML();
@@ -802,6 +802,22 @@ function payLines(r) {
   return h;
 }
 
+// Leiekontrakt fra utleier: les og godta.
+function contractCardHTML() {
+  const k = S.m.contract;
+  if (!k || k.tenant_accept) return '';
+  const open = S.ctOpen;
+  return `<section class="card info-card ct-card"><span class="field-label">${L('Til godkjenning', 'Awaiting your approval')}</span><h2>${L('Leiekontrakt', 'Lease contract')}</h2>
+    <p class="note">${L(`Utleier har sendt deg leiekontrakten (versjon ${k.version}, ${esc(dateFmt(k.created))}). Les den nøye før du godtar.`, `The landlord has sent you the lease contract (version ${k.version}, ${esc(dateFmt(k.created))}). Read it carefully before accepting.`)}${EN ? ' The contract is in Norwegian.' : ''}</p>
+    <a class="btn ghost" href="api/contract.pdf" target="_blank" rel="noopener">${L('Åpne kontrakten (PDF)', 'Open the contract (PDF)')}</a>
+    <button class="btn ghost" data-act="ct-open">${open ? L('Skjul teksten', 'Hide the text') : L('Les kontrakten her', 'Read the contract here')}</button>
+    ${open ? `<div class="ct-text">${k.body.sections.map((sec, i) => `<h3>${i + 1}. ${esc(sec.h)}</h3>${sec.p.map((p) => `<p>${esc(p)}</p>`).join('')}`).join('')}${(k.body.attachments || []).map((a) => `<h3>${esc(a.h)}</h3>${a.p.map((p) => `<p>${esc(p)}</p>`).join('')}`).join('')}</div>` : ''}
+    <label class="ct-read"><input type="checkbox" data-field="ct-read" ${S.ctRead ? 'checked' : ''}> ${L('Jeg har lest kontrakten og godtar vilkårene', 'I have read the contract and accept the terms')}</label>
+    <button class="btn primary big" data-act="ct-accept" ${S.ctRead ? '' : 'disabled'}>${S.confirmDelete === 'ct-accept' ? L('Trykk igjen for å godta', 'Tap again to accept') : L('Godta kontrakten', 'Accept the contract')}</button>
+    <p class="note">${L('Når du godtar, lagres tidspunktet og e-posten du er logget inn med i kontrakten. Har du spørsmål, send en melding til utleier først.', 'When you accept, the time and the email you are logged in with are stored in the contract. If you have questions, message the landlord first.')}</p>
+  </section>`;
+}
+
 // Si opp / be om å avslutte leieforholdet.
 function endHTML() {
   const T = S.m.termination;
@@ -867,6 +883,8 @@ function contractHTML(c) {
   }
   h += `<div class="kv">${rows.map(([k, v]) => `<div class="kv-row"><span>${esc(k)}</span><span>${esc(v)}${k === ACCOUNT ? ` <button class="chip-btn" data-act="copy" data-v="${esc(v.replace(/\s/g, ''))}" data-msg="${L('Kontonummeret er kopiert', 'Account number copied')}">${L('Kopier', 'Copy')}</button>` : ''}</span></div>`).join('')}</div>`;
   const docs = S.m.docs || [];
+  const kk = S.m.contract;
+  if (kk && kk.tenant_accept) h += `<div class="docs"><a class="doc-link" href="api/contract.pdf" target="_blank" rel="noopener"><span class="doc-ic">PDF</span><span class="grow"><span class="t">${L('Leiekontrakt', 'Lease contract')} v${kk.version}</span><span class="s">${L('Godtatt', 'Accepted')} ${esc(dateFmt(kk.tenant_accept.at))}</span></span></a></div>`;
   if (docs.length) h += `<div class="docs">${docs.map((d) => `<a class="doc-link" href="api/doc/${d.id}" target="_blank" rel="noopener"><span class="doc-ic">${d.ext === 'pdf' ? 'PDF' : L('BILDE', 'IMAGE')}</span><span class="grow"><span class="t">${esc(d.name)}</span><span class="s">${L('Lagt ut', 'Added')} ${esc(dateFmt(d.at))}</span></span></a>`).join('')}</div>`;
   if (c.includes) h += `<span class="field-label">${L('Inkludert i leien', 'Included in the rent')}</span><p class="pre">${esc(c.includes)}</p>`;
   if (c.note) h += `<p class="pre note">${esc(c.note)}</p>`;
@@ -882,6 +900,7 @@ function stromHTML() {
     ${LS.overdue.map((o) => claimBtn(o)).join('')}</div>`;
   const claimedOld = LS ? (LS.claimed || []).filter((o) => !LS.next || o.month !== LS.next.month) : [];
   if (claimedOld.length) h += `<div class="notice-soft info">${claimedOld.map((o) => L(`Du meldte ${esc(monthLabel(o.month))} som betalt ${esc(dateFmt(o.claimed_at))}.`, `You reported ${esc(monthLabel(o.month))} as paid on ${esc(dateFmt(o.claimed_at))}.`)).join(' ')} ${L('Venter på at utleier bekrefter.', 'Waiting for the landlord to confirm.')}</div>`;
+  h += contractCardHTML();
   if (LS && LS.refund) {
     const rf = LS.refund;
     h += `<section class="card info-card next-pay"><span class="field-label">${L('Sluttoppgjør', 'Final settlement')} · ${L('til gode', 'owed to you')}</span>
@@ -1715,7 +1734,7 @@ function setValueFor(e, next, draft, later = false) {
 function act(a, ds) {
   const m = S.m;
   const draft = ds.mode === 'draft';
-  if (!['scene-delete', 'auto-delete', 'reading-delete', 'cl-status', 'cl-submit', 'end-send', 'end-withdraw'].includes(a)) S.confirmDelete = false;
+  if (!['scene-delete', 'auto-delete', 'reading-delete', 'cl-status', 'cl-submit', 'end-send', 'end-withdraw', 'ct-accept'].includes(a)) S.confirmDelete = false;
   if (a === 'cl-status' && S.confirmDelete && S.confirmDelete !== `${ds.id}-${ds.i}`) S.confirmDelete = false;
   if (a !== 'pay-claim') S.confirmClaim = null;
   switch (a) {
@@ -1834,6 +1853,13 @@ function act(a, ds) {
     case 'maint-done':
       cmd({ type: 'maint_done', id: ds.id }).then((r) => r.ok && showToast(L('Takk! Utleier har fått beskjed.', 'Thanks! The landlord has been notified.')));
       return;
+    case 'ct-open': S.ctOpen = !S.ctOpen; return render();
+    case 'ct-accept':
+      if (!S.ctRead) return;
+      if (S.confirmDelete !== 'ct-accept') { S.confirmDelete = 'ct-accept'; return render(); }
+      S.confirmDelete = false;
+      cmd({ type: 'contract_accept', hash: S.m.contract.hash, read: true }).then((r) => { if (r.ok) { S.ctRead = false; showToast(L('Kontrakten er godtatt', 'Contract accepted')); } });
+      return render();
     case 'end-open': S.endForm = { date: S.m.termination?.earliest || '', reason: '' }; return render();
     case 'end-cancel': S.endForm = null; return render();
     case 'end-send':
@@ -2122,6 +2148,7 @@ $app.addEventListener('input', (ev) => {
   if (f === 'reading-value') { S.reading.value = t.value; return; }
   if (f === 'reading-date') { S.reading.date = t.value; checkFutureReading(); return; }
   if (f === 'end-date' && S.endForm) { S.endForm.date = t.value; const w = $app.querySelector('.end-early'); const e = S.m.termination?.earliest; if (w) w.hidden = !(e && t.value && t.value < e); return; }
+  if (f === 'ct-read') { S.ctRead = t.checked; const b = $app.querySelector('[data-act="ct-accept"]'); if (b) b.disabled = !t.checked; return; }
   if (f === 'end-reason' && S.endForm) { S.endForm.reason = t.value; return; }
   if (f === 'auto-time') { S.adraft.trigger.at = t.value; return; }
   if (f === 'win-from') { S.adraft.window.from = t.value; return; }

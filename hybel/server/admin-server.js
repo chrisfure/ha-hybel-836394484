@@ -2,7 +2,7 @@
 import http from 'node:http';
 import { join } from 'node:path';
 import { currentArchive, pastArchive } from './archive.js';
-import { serveStatic, sendJson, readJson, readBody, servePhoto, sendPdf, sendInvoice, serveDoc } from './http.js';
+import { serveStatic, sendJson, readJson, readBody, servePhoto, sendPdf, sendInvoice, sendContract, serveDoc } from './http.js';
 import { log } from './log.js';
 
 const INGRESS_IP = '172.30.32.2';
@@ -141,6 +141,18 @@ export function startAdminServer({ engine, ha, webRoot, port, tenantHub, devOpen
         } catch (err) {
           return sendJson(res, 400, { ok: false, error: err.message });
         }
+      }
+      if (p === '/api/admin/contract.pdf' && req.method === 'GET') return sendContract(res, engine.extras.contract, url.searchParams.get('draft') ? 'draft' : 'sent');
+      if (p === '/api/admin/contract' && req.method === 'POST') {
+        try {
+          const body = await readJson(req);
+          const c = engine.extras.contract;
+          if (body.opts) c.saveOpts(body.opts);
+          if (body.action === 'send') c.send();
+          else if (body.action === 'reset') c.reset();
+          engine.changed();
+          return sendJson(res, 200, { ok: true, state: engine.adminView({ tenant_clients: tenantHub.size }) });
+        } catch (err) { return sendJson(res, 400, { ok: false, error: err.message }); }
       }
       if (p === '/api/admin/end-request' && req.method === 'POST') {
         try {

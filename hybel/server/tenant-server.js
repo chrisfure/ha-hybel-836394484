@@ -1,7 +1,7 @@
 // Leietakerens side. Har KUN leietakerfunksjoner – ingen utleier-API finnes her.
 import http from 'node:http';
 import { join } from 'node:path';
-import { serveStatic, sendJson, readJson, readBody, servePhoto, sendPdf, sendInvoice, serveDoc, EventHub } from './http.js';
+import { serveStatic, sendJson, readJson, readBody, servePhoto, sendPdf, sendInvoice, sendContract, serveDoc, EventHub } from './http.js';
 import { AccessVerifier } from './cfaccess.js';
 import { log } from './log.js';
 
@@ -98,6 +98,7 @@ export function startTenantServer({ engine, options, webRoot, port }) {
         const doc = engine.extras.docFile(dm[1]);
         return serveDoc(res, doc && doc.visible ? doc : null, FILE_HEADERS);
       }
+      if (url.pathname === '/api/contract.pdf' && req.method === 'GET') return sendContract(res, engine.extras.contract, 'sent', FILE_HEADERS);
       const im = url.pathname.match(/^\/api\/invoice\/(\d{4}-\d{2}(?:-S)?)\.pdf$/);
       if (im && req.method === 'GET') return sendInvoice(res, engine.extras.lease, im[1], FILE_HEADERS);
       const cm = url.pathname.match(/^\/api\/checklist\/([a-f0-9]{10})\.pdf$/);

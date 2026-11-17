@@ -397,6 +397,62 @@ function endRequestHTML() {
   return '';
 }
 
+// ---------- leiekontrakt ----------
+const CT_SEL = {
+  object_type: [['hybel', 'Hybel i bolig der jeg bor'], ['sokkel', 'Sokkel/loft i hus der jeg bor'], ['leilighet', 'Selvstendig bolig']],
+  furnished: [['umoblert', 'Umøblert'], ['delvis', 'Delvis møblert'], ['moblert', 'Møblert']],
+  term: [['tidsubestemt', 'Tidsubestemt (løper til oppsigelse)'], ['tidsbestemt', 'Tidsbestemt (har sluttdato)']],
+  term_cancel: [['begge', 'Begge kan si opp i perioden'], ['leietaker', 'Bare leietaker kan si opp'], ['ingen', 'Ingen kan si opp i perioden']],
+  power: [['maaler', 'Etter måler (pris per kWh)'], ['inkludert', 'Inkludert i husleien'], ['fast', 'Fast beløp per måned']],
+  deposit_type: [['konto', 'Depositumskonto'], ['garanti', 'Garanti (NAV e.l.)'], ['ingen', 'Ingen sikkerhet']],
+  pets: [['nei', 'Ikke tillatt uten samtykke'], ['avtale', 'Etter avtale'], ['ja', 'Tillatt']],
+  smoking: [['nei', 'Ikke tillatt'], ['ute', 'Bare utendørs'], ['ja', 'Ingen regel']]
+};
+const CT_FLAGS = [
+  ['Leieobjektet', [['own_bath', 'Eget bad'], ['own_kitchen', 'Eget kjøkken/kjøkkenkrok'], ['storage', 'Bod'], ['parking', 'Parkering'], ['washer', 'Tilgang til vaskemaskin'], ['internet', 'Internett inkludert']]],
+  ['Inkludert i leien', [['water_incl', 'Vann og avløp'], ['heat_incl', 'Oppvarming'], ['kpi', 'KPI-regulering av leien']]],
+  ['Klausuler', [['eviction', 'Tvangsfravikelse ved manglende betaling (anbefalt)'], ['checklist_clause', 'Inn- og utflytting med sjekkliste i appen'], ['app_clause', 'Smarthus og Hybel-appen (personvern)'], ['attach_rules', 'Legg ved husordensregler fra Info'], ['insurance', 'Anbefal innboforsikring']]]
+];
+function contractPanel() {
+  const C = A.st.extras.contract;
+  if (!C) return '';
+  if (!A.ct) A.ct = { ...C.opts };
+  const o = A.ct;
+  const sent = C.sent;
+  const head = sent ? (sent.tenant_accept ? `Godtatt ${fmtDate(sent.tenant_accept.at)}` : `Sendt ${fmtDate(sent.created)} – venter`) : 'Ikke sendt';
+  const sel = (k, label) => `<label class="lbl-col">${label}<select class="input" data-field="ct.${k}">${CT_SEL[k].map(([v, l]) => `<option value="${v}" ${o[k] === v ? 'selected' : ''}>${l}</option>`).join('')}</select></label>`;
+  const inp = (k, label, ph = '', extra = '') => `<label class="lbl-col">${label}<input class="input" ${extra} value="${esc(o[k] ?? '')}" placeholder="${esc(ph)}" data-field="ct.${k}"></label>`;
+  const locked = sent && !sent.tenant_accept;
+  let h = `<section class="panel"><div class="panel-head"><h2>Leiekontrakt</h2><span>${esc(head)}</span></div>`;
+  if (sent) {
+    h += sent.tenant_accept
+      ? `<div class="ct-status ok"><strong>✓ Godtatt av leietaker ${esc(new Date(sent.tenant_accept.at).toLocaleString('nb-NO', { dateStyle: 'long', timeStyle: 'short' }))}</strong>${sent.tenant_accept.email ? `<span>Innlogget som ${esc(sent.tenant_accept.email)}</span>` : ''}<span>Versjon ${sent.version} · dokumentkode ${esc(sent.hash)}</span></div>`
+      : `<div class="ct-status"><strong>Sendt til leietaker ${esc(fmtDate(sent.created))}</strong><span>Versjon ${sent.version}. Leietaker leser og godtar i appen under Leie.</span></div>`;
+    h += `<div class="row-btns"><a class="sbtn on" href="api/admin/contract.pdf" target="_blank" rel="noopener">Åpne kontrakten (PDF)</a><button class="sbtn" data-act="ct-reset">${A.confirmDel === 'ct-reset' ? 'Bekreft – lag ny versjon' : sent.tenant_accept ? 'Lag ny versjon' : 'Trekk tilbake og endre'}</button></div>`;
+    if (!locked && !A.ctEdit) return h + bankidHelp() + `</section>`;
+  }
+  h += `<p class="help">Kryss av for vilkårene du vil ha med. Navn, adresse, datoer, husleie, depositum og oppsigelsestid hentes fra Leieforhold og Økonomi.</p>`;
+  if (C.warnings.length) h += `<ul class="ct-warn">${C.warnings.map((w) => `<li>${esc(w)}</li>`).join('')}</ul>`;
+  h += `<div class="form-grid">${sel('object_type', 'Type bolig')}${sel('furnished', 'Møblering')}</div>
+    ${inp('rooms', 'Rom og areal (valgfritt)', 'F.eks. stue/soverom, bad og kjøkkenkrok, ca. 30 m²')}
+    <div class="form-grid">${sel('term', 'Leietid')}${o.term === 'tidsbestemt' ? sel('term_cancel', 'Oppsigelse i perioden') : ''}</div>
+    <div class="form-grid">${sel('power', 'Strøm')}${o.power === 'fast' ? inp('power_fixed', 'Fast beløp per måned (kr)', 'F.eks. 800', 'inputmode="numeric"') : sel('deposit_type', 'Sikkerhet')}</div>
+    ${o.power === 'fast' ? `<div class="form-grid">${sel('deposit_type', 'Sikkerhet')}</div>` : ''}
+    <div class="form-grid">${sel('pets', 'Dyrehold')}${sel('smoking', 'Røyking')}</div>
+    ${CT_FLAGS.map(([t, list]) => `<span class="help ct-h">${t}</span><div class="ct-flags">${list.map(([k, l]) => `<label class="ct-flag"><input type="checkbox" data-field="ct.${k}" ${o[k] ? 'checked' : ''}> ${l}</label>`).join('')}</div>`).join('')}
+    <span class="help ct-h">Opplysninger om partene (valgfritt)</span>
+    <div class="form-grid">${inp('tenant_birth', 'Leietakers fødselsdato', 'dd.mm.åååå')}${inp('tenant_phone', 'Leietakers telefon')}</div>
+    <div class="form-grid">${inp('tenant_email', 'Leietakers e-post')}${inp('landlord_address', 'Utleiers adresse')}</div>
+    <label class="lbl-col">Særlige bestemmelser (én per linje)<textarea class="input area" rows="3" maxlength="3000" data-field="ct.special" placeholder="F.eks. Leietaker måker egen inngang.">${esc(o.special || '')}</textarea></label>
+    <div class="row-btns"><a class="sbtn" href="api/admin/contract.pdf?draft=1" target="_blank" rel="noopener">Forhåndsvis PDF</a>
+      <button class="sbtn on" data-act="ct-send">${A.confirmDel === 'ct-send' ? 'Bekreft – send til leietaker' : 'Send til leietaker'}</button></div>
+    <p class="help">Når du sender, regnes kontrakten som godtatt av deg. Leietaker får pushvarsel, leser kontrakten i appen og godtar den. Tidspunkt og innlogget e-post lagres i PDF-en.</p>`;
+  return h + bankidHelp() + `</section>`;
+}
+function bankidHelp() {
+  return `<details class="eco-set"><summary>Signere med BankID?</summary><p class="help">Godkjenning i appen er en enkel elektronisk signatur med tidsstempel og innlogget e-post. Vil dere ha BankID: last ned PDF-en, send den til signering i en BankID-tjeneste (f.eks. Posten/Digipost Signering), og last opp den signerte PDF-en under Dokumenter i Leieforhold.</p></details>`;
+}
+
 function leasePanel() {
   const l = A.cfg.lease;
   const c = A.st.extras.lease.contract;
@@ -694,7 +750,7 @@ function render() {
   const focusId = document.activeElement?.id || (document.activeElement?.dataset?.field === 'q' ? '__q' : null);
   A.todo = todos();
   $('todo').innerHTML = todoBar();
-  $('main').innerHTML = `<div class="col-main">${reportsPanel()}${economyPanel()}${leasePanel()}${checklistPanel()}${entitiesPanel()}${scenesPanel()}${statsPanel()}${maintPanel()}${infoPanel()}</div><div class="col-side">${limitsPanel()}${alertsPanel()}${resetPanel()}</div>${photoOverlay()}`;
+  $('main').innerHTML = `<div class="col-main">${reportsPanel()}${economyPanel()}${leasePanel()}${contractPanel()}${checklistPanel()}${entitiesPanel()}${scenesPanel()}${statsPanel()}${maintPanel()}${infoPanel()}</div><div class="col-side">${limitsPanel()}${alertsPanel()}${resetPanel()}</div>${photoOverlay()}`;
   if (focusId === '__q') {
     const q = document.querySelector('[data-field="q"]');
     if (q) { q.focus(); q.setSelectionRange(q.value.length, q.value.length); }
@@ -799,6 +855,14 @@ document.addEventListener('keydown', (ev) => {
 
 // ---------- handlinger ----------
 
+async function saveCt() {
+  clearTimeout(A.ctTimer);
+  try {
+    const r = await api('api/admin/contract', { method: 'POST', body: JSON.stringify({ opts: A.ct }) });
+    if (r.ok) A.st = r.state;
+  } catch (e) { message(esc(e.message), true); }
+}
+
 async function loadCandidates() {
   if (A.cand || A.candLoading) return;
   A.candLoading = true;
@@ -877,6 +941,17 @@ document.addEventListener('click', async (ev) => {
     }
     case 'doc-upload': uploadDoc(); return;
     case 'doc-visible':
+    case 'ct-send':
+    case 'ct-reset': {
+      if (A.confirmDel !== d.act) { A.confirmDel = d.act; break; }
+      try {
+        const r = await api('api/admin/contract', { method: 'POST', body: JSON.stringify({ opts: A.ct, action: d.act === 'ct-send' ? 'send' : 'reset' }) });
+        if (!r.ok) { message(esc(r.error), true); A.confirmDel = null; break; }
+        A.st = r.state; A.confirmDel = null; A.ct = null;
+        message(d.act === 'ct-send' ? 'Kontrakten er sendt. Leietaker har fått varsel.' : 'Du kan nå endre vilkårene og sende en ny versjon.');
+      } catch (e) { message(esc(e.message), true); A.confirmDel = null; }
+      break;
+    }
     case 'end-approve':
     case 'end-decline': {
       if (d.act === 'end-decline' && A.confirmDel !== 'end-decline') { A.confirmDel = 'end-decline'; break; }
@@ -1090,6 +1165,12 @@ document.addEventListener('input', (ev) => {
   else if (f === 'notify') { A.cfg.alerts.notify_service = el.value.trim(); setDirty(); }
   else if (f === 'offline-hours') { A.cfg.alerts.offline_hours = Number(el.value); setDirty(); }
   else if (f === 'q') { A.q = el.value; render(); }
+  else if (f.startsWith('ct.') && A.ct) {
+    const k = f.slice(3);
+    A.ct[k] = el.type === 'checkbox' ? el.checked : el.value;
+    if (el.tagName === 'SELECT' || el.type === 'checkbox') { saveCt().then(render); }
+    else { clearTimeout(A.ctTimer); A.ctTimer = setTimeout(saveCt, 800); }
+  }
   else if (f === 'end-dec-date' && A.endDec) { A.endDec.date = el.value; }
   else if (f === 'end-dec-comment' && A.endDec) { A.endDec.comment = el.value; }
   else if (f === 'mt.title') { A.mt.title = el.value; }

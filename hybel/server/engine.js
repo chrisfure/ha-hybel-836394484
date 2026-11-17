@@ -1064,7 +1064,7 @@ export class Engine extends EventEmitter {
     d.last_tenant_activity = null;
     // Ta vare på forrige leietakers strøm og meldinger i et arkiv.
     if (d.readings?.length || d.reports?.length || d.checklists?.length || d.docs?.length || Object.keys(d.payments || {}).length) {
-      d.archive = [...(d.archive || []), { at: new Date().toISOString(), readings: d.readings || [], reports: d.reports || [], checklists: d.checklists || [], payments: d.payments || {}, lease: d.lease ? { ...d.lease } : null, docs: d.docs || [], terminations: d.terminations || [] }].slice(-10);
+      d.archive = [...(d.archive || []), { at: new Date().toISOString(), readings: d.readings || [], reports: d.reports || [], checklists: d.checklists || [], payments: d.payments || {}, lease: d.lease ? { ...d.lease } : null, docs: d.docs || [], terminations: d.terminations || [], contracts: [...(d.contract_history || []), ...(d.contract ? [d.contract] : [])] }].slice(-10);
     }
     d.readings = [];
     d.reports = [];
@@ -1072,6 +1072,9 @@ export class Engine extends EventEmitter {
     d.payments = {};
     d.docs = []; // forrige leietakers kontrakt ligger i arkivet
     d.terminations = [];
+    d.contract = null;
+    d.contract_history = [];
+    if (d.contract_opts) Object.assign(d.contract_opts, { tenant_birth: '', tenant_email: '', tenant_phone: '' });
     d.lease_flags = {};
     if (d.lease) { d.lease.start = ''; d.lease.end = ''; }
     d.push_subs = []; // forrige leietakers telefoner skal ikke få varsler

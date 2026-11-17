@@ -44,6 +44,7 @@ export function currentArchive(x) {
     if (!x.lease.yearRows(y).length) continue;
     try { zip.add(`Årsoversikter/Årsoversikt-${y}.pdf`, x.lease.yearPdf(y)); } catch (err) { warn(y, err); }
   }
+  if (x.contract.sent) { try { zip.add(`Leiekontrakt-v${x.contract.sent.version}.pdf`, x.contract.pdf('sent')); } catch (err) { warn('kontrakt', err); } }
   for (const c of d.checklists || []) {
     try { zip.add(`Sjekklister/${x.checklists.filename(c)}`, x.checklists.pdf(c.id)); } catch (err) { warn('sjekkliste', err); }
   }
