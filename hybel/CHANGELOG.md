@@ -1,5 +1,9 @@
 # Endringslogg
 
+## 0.17.1
+
+- Tydeligere tekst om forfall: husleien for en måned forfaller på forfallsdagen i samme måned og gjelder hele måneden. Fakturaen viser nå «Gjelder 1.–31. oktober» i stedet for «Forskuddsvis», og kontrakten sier «forskuddsvis» bare når forfall er den 1. (Utregningen er uendret.)
+
 ## 0.17.0
 
 - Leiekontrakt: ny seksjon på utleiersiden der du krysser av for vanlige vilkår (type bolig, møblering, leietid, strøm, depositum, dyrehold, røyking, tvangsfravikelse, husordensregler, personvern for smarthus-appen, særlige bestemmelser). Navn, adresse, datoer, husleie, depositum og oppsigelsestid hentes fra Leieforhold og Økonomi. Appen varsler om ting som mangler eller strider mot vanlige regler (f.eks. for kort tidsbestemt leie eller for høyt depositum).

@@ -594,7 +594,7 @@ function economyPanel() {
       <select class="select" data-field="lease.meter_sensor"><option value="">Av – leietaker leser av selv</option>
       ${(A.cand?.meters || []).map((m) => `<option value="${esc(m.entity_id)}" ${l.meter_sensor === m.entity_id ? 'selected' : ''}>${esc(m.name)} (${esc(m.state)})</option>`).join('')}
       ${l.meter_sensor && !(A.cand?.meters || []).some((m) => m.entity_id === l.meter_sensor) ? `<option value="${esc(l.meter_sensor)}" selected>${esc(l.meter_sensor)}</option>` : ''}</select></label>
-    <p class="help">Husleie betales forskuddsvis; første og siste måned avregnes per dag. Strøm legges på første forfall etter hver avlesning, med prisen som gjaldt da. Husk «Lagre endringer» øverst.</p>
+    <p class="help">Husleien for en måned forfaller på forfallsdagen i samme måned og gjelder hele måneden (forfall 15. oktober = leie for 1.–31. oktober). Første og siste måned avregnes per dag. Strøm legges på første forfall etter hver avlesning, med prisen som gjaldt da. Husk «Lagre endringer» øverst.</p>
   </details>`;
   return h + `</section>`;
 }

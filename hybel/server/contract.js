@@ -137,7 +137,7 @@ export class Contract {
     const incl = [o.water_incl && 'vann og avløp', o.heat_incl && 'oppvarming', o.internet && 'internett', l.includes].filter(Boolean);
     const price = el.price_per_kwh;
     add('Husleie og betaling', [
-      `Husleien er ${l.rent ? kr(l.rent) : '________ kr'} per måned og betales forskuddsvis innen den ${l.due_day || 1}. hver måned${l.account ? ` til konto ${l.account}` : ''}. Merk betalingen med fakturanummeret som vises i Hybel-appen.`,
+      `Husleien er ${l.rent ? kr(l.rent) : '________ kr'} per måned${(l.due_day || 1) === 1 ? ' og betales forskuddsvis innen den 1. hver måned' : ` og betales innen den ${l.due_day}. i måneden leien gjelder for (for eksempel betales leien for oktober innen ${l.due_day}. oktober)`}${l.account ? ` til konto ${l.account}` : ''}. Merk betalingen med fakturanummeret som vises i Hybel-appen.`,
       'Flytter leietaker inn eller ut i løpet av en måned, beregnes husleien per dag for den måneden.',
       incl.length ? `Husleien inkluderer ${incl.join(', ').replace(/, ([^,]*)$/, ' og $1')}.` : '',
       o.power === 'maaler' ? `Strøm betales etter faktisk forbruk målt på egen måler for hybelen. Prisen tilsvarer utleiers kostnad per kWh inkludert nettleie og avgifter, for tiden ${price != null ? kr(price) : '____ kr'} per kWh. Strøm faktureres etterskuddsvis sammen med husleien, og endret pris varsles i appen.`

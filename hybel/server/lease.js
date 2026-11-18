@@ -92,7 +92,7 @@ export class Lease {
     return { rent: Math.round((l.rent * days) / dim), note: `${from}.–${to}. ${MONTHS[Number(m.slice(5)) - 1].slice(0, 3)}: ${days} av ${dim} dager` };
   }
 
-  // Betalingsplan: husleie forskuddsvis per måned, strøm på etterskudd med første forfall etter avlesningen.
+  // Betalingsplan: husleie for måned M forfaller på forfallsdagen i måned M og dekker hele M, strøm på etterskudd med første forfall etter avlesningen.
   // Ved avsluttet leieforhold kommer et sluttoppgjør (måned «YYYY-MM-S») 14 dager etter siste dag:
   // strøm fram til utflytting og tilbakebetaling av husleie som er betalt for dager etter utflytting.
   ledger() {
@@ -287,7 +287,7 @@ export class Lease {
       doc.y -= h;
       doc.line(M, doc.y, W - M, doc.y, 0.9);
     };
-    if (row.rent) line(`Husleie ${monthName(month)}`, row.rent_note ? `Avregnet ${row.rent_note} (${kr2(this.l.rent)} kr per måned)` : 'Forskuddsvis', row.rent);
+    if (row.rent) line(`Husleie ${monthName(month)}`, row.rent_note ? `Avregnet ${row.rent_note} (${kr2(this.l.rent)} kr per måned)` : `Gjelder 1.–${daysIn(month)}. ${MONTHS[Number(month.slice(5, 7)) - 1]}`, row.rent);
     for (const p of row.electricity) {
       line(`Strøm ${new Date(p.from).toLocaleDateString('nb-NO', { day: 'numeric', month: 'short' })} – ${new Date(p.to).toLocaleDateString('nb-NO', { day: 'numeric', month: 'short', year: 'numeric' })}`,
         `Målerstand ${p.start.toLocaleString('nb-NO')} → ${p.end.toLocaleString('nb-NO')} = ${p.kwh.toLocaleString('nb-NO')} kWh × ${p.price != null ? kr2(p.price) : '–'} kr/kWh`, p.amount || 0);

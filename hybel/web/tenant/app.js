@@ -869,7 +869,7 @@ function contractHTML(c) {
   if (c.start) rows.push([L('Innflytting', 'Move-in'), longDate(c.start)]);
   rows.push([L('Kontrakt til', 'Contract until'), c.end ? longDate(c.end) : L('Tidsubestemt', 'Open-ended')]);
   if (c.notice_months) rows.push([L('Oppsigelsestid', 'Notice period'), L(`${c.notice_months} måned${c.notice_months === 1 ? '' : 'er'}`, `${c.notice_months} month${c.notice_months === 1 ? '' : 's'}`)]);
-  if (c.rent) rows.push([L('Husleie', 'Rent'), L(`${nok(c.rent)} per måned, forfall den ${c.due_day}.`, `${nok(c.rent)} per month, due on day ${c.due_day}`)]);
+  if (c.rent) rows.push([L('Husleie', 'Rent'), L(`${nok(c.rent)} per måned, forfall den ${c.due_day}. for samme måned`, `${nok(c.rent)} per month, due on day ${c.due_day} of the month it covers`)]);
   if (c.rent && (c.start || c.end)) rows.push([L('Delvis måned', 'Part month'), L('Avregnes per dag', 'Charged per day')]);
   if (c.deposit) rows.push([L('Depositum', 'Deposit'), `${nok(c.deposit)}${c.deposit_note ? ` – ${c.deposit_note}` : ''}`]);
   if (c.account) rows.push([ACCOUNT, c.account]);
