@@ -1,5 +1,11 @@
 # Endringslogg
 
+## 0.20.0
+
+- Sparetips tar nå med utetemperatur per døgn, graddager og strøm per graddag, så forbruket vurderes opp mot hvor kaldt det har vært.
+- Data fra ventilasjonsaggregatet tas med: gjenvinningsgrad, tilluft-, avtrekks- og utetemperatur, varmeveksler, ettervarmer/settpunkt, eco-modus og viftenivå (nå-verdier og historikk siste uke).
+- Værvarsel for neste 7 døgn og 24 timer tas med, så tipsene kan ta hensyn til kulde, mildvær og vind som kommer. Værkilde kan velges på utleiersiden hvis det finnes flere.
+
 ## 0.19.1
 
 - Sparetips: kortere og hel tekst for anslått besparelse.

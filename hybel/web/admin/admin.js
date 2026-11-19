@@ -231,12 +231,13 @@ function advisorPanel() {
   const hist = V.history || [];
   const when = (iso) => new Date(iso).toLocaleString('nb-NO', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' });
   let h = `<section class="panel"><div class="panel-head"><h2>Sparetips</h2><span>${V.enabled ? (hist.length ? `Sist ${esc(when(hist[0].at))}` : 'På') : 'Av'}</span></div>
-    <p class="help">Leietaker kan trykke «Få sparetips» i automasjonsfanen. Målinger fra siste uke (uten navn, meldinger og betalinger) sendes til en AI-modell, som gir tips og forslag til automasjoner. Leietaker godtar dette første gang. Alle svar vises her.</p>
+    <p class="help">Leietaker kan trykke «Få sparetips» i automasjonsfanen. Målinger fra siste uke (uten navn, meldinger og betalinger) sendes sammen med utetemperatur, data fra ventilasjonsaggregatet og værvarsel til en AI-modell, som gir tips og forslag til automasjoner. Leietaker godtar dette første gang. Alle svar vises her.</p>
     <div class="form-grid">
       <label class="lbl-col">Sparetips for leietaker<select class="input" data-field="adv.enabled"><option value="1" ${V.enabled ? 'selected' : ''}>På</option><option value="0" ${V.enabled ? '' : 'selected'}>Av</option></select></label>
       <label class="lbl-col">Maks vurderinger per dag<select class="input" data-field="adv.per_day">${[1, 2, 3, 5, 10].map((n) => `<option value="${n}" ${V.per_day === n ? 'selected' : ''}>${n}</option>`).join('')}</select></label>
     </div>
     ${V.ai_entities.length > 1 ? `<label class="lbl-col">AI-modell<select class="input" data-field="adv.ai_entity"><option value="">Automatisk (${esc(V.ai_entity_used || '–')})</option>${V.ai_entities.map((x) => `<option value="${esc(x)}" ${V.ai_entity === x ? 'selected' : ''}>${esc(x)}</option>`).join('')}</select></label>` : ''}
+    ${(V.weather_entities || []).length > 1 ? `<label class="lbl-col">Værvarsel<select class="input" data-field="adv.weather_entity"><option value="">Automatisk (${esc(V.weather_entity_used || '–')})</option>${V.weather_entities.map((x) => `<option value="${esc(x)}" ${V.weather_entity === x ? 'selected' : ''}>${esc(x)}</option>`).join('')}</select></label>` : ''}
     ${!V.ai_entities.length ? '<p class="help ct-warn">Fant ingen AI-modell (AI Task) i Home Assistant. Sett opp f.eks. Claude-integrasjonen med en AI Task.</p>' : ''}
     ${V.consent ? `<p class="help">Leietaker godtok ${esc(when(V.consent.at))}.</p>` : ''}
     <div class="row-btns"><button class="sbtn" data-act="adv-test" ${A.advBusy ? 'disabled' : ''}>${A.advBusy ? 'Vurderer …' : 'Prøv selv (vises ikke for leietaker)'}</button></div>`;

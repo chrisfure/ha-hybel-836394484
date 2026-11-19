@@ -49,6 +49,7 @@ export class Advisor {
     const c = this.cfg;
     if (b.enabled !== undefined) c.enabled = Boolean(b.enabled);
     if (b.per_day !== undefined) { const n = Math.round(Number(b.per_day)); if (n >= 1 && n <= 10) c.per_day = n; }
+    if (b.weather_entity !== undefined) c.weather_entity = /^weather\.[a-z0-9_]+$/.test(String(b.weather_entity)) ? String(b.weather_entity) : '';
     if (b.ai_entity !== undefined) c.ai_entity = /^ai_task\.[a-z0-9_]+$/.test(String(b.ai_entity)) ? String(b.ai_entity) : '';
   }
 
@@ -70,6 +71,8 @@ export class Advisor {
       ...this.cfg,
       ai_entities: this.aiEntities(),
       ai_entity_used: this.aiEntity(),
+      weather_entities: [...this.engine.ha.states.keys()].filter((id) => id.startsWith('weather.')),
+      weather_entity_used: this.weatherEntity(),
       consent: this.d.advice_consent || null,
       history: [...this.history].reverse().slice(0, 15)
     };
@@ -103,6 +106,25 @@ export class Advisor {
     const energyWeek = week.energy.map((en) => ({ hva: en.label, kwh_per_dag: en.points.map(r1), watt_nå: en.power, totalt_kwh: r1(en.total) }));
     const energyDay = day.energy.map((en) => ({ hva: en.label, kwh_per_time_siste_døgn: en.points.map(r1) }));
     const autos = (this.d.automations || []).filter((a) => a.enabled !== false).map((a) => eng.describeAutomation(a));
+
+    // Utetemperatur per døgn og graddager (grunnlag 17 °C), og strøm per graddag.
+    const out = week.series.find((x) => x.type === 'out');
+    let outdoor = null;
+    if (out) {
+      const perDay = Math.round(24 / stepH);
+      const days = [];
+      for (let k = 0; k < out.points.length; k += perDay) {
+        const v = out.points.slice(k, k + perDay).filter((x) => x != null);
+        days.push(v.length ? r1(v.reduce((a, b) => a + b, 0) / v.length) : null);
+      }
+      const gd = r1(days.reduce((acc, t) => acc + (t == null ? 0 : Math.max(0, 17 - t)), 0));
+      outdoor = {
+        snitt_per_døgn_siste_uke: days, graddager_siste_uke: gd, nå: out.now,
+        kwh_per_graddag: gd > 0 ? week.energy.map((en) => ({ hva: en.label, kwh_per_graddag: r1(en.total / gd) })) : []
+      };
+    }
+    const vent = await this.ventFacts(ents.filter((e) => e.kind === 'vent'));
+    const forecast = await this.forecast();
     return {
       codes,
       payload: {
@@ -115,8 +137,100 @@ export class Advisor {
         målinger_siste_uke: series,
         strøm_siste_uke: energyWeek,
         strøm_siste_døgn: energyDay,
-        aktive_automasjoner: autos
+        aktive_automasjoner: autos,
+        ute: outdoor,
+        ventilasjonsaggregat: vent,
+        værvarsel: forecast
       }
+    };
+  }
+
+  // Alt ventilasjonsaggregatet rapporterer (varmegjenvinning, tilluft/avtrekk, ettervarmer, eco, filter),
+  // nå-verdier og historikk for de viktigste temperaturene og gjenvinningsgraden.
+  async ventFacts(vents) {
+    if (!vents.length) return null;
+    const eng = this.engine;
+    const res = [];
+    for (const e of vents) {
+      const obj = e.entity_id.split('.')[1];
+      const sib = new Set(await eng.stats.deviceSensors(e.entity_id).catch(() => []));
+      for (const id of eng.ha.states.keys()) if (/^(sensor|binary_sensor|switch)\./.test(id) && id.split('.')[1].startsWith(`${obj}_`)) sib.add(id);
+      const now = [];
+      const hist = [];
+      for (const id of [...sib].sort()) {
+        const st = eng.ha.states.get(id);
+        if (!st || ['unknown', 'unavailable', ''].includes(st.state)) continue;
+        const name = String(st.attributes?.friendly_name || id).replace(/[⁠​]/g, '');
+        const unit = st.attributes?.unit_of_measurement || '';
+        now.push(`${name}: ${st.state}${unit ? ` ${unit}` : ''}`);
+        if (/gjenvinn|recovery|efficien|tilluft.*temp|supply.*temp|avtrekk.*temp|extract.*temp|utetemp|outdoor|veksler|exchanger|varmeeffekt|heater/i.test(`${id} ${name}`) && Number.isFinite(Number(st.state)) && hist.length < 6) hist.push({ id, name, unit });
+      }
+      const a = eng.state(e)?.attributes || {};
+      const series = await this.bucketHistory(hist.map((h) => h.id));
+      res.push({
+        navn: e.label,
+        innstillinger_nå: { viftenivå: a.fan_mode ?? null, forhåndsinnstilling: a.preset_mode ?? null, tilluft_settpunkt: a.temperature ?? null, eco_modus: a.eco_mode ?? null, modus: eng.state(e)?.state },
+        sensorer_nå: now.slice(0, 30),
+        historikk_per_2t: hist.map((h) => ({ hva: h.name, enhet: h.unit, verdier: series[h.id] || [] }))
+      });
+    }
+    return res;
+  }
+
+  // Tidsserie per 2 timer siste uke (snitt av målinger i hver periode, siste kjente verdi videreført).
+  async bucketHistory(ids) {
+    if (!ids.length) return {};
+    const end = Date.now();
+    const start = end - 7 * 24 * 3600e3;
+    let hist = {};
+    try {
+      hist = await this.engine.ha.send({ type: 'history/history_during_period', start_time: new Date(start).toISOString(), end_time: new Date(end).toISOString(), entity_ids: ids, minimal_response: true, no_attributes: true, significant_changes_only: false }, false, 30000);
+    } catch (err) {
+      log.warn('Sparetips: fikk ikke historikk for ventilasjon:', err.message);
+      return {};
+    }
+    const step = 2 * 3600e3;
+    const n = Math.ceil((end - start) / step);
+    const out = {};
+    for (const id of ids) {
+      const rows = (hist[id] || []).map((r) => [(r.lu ?? r.lc ?? 0) * 1000 || Date.parse(r.last_updated || r.last_changed), Number(r.s ?? r.state)]).filter(([, v]) => Number.isFinite(v)).sort((x, y) => x[0] - y[0]);
+      const vals = [];
+      let i = 0, last = null;
+      for (let b = 0; b < n; b++) {
+        const b1 = start + (b + 1) * step;
+        let sum = 0, k = 0;
+        while (i < rows.length && rows[i][0] < b1) { sum += rows[i][1]; k++; last = rows[i][1]; i++; }
+        vals.push(k ? r1(sum / k) : r1(last));
+      }
+      out[id] = vals;
+    }
+    return out;
+  }
+
+  weatherEntity() {
+    const list = [...this.engine.ha.states.keys()].filter((id) => id.startsWith('weather.'));
+    if (this.cfg.weather_entity && list.includes(this.cfg.weather_entity)) return this.cfg.weather_entity;
+    return list.find((id) => /home|hjem|forecast/.test(id)) || list[0] || null;
+  }
+
+  // Værvarsel: neste 7 døgn og neste 24 timer.
+  async forecast() {
+    const w = this.weatherEntity();
+    if (!w) return null;
+    const get = async (type) => {
+      try {
+        const r = await this.engine.ha.send({ type: 'call_service', domain: 'weather', service: 'get_forecasts', service_data: { type }, target: { entity_id: w }, return_response: true }, false, 20000);
+        return r?.response?.[w]?.forecast || [];
+      } catch (err) {
+        log.debug('Sparetips: værvarsel', type, err.message);
+        return [];
+      }
+    };
+    const [daily, hourly] = await Promise.all([get('daily'), get('hourly')]);
+    const day = (iso) => new Date(iso).toLocaleDateString('nb-NO', { timeZone: 'Europe/Oslo', weekday: 'short', day: 'numeric', month: 'short' });
+    return {
+      døgn: daily.slice(0, 7).map((f) => ({ dag: day(f.datetime), maks: f.temperature ?? null, min: f.templow ?? null, vær: f.condition, vind_ms: f.wind_speed != null ? r1(f.wind_speed / (this.engine.ha.states.get(w)?.attributes?.wind_speed_unit === 'km/h' ? 3.6 : 1)) : null, nedbør_mm: f.precipitation ?? null })),
+      neste_24t_temp_per_time: hourly.slice(0, 24).map((f) => f.temperature ?? null)
     };
   }
 
@@ -160,7 +274,10 @@ Under følger måledata fra siste uke (JSON). Tidsserier har én verdi per ${pay
 Oppgave:
 1. Finn de 2–4 tiltakene som gir størst besparelse eller bedre inneklima for akkurat denne hybelen, basert på tallene. Vær konkret og vis til tallene (f.eks. «stua har stått på 23 °C også om natta»). Estimer besparelsen forsiktig i kWh og kroner per måned med strømprisen som er oppgitt (er den null, oppgi bare kWh uten å kommentere prisen). Bruk tommelfingerregelen ca. 5 % per grad lavere temperatur for direkte elektrisk oppvarming, og si at det er et anslag.
 2. Foreslå 0–3 automasjoner som gjennomfører tiltakene. Ikke foreslå noe som allerede finnes i aktive_automasjoner. Hold deg innenfor lovlig_min/lovlig_maks og lovlige_nivåer. Ikke foreslå noe som går ut over komfort på en urimelig måte (ikke under 17 °C i oppholdsrom når leietakeren er hjemme).
-3. Hvis det er for lite data til å si noe sikkert, si det ærlig og gi heller generelle, korte tips.
+3. Ta med utetemperaturen: bruk ute.graddager_siste_uke og kwh_per_graddag til å vurdere om forbruket er rimelig for været, og sammenlign kalde og milde dager. Ikke kall forbruket høyt hvis det skyldes kulde.
+4. Vurder ventilasjonsaggregatet med varmegjenvinning: gjenvinningsgrad, tilluft- mot avtrekkstemperatur, ettervarmer/tilluft_settpunkt, eco-modus og viftenivå. Med høy gjenvinningsgrad er varmetapet fra ventilasjonen lite, så ikke overdriv gevinsten av lavere viftenivå – men tørr luft om vinteren kan tale for lavere luftmengde. Et høyt tilluft_settpunkt kan bety at ettervarmeren bruker strøm; da kan det nevnes (i til_utleier hvis det er utleiers innstilling).
+5. Ta hensyn til værvarselet: kommer det en kuldeperiode, mildvær eller sterk vind de neste dagene, kan tipsene være konkrete for det (f.eks. «det blir kaldt fra lørdag, ...»). Ikke finn på værdata som ikke står i varselet.
+6. Hvis det er for lite data til å si noe sikkert, si det ærlig og gi heller generelle, korte tips.
 
 Regler for teksten: Skriv til leietakeren med «du». ${en ? 'Write all text in English.' : 'Skriv på norsk bokmål.'} Korte setninger, ingen markdown. Ikke nevn tekniske systemer, integrasjoner eller entity-id-er – bruk navnene på enhetene. Ikke gi råd om å endre utstyr eller ting som er utleiers ansvar; nevn dem i så fall i «til_utleier».
 
