@@ -103,7 +103,7 @@ export class Advisor {
 
     const stepH = Math.round(week.bucket / 3600e3);
     const series = week.series.map((s) => ({ hva: `${s.label}${s.sub ? ` (${s.sub})` : ''}`, enhet: s.unit, snitt: s.avg, min: r1(s.min), maks: r1(s.max), per_2t: s.points }));
-    const energyWeek = week.energy.map((en) => ({ hva: en.label, kwh_per_dag: en.points.map(r1), watt_nå: en.power, totalt_kwh: r1(en.total) }));
+    const energyWeek = week.energy.map((en) => ({ hva: en.label, kwh_per_dag: en.points.map(r1), watt_nå: en.power, målt_fra: en.since && en.since > week.start + 6 * 3600e3 ? new Date(en.since).toLocaleString('nb-NO', { timeZone: 'Europe/Oslo', dateStyle: 'medium', timeStyle: 'short' }) : 'hele uken', totalt_kwh: r1(en.total) }));
     const energyDay = day.energy.map((en) => ({ hva: en.label, kwh_per_time_siste_døgn: en.points.map(r1) }));
     const autos = (this.d.automations || []).filter((a) => a.enabled !== false).map((a) => eng.describeAutomation(a));
 
@@ -274,10 +274,11 @@ Under følger måledata fra siste uke (JSON). Tidsserier har én verdi per ${pay
 Oppgave:
 1. Finn de 2–4 tiltakene som gir størst besparelse eller bedre inneklima for akkurat denne hybelen, basert på tallene. Vær konkret og vis til tallene (f.eks. «stua har stått på 23 °C også om natta»). Estimer besparelsen forsiktig i kWh og kroner per måned med strømprisen som er oppgitt (er den null, oppgi bare kWh uten å kommentere prisen). Bruk tommelfingerregelen ca. 5 % per grad lavere temperatur for direkte elektrisk oppvarming, og si at det er et anslag.
 2. Foreslå 0–3 automasjoner som gjennomfører tiltakene. Ikke foreslå noe som allerede finnes i aktive_automasjoner. Hold deg innenfor lovlig_min/lovlig_maks og lovlige_nivåer. Ikke foreslå noe som går ut over komfort på en urimelig måte (ikke under 17 °C i oppholdsrom når leietakeren er hjemme).
-3. Ta med utetemperaturen: bruk ute.graddager_siste_uke og kwh_per_graddag til å vurdere om forbruket er rimelig for været, og sammenlign kalde og milde dager. Ikke kall forbruket høyt hvis det skyldes kulde.
-4. Vurder ventilasjonsaggregatet med varmegjenvinning: gjenvinningsgrad, tilluft- mot avtrekkstemperatur, ettervarmer/tilluft_settpunkt, eco-modus og viftenivå. Med høy gjenvinningsgrad er varmetapet fra ventilasjonen lite, så ikke overdriv gevinsten av lavere viftenivå – men tørr luft om vinteren kan tale for lavere luftmengde. Et høyt tilluft_settpunkt kan bety at ettervarmeren bruker strøm; da kan det nevnes (i til_utleier hvis det er utleiers innstilling).
-5. Ta hensyn til værvarselet: kommer det en kuldeperiode, mildvær eller sterk vind de neste dagene, kan tipsene være konkrete for det (f.eks. «det blir kaldt fra lørdag, ...»). Ikke finn på værdata som ikke står i varselet.
-6. Hvis det er for lite data til å si noe sikkert, si det ærlig og gi heller generelle, korte tips.
+3. Strømmålere med målt_fra senere enn uken startet er nye – 0 kWh før det tidspunktet betyr ingen data, ikke feil eller null forbruk.
+4. Ta med utetemperaturen: bruk ute.graddager_siste_uke og kwh_per_graddag til å vurdere om forbruket er rimelig for været, og sammenlign kalde og milde dager. Ikke kall forbruket høyt hvis det skyldes kulde.
+5. Vurder ventilasjonsaggregatet med varmegjenvinning: gjenvinningsgrad, tilluft- mot avtrekkstemperatur, ettervarmer/tilluft_settpunkt, eco-modus og viftenivå. Med høy gjenvinningsgrad er varmetapet fra ventilasjonen lite, så ikke overdriv gevinsten av lavere viftenivå – men tørr luft om vinteren kan tale for lavere luftmengde. Et høyt tilluft_settpunkt kan bety at ettervarmeren bruker strøm; da kan det nevnes (i til_utleier hvis det er utleiers innstilling).
+6. Ta hensyn til værvarselet: kommer det en kuldeperiode, mildvær eller sterk vind de neste dagene, kan tipsene være konkrete for det (f.eks. «det blir kaldt fra lørdag, ...»). Ikke finn på værdata som ikke står i varselet.
+7. Hvis det er for lite data til å si noe sikkert, si det ærlig og gi heller generelle, korte tips.
 
 Regler for teksten: Skriv til leietakeren med «du». ${en ? 'Write all text in English.' : 'Skriv på norsk bokmål.'} Korte setninger, ingen markdown. Ikke nevn tekniske systemer, integrasjoner eller entity-id-er – bruk navnene på enhetene. Ikke gi råd om å endre utstyr eller ting som er utleiers ansvar; nevn dem i så fall i «til_utleier».
 

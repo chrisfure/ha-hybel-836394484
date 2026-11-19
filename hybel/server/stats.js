@@ -254,7 +254,7 @@ export class Stats {
       const pw = d.power ? Number(this.engine.ha.states.get(d.power)?.state) : NaN;
       return {
         id: d.id, label: d.label, sub: d.sub, unit: 'kWh', type: 'energy',
-        times, points: pts.map(round), total: round(pts.reduce((a, b) => a + b, 0)),
+        times, points: pts.map(round), total: round(pts.reduce((a, b) => a + b, 0)), since: rows.length ? rows[0][0] : null,
         power: Number.isFinite(pw) ? Math.round(pw) : null,
         meter: Number(this.engine.ha.states.get(d.entity_id)?.state) * k || null
       };

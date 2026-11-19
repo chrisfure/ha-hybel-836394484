@@ -1,5 +1,9 @@
 # Endringslogg
 
+## 0.20.1
+
+- Sparetips: nye strømmålere uten historikk tolkes ikke lenger som feil eller null forbruk.
+
 ## 0.20.0
 
 - Sparetips tar nå med utetemperatur per døgn, graddager og strøm per graddag, så forbruket vurderes opp mot hvor kaldt det har vært.
