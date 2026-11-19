@@ -100,6 +100,31 @@ export class Engine extends EventEmitter {
     return this.enabled().map((e, i) => [e, i]).sort((a, b) => idx(a[0]) - idx(b[0]) || a[1] - b[1]).map(([e]) => e);
   }
 
+  // Bytt en enhet med en ny (f.eks. ny ovn eller annen integrasjon) og behold navn, grenser,
+  // rekkefølge, automasjoner, scener og statistikk. Gammel historikk følger ikke med.
+  replaceEntity(oldId, newId) {
+    const d = this.data;
+    oldId = String(oldId || ''); newId = String(newId || '');
+    const e = d.entities.find((x) => x.entity_id === oldId);
+    if (!e) throw new Error('Fant ikke enheten som skal byttes');
+    if (!/^[a-z_]+\.[a-z0-9_]+$/.test(newId)) throw new Error('Ugyldig ny enhet');
+    if (d.entities.some((x) => x.entity_id === newId)) throw new Error('Den nye enheten er allerede lagt til – fjern den først');
+    if (oldId.split('.')[0] !== newId.split('.')[0]) throw new Error('Den nye enheten må være av samme type');
+    if (!this.ha.states.has(newId)) throw new Error('Fant ikke den nye enheten i Home Assistant');
+    const keep = { archive: d.archive, readings: d.readings, reports: d.reports, payments: d.payments, checklists: d.checklists };
+    for (const k of Object.keys(keep)) delete d[k];
+    const esc = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    let json = JSON.stringify(d);
+    json = json.replace(new RegExp(`(["-])${esc(oldId)}"`, 'g'), `$1${newId}"`).replace(new RegExp(`"${keyOf(oldId)}"`, 'g'), `"${keyOf(newId)}"`);
+    const next = JSON.parse(json);
+    for (const k of Object.keys(d)) delete d[k];
+    Object.assign(d, next, keep);
+    for (const k of Object.keys(keep)) if (keep[k] === undefined) delete d[k];
+    this.store.save();
+    log.info(`Byttet enhet ${oldId} → ${newId}`);
+    this.changed();
+  }
+
   byKey(key) {
     return this.enabled().find((e) => keyOf(e.entity_id) === key);
   }

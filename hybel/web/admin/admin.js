@@ -135,6 +135,7 @@ function entitiesPanel() {
               <label>Høyest <input class="input num-in" type="number" min="2" max="100" value="${e.max_pct ?? 100}" data-field="max_pct" data-i="${i}" aria-label="Høyeste ekte lysstyrke for ${esc(e.label)}">%</label></span>
               <label class="sensor-pick"><input type="checkbox" ${e.all_off === false ? '' : 'checked'} data-field="all_off" data-i="${i}"> Med i «Slå av alle»</label>`}
         <span class="mono">${esc(e.entity_id)}${now ? ` · ${esc(now)}` : ''}${l && !l.available ? ' · utilgjengelig' : ''}</span>
+        ${l && !l.available && A.cand ? replaceHTML(e) : ''}
       </div>
       <div class="tools">
         <button class="tool" data-act="ent-up" data-i="${i}" aria-label="Flytt opp" ${i === 0 ? 'disabled' : ''}>${svg('M6 15l6-6 6 6')}</button>
@@ -145,6 +146,17 @@ function entitiesPanel() {
   });
   h += A.picker === 'entity' ? pickerHTML('entity') : `<button class="add" data-act="open-picker" data-kind="entity">+ Legg til enhet fra Home Assistant</button>`;
   return h + `</section>`;
+}
+
+// Bytt en enhet som ikke svarer med en ny av samme type (beholder navn, grenser, automasjoner og statistikk).
+function replaceHTML(e) {
+  const dom = e.entity_id.split('.')[0];
+  const taken = new Set(A.cfg.entities.map((x) => x.entity_id));
+  const list = (A.cand.entities || []).filter((c) => c.domain === dom && !taken.has(c.entity_id));
+  if (!list.length) return '';
+  const sel = A.repl?.[e.entity_id] || '';
+  return `<span class="repl"><select class="select" aria-label="Bytt ${esc(e.label)} med" data-field="repl" data-id="${esc(e.entity_id)}"><option value="">Bytt med en annen enhet …</option>${list.map((c) => `<option value="${esc(c.entity_id)}" ${sel === c.entity_id ? 'selected' : ''}>${esc(c.name)}${c.area ? ` (${esc(c.area)})` : ''}</option>`).join('')}</select>
+    ${sel ? `<button class="sbtn on" data-act="repl-go" data-id="${esc(e.entity_id)}">Bytt</button>` : ''}</span>`;
 }
 
 function pickerHTML(kind) {
@@ -952,6 +964,18 @@ document.addEventListener('click', async (ev) => {
       } catch (e) { message(esc(e.message), true); A.confirmDel = null; }
       break;
     }
+    case 'repl-go': {
+      const to = A.repl?.[d.id];
+      if (!to) break;
+      if (A.dirty) { message('Lagre eller forkast endringene først.', true); break; }
+      try {
+        const r = await api('api/admin/replace-entity', { method: 'POST', body: JSON.stringify({ old: d.id, new: to }) });
+        if (!r.ok) { message(esc(r.error), true); break; }
+        A.st = r.state; A.cfg = pickCfg(r.state); A.repl = null;
+        message('Enheten er byttet. Navn, grenser, automasjoner og statistikkvalg er beholdt.');
+      } catch (e) { message(esc(e.message), true); }
+      break;
+    }
     case 'end-approve':
     case 'end-decline': {
       if (d.act === 'end-decline' && A.confirmDel !== 'end-decline') { A.confirmDel = 'end-decline'; break; }
@@ -1189,6 +1213,7 @@ document.addEventListener('change', (ev) => {
     return;
   }
   if (f === 'kind') { A.cfg.entities[Number(el.dataset.i)].kind = el.value; setDirty(); render(); }
+  if (f === 'repl') { A.repl = { ...(A.repl || {}), [el.dataset.id]: el.value }; render(); }
 });
 
 $('save').addEventListener('click', async () => {

@@ -1,5 +1,9 @@
 # Endringslogg
 
+## 0.18.0
+
+- Bytt enhet: har en enhet sluttet å svare (f.eks. byttet integrasjon), kan du under Synlige enheter velge en ny enhet av samme type og trykke «Bytt». Navn, grenser, rekkefølge, automasjoner, scener og statistikkvalg beholdes. Historikk fra den gamle enheten følger ikke med.
+
 ## 0.17.1
 
 - Tydeligere tekst om forfall: husleien for en måned forfaller på forfallsdagen i samme måned og gjelder hele måneden. Fakturaen viser nå «Gjelder 1.–31. oktober» i stedet for «Forskuddsvis», og kontrakten sier «forskuddsvis» bare når forfall er den 1. (Utregningen er uendret.)

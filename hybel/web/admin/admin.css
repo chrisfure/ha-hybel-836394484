@@ -219,3 +219,5 @@ a.sbtn { display: inline-flex; align-items: center; text-decoration: none; color
 .ct-flags { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 6px 14px; }
 .ct-flag { display: flex; align-items: center; gap: 8px; font-size: 14px; }
 .ct-flag input { flex-shrink: 0; width: 18px; height: 18px; accent-color: var(--btn); }
+.repl { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin-top: 6px; }
+.repl .select { max-width: 320px; }

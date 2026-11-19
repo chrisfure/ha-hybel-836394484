@@ -154,6 +154,13 @@ export function startAdminServer({ engine, ha, webRoot, port, tenantHub, devOpen
           return sendJson(res, 200, { ok: true, state: engine.adminView({ tenant_clients: tenantHub.size }) });
         } catch (err) { return sendJson(res, 400, { ok: false, error: err.message }); }
       }
+      if (p === '/api/admin/replace-entity' && req.method === 'POST') {
+        try {
+          const body = await readJson(req);
+          engine.replaceEntity(body.old, body.new);
+          return sendJson(res, 200, { ok: true, state: engine.adminView({ tenant_clients: tenantHub.size }) });
+        } catch (err) { return sendJson(res, 400, { ok: false, error: err.message }); }
+      }
       if (p === '/api/admin/end-request' && req.method === 'POST') {
         try {
           engine.extras.term.decide(await readJson(req));
