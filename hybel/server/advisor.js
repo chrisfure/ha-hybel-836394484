@@ -158,7 +158,7 @@ export class Advisor {
 Under følger måledata fra siste uke (JSON). Tidsserier har én verdi per ${payload.tidsserier_steg_timer}. time fra tidsserier_start (UTC). null betyr ukjent.
 
 Oppgave:
-1. Finn de 2–4 tiltakene som gir størst besparelse eller bedre inneklima for akkurat denne hybelen, basert på tallene. Vær konkret og vis til tallene (f.eks. «stua har stått på 23 °C også om natta»). Estimer besparelsen forsiktig i kWh og kroner per måned med strømprisen som er oppgitt. Bruk tommelfingerregelen ca. 5 % per grad lavere temperatur for direkte elektrisk oppvarming, og si at det er et anslag.
+1. Finn de 2–4 tiltakene som gir størst besparelse eller bedre inneklima for akkurat denne hybelen, basert på tallene. Vær konkret og vis til tallene (f.eks. «stua har stått på 23 °C også om natta»). Estimer besparelsen forsiktig i kWh og kroner per måned med strømprisen som er oppgitt (er den null, oppgi bare kWh uten å kommentere prisen). Bruk tommelfingerregelen ca. 5 % per grad lavere temperatur for direkte elektrisk oppvarming, og si at det er et anslag.
 2. Foreslå 0–3 automasjoner som gjennomfører tiltakene. Ikke foreslå noe som allerede finnes i aktive_automasjoner. Hold deg innenfor lovlig_min/lovlig_maks og lovlige_nivåer. Ikke foreslå noe som går ut over komfort på en urimelig måte (ikke under 17 °C i oppholdsrom når leietakeren er hjemme).
 3. Hvis det er for lite data til å si noe sikkert, si det ærlig og gi heller generelle, korte tips.
 
@@ -167,7 +167,7 @@ Regler for teksten: Skriv til leietakeren med «du». ${en ? 'Write all text in 
 Svar KUN med gyldig JSON på denne formen (ingen tekst før eller etter):
 {
   "oppsummering": "1–2 setninger om hvordan hybelen brukes nå",
-  "tips": [{"tittel": "kort", "tekst": "2–3 setninger", "besparelse": "f.eks. ca. 15 kWh / 30 kr i måneden, eller tom streng"}],
+  "tips": [{"tittel": "kort", "tekst": "2–3 setninger", "besparelse": "kort, maks 40 tegn, f.eks. «ca. 15 kWh / 30 kr i måneden», eller tom streng"}],
   "automasjoner": [{
     "navn": "kort navn",
     "hvorfor": "1 setning",
@@ -209,7 +209,7 @@ ${JSON.stringify(payload)}`;
       const text = res?.response?.data ?? res?.data ?? '';
       const parsed = this.parse(typeof text === 'string' ? text : JSON.stringify(text));
       entry.summary = str(parsed.oppsummering, 400);
-      entry.tips = (Array.isArray(parsed.tips) ? parsed.tips : []).slice(0, 4).map((t) => ({ title: str(t.tittel, 80), text: str(t.tekst, 500), saving: str(t.besparelse, 80) })).filter((t) => t.title && t.text);
+      entry.tips = (Array.isArray(parsed.tips) ? parsed.tips : []).slice(0, 4).map((t) => ({ title: str(t.tittel, 80), text: str(t.tekst, 500), saving: str(t.besparelse, 120) })).filter((t) => t.title && t.text);
       entry.automations = (Array.isArray(parsed.automasjoner) ? parsed.automasjoner : []).slice(0, 3).map((a) => this.toDraft(a, codes)).filter(Boolean);
       entry.to_landlord = str(parsed.til_utleier, 400);
       if (!entry.tips.length && !entry.summary) throw new Error('Tomt svar');

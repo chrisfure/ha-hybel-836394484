@@ -1,5 +1,9 @@
 # Endringslogg
 
+## 0.19.1
+
+- Sparetips: kortere og hel tekst for anslått besparelse.
+
 ## 0.19.0
 
 - Sparetips: knappen «Få sparetips» i automasjonsfanen sender målinger fra siste uke (temperaturer, innstillinger, strømforbruk, ventilasjon, utetemperatur og automasjoner – ingen navn, meldinger eller betalinger) til en AI-modell. Svaret gir 2–4 konkrete tips med anslått besparelse og opptil tre forslag til automasjoner, som åpnes ferdig utfylt så leietaker kan se over og lagre selv. Forslag utenfor grensene dine forkastes.
