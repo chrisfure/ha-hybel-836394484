@@ -142,7 +142,7 @@ export class HAClient extends EventEmitter {
     }
   }
 
-  send(cmd, allowBeforeReady = false) {
+  send(cmd, allowBeforeReady = false, timeoutMs = 10000) {
     return new Promise((resolve, reject) => {
       if (!this.ws || this.ws.readyState !== 1 || (!this.connected && !allowBeforeReady)) {
         return reject(new Error('Ikke koblet til Home Assistant'));
@@ -151,7 +151,7 @@ export class HAClient extends EventEmitter {
       const timer = setTimeout(() => {
         this.pending.delete(id);
         reject(new Error('Home Assistant svarte ikke i tide'));
-      }, 10000);
+      }, timeoutMs);
       this.pending.set(id, { resolve, reject, timer });
       this.ws.send(JSON.stringify({ id, ...cmd }));
     });

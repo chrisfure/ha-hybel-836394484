@@ -1,5 +1,11 @@
 # Endringslogg
 
+## 0.19.0
+
+- Sparetips: knappen «Få sparetips» i automasjonsfanen sender målinger fra siste uke (temperaturer, innstillinger, strømforbruk, ventilasjon, utetemperatur og automasjoner – ingen navn, meldinger eller betalinger) til en AI-modell. Svaret gir 2–4 konkrete tips med anslått besparelse og opptil tre forslag til automasjoner, som åpnes ferdig utfylt så leietaker kan se over og lagre selv. Forslag utenfor grensene dine forkastes.
+- Leietaker godtar første gang. Du kan slå funksjonen av og på, sette maks antall vurderinger per dag, se alle svar og prøve selv under «Sparetips» på utleiersiden. Merknader som gjelder utleier (f.eks. fukt eller unormalt forbruk) sendes til deg som varsel.
+- Personvernpunktet i kontraktsmalen nevner nå sparetips.
+
 ## 0.18.0
 
 - Bytt enhet: har en enhet sluttet å svare (f.eks. byttet integrasjon), kan du under Synlige enheter velge en ny enhet av samme type og trykke «Bytt». Navn, grenser, rekkefølge, automasjoner, scener og statistikkvalg beholdes. Historikk fra den gamle enheten følger ikke med.

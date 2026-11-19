@@ -558,6 +558,33 @@ function autoGroup(key, title, icon, list, body) {
   </section>`;
 }
 
+// Sparetips fra en AI-modell, basert på målingene siste uke.
+function adviceHTML() {
+  const A = S.m.advice;
+  if (!A || !A.enabled) return '';
+  const busy = S.advBusy || A.busy;
+  let h = `<section class="card info-card adv-card"><h2>${L('Sparetips', 'Energy-saving tips')}</h2>`;
+  if (S.advConsent) {
+    h += `<p class="note">${L('For å lage tips sendes målinger fra hybelen siste uke – temperaturer, innstillinger, strømforbruk og automasjonene dine – til en AI-modell. Navn, meldinger og betalinger sendes ikke. Du godtar dette bare én gang.', 'To create tips, measurements from the flat for the past week – temperatures, settings, electricity use and your automations – are sent to an AI model. Names, messages and payments are not sent. You only need to accept this once.')}</p>
+      <div class="contact-btns"><button class="btn primary" data-act="adv-run" data-consent="1">${L('Godta og få tips', 'Accept and get tips')}</button><button class="btn ghost" data-act="adv-cancel">${L('Avbryt', 'Cancel')}</button></div>`;
+    return h + `</section>`;
+  }
+  const last = A.last;
+  if (!last) h += `<p class="note">${L('Få konkrete forslag til hvordan du kan bruke mindre strøm og få bedre inneklima, basert på målingene fra siste uke.', 'Get concrete suggestions for using less electricity and improving the indoor climate, based on the past week’s measurements.')}</p>`;
+  h += `<button class="btn ${last ? 'ghost' : 'primary'} big" data-act="adv-run" ${busy || !A.left ? 'disabled' : ''}>${busy ? L('Vurderer … (kan ta et halvt minutt)', 'Thinking … (may take half a minute)') : !A.left ? L('Prøv igjen i morgen', 'Try again tomorrow') : last ? L('Få nye sparetips', 'Get new tips') : L('Få sparetips', 'Get energy-saving tips')}</button>`;
+  if (last) {
+    h += `<span class="note">${L('Vurdert', 'Assessed')} ${esc(new Date(last.at).toLocaleString(LOC, { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' }))}</span>`;
+    if (last.summary) h += `<p class="adv-sum">${esc(last.summary)}</p>`;
+    h += last.tips.map((t) => `<div class="adv-tip"><strong>${esc(t.title)}</strong><span>${esc(t.text)}</span>${t.saving ? `<span class="adv-save">${esc(t.saving)}</span>` : ''}</div>`).join('');
+    if (last.automations.length) {
+      h += `<span class="field-label">${L('Forslag til automasjoner', 'Suggested automations')}</span>`;
+      h += last.automations.map((a, i) => `<div class="adv-auto"><span class="grow"><strong>${esc(a.name)}</strong><span>${esc(a.reason)}</span></span>${S.m.can_edit ? `<button class="chip-btn" data-act="adv-add" data-i="${i}">${L('Se og legg til', 'Review and add')}</button>` : ''}</div>`).join('');
+    }
+    h += `<p class="note">${L('Tipsene er laget av en AI-modell og er anslag. Sjekk at forslagene passer for deg før du lagrer dem.', 'The tips are made by an AI model and are estimates. Check that the suggestions suit you before saving them.')}</p>`;
+  }
+  return h + `</section>`;
+}
+
 function autoTab() {
   const m = S.m;
   let h = '';
@@ -597,6 +624,7 @@ function autoTab() {
   if (events.length) h += autoGroup('event', L('Når noe skjer', 'When something happens'), 'M13 2L3 14h9l-1 8 10-12h-9l1-8z', events, events.map((a) => autoRow(a, autoWhat(a.action), extra(a), autoWhen(a.trigger))).join(''));
 
   if (m.can_edit) h += `<button class="btn ghost scene-add" data-act="auto-new" data-fid="a-new">${svg(UI.plus, 18, 2)} ${L('Ny automasjon', 'New automation')}</button>`;
+  h += adviceHTML();
   return h;
 }
 
@@ -769,7 +797,11 @@ const SERVER_EN = {
   'Velg minst ett lys å dimme': 'Choose at least one light to dim', 'Velg minst én dag': 'Choose at least one day',
   'Velg minst én enhet automasjonen skal styre': 'Choose at least one device for the automation', 'Velg når automasjonen skal kjøre': 'Choose when the automation should run',
   'Velg på eller av': 'Choose on or off', 'Velg ventilasjonen': 'Choose the ventilation', 'Forskyvningen må være innenfor ±3 timer': 'The offset must be within ±3 hours',
-  'Luftfuktigheten må være mellom 30 og 95 %': 'Humidity must be between 30 and 95 %', 'Ikke funnet': 'Not found', 'Ugyldig opphav': 'Invalid origin', 'Feil format': 'Wrong format'
+  'Luftfuktigheten må være mellom 30 og 95 %': 'Humidity must be between 30 and 95 %', 'Ikke funnet': 'Not found', 'Ugyldig opphav': 'Invalid origin', 'Feil format': 'Wrong format',
+  'Sparetips er ikke slått på': 'Energy-saving tips are turned off', 'Sparetips er ikke tilgjengelig akkurat nå': 'Energy-saving tips are not available right now',
+  'Godta at måledata sendes til vurdering først': 'Please accept that measurements are sent for assessment first',
+  'Du har brukt dagens vurderinger – prøv igjen i morgen': 'You have used today’s assessments – try again tomorrow',
+  'En vurdering pågår allerede': 'An assessment is already in progress', 'Fikk ikke laget tips akkurat nå. Prøv igjen litt senere.': 'Couldn’t create tips right now. Please try again a little later.'
 };
 const SERVER_RX = [
   [/^(.+) støtter ikke denne modusen$/, '$1 doesn’t support this mode'],
@@ -1958,6 +1990,22 @@ function act(a, ds) {
       if (!S.confirmDelete) { S.confirmDelete = true; return render(); }
       cmd({ type: 'scene_delete', id: S.draft.id }).then((r) => { if (r.ok) { S.draft = null; go('tabs'); showToast(L('Scenen er slettet', 'Scene deleted')); } });
       return;
+    case 'adv-run':
+      if (!S.m.advice.consent && !ds.consent) { S.advConsent = true; return render(); }
+      S.advConsent = false;
+      S.advBusy = true;
+      render();
+      cmd({ type: 'advice_run', lang: LANG, consent: Boolean(ds.consent) }).finally(() => { S.advBusy = false; render(); });
+      return;
+    case 'adv-cancel': S.advConsent = false; return render();
+    case 'adv-add': {
+      const a = S.m.advice.last?.automations[Number(ds.i)];
+      if (!a) return;
+      S.adraft = JSON.parse(JSON.stringify(a.draft));
+      S.adraft.set = newSet(S.adraft.action.values);
+      go('auto');
+      return;
+    }
     case 'auto-new':
       return openAuto(null);
     case 'auto-edit':

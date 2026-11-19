@@ -5,6 +5,7 @@ import { defaultData } from './store.js';
 import { log } from './log.js';
 import { Extras } from './extras.js';
 import { Pairing } from './pairing.js';
+import { Advisor } from './advisor.js';
 import { Stats } from './stats.js';
 import { readdirSync, readFileSync as readF } from 'node:fs';
 import { join as pjoin, dirname as pdir } from 'node:path';
@@ -78,6 +79,7 @@ export class Engine extends EventEmitter {
     this.extras = new Extras(this);
     this.pairing = new Pairing(this);
     this.stats = new Stats(this);
+    this.advisor = new Advisor(this);
     this.pairing.resume();
     ha.on('state', (id, n, o) => this.onState(id, n, o));
     ha.on('status', () => this.changed());
@@ -846,6 +848,9 @@ export class Engine extends EventEmitter {
       case 'entity_move':
         this.moveEntity(cmd.key, Number(cmd.dir));
         break;
+      case 'advice_run':
+        await this.advisor.run(cmd.lang === 'en' ? 'en' : 'no', cmd.consent === true);
+        break;
       case 'auto_save':
         this.requireEdit();
         this.saveAutomation(cmd.automation);
@@ -919,6 +924,7 @@ export class Engine extends EventEmitter {
       boost_options: [15, 30, 60, 90, 120].filter((m) => m <= d.limits.boost_max_minutes),
       boost: d.boost ? { key: keyOf(d.boost.entity_id), until: d.boost.until, return_to: d.boost.return_to } : null,
       ...this.extras.tenantView(),
+      advice: this.advisor.tenantView(),
       entities: this.ordered().map((e) => {
         const st = this.state(e);
         const a = st?.attributes || {};
@@ -966,6 +972,7 @@ export class Engine extends EventEmitter {
         return { ...e, available: !unavailable(st), value: e.enabled ? this.currentValue(e) : null, friendly_name: st?.attributes?.friendly_name || e.entity_id };
       }),
       limits: d.limits,
+      advisor: this.advisor.adminView(),
       tenant_can_edit_scenes: d.tenant_can_edit_scenes,
       outdoor: { set: d.outdoor_sensor || '', used: this.stats.outdoorSensor() },
       stat_sensors: d.stat_sensors || [],
@@ -1097,6 +1104,7 @@ export class Engine extends EventEmitter {
     d.payments = {};
     d.docs = []; // forrige leietakers kontrakt ligger i arkivet
     d.terminations = [];
+    d.advice_consent = null; // ny leietaker må godta selv
     d.contract = null;
     d.contract_history = [];
     if (d.contract_opts) Object.assign(d.contract_opts, { tenant_birth: '', tenant_email: '', tenant_phone: '' });

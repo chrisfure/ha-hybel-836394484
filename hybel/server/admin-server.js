@@ -154,6 +154,20 @@ export function startAdminServer({ engine, ha, webRoot, port, tenantHub, devOpen
           return sendJson(res, 200, { ok: true, state: engine.adminView({ tenant_clients: tenantHub.size }) });
         } catch (err) { return sendJson(res, 400, { ok: false, error: err.message }); }
       }
+      if (p === '/api/admin/advisor-test' && req.method === 'POST') {
+        try {
+          await engine.advisor.run('no', false, 'landlord');
+          return sendJson(res, 200, { ok: true, state: engine.adminView({ tenant_clients: tenantHub.size }) });
+        } catch (err) { return sendJson(res, 400, { ok: false, error: err.message }); }
+      }
+      if (p === '/api/admin/advisor' && req.method === 'POST') {
+        try {
+          engine.advisor.saveCfg(await readJson(req));
+          engine.store.save();
+          engine.changed();
+          return sendJson(res, 200, { ok: true, state: engine.adminView({ tenant_clients: tenantHub.size }) });
+        } catch (err) { return sendJson(res, 400, { ok: false, error: err.message }); }
+      }
       if (p === '/api/admin/replace-entity' && req.method === 'POST') {
         try {
           const body = await readJson(req);

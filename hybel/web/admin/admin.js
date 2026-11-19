@@ -224,6 +224,35 @@ function limitsPanel() {
   </section>`;
 }
 
+// Sparetips: innstillinger og kopi av alle svar leietaker har fått.
+function advisorPanel() {
+  const V = A.st.advisor;
+  if (!V) return '';
+  const hist = V.history || [];
+  const when = (iso) => new Date(iso).toLocaleString('nb-NO', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' });
+  let h = `<section class="panel"><div class="panel-head"><h2>Sparetips</h2><span>${V.enabled ? (hist.length ? `Sist ${esc(when(hist[0].at))}` : 'På') : 'Av'}</span></div>
+    <p class="help">Leietaker kan trykke «Få sparetips» i automasjonsfanen. Målinger fra siste uke (uten navn, meldinger og betalinger) sendes til en AI-modell, som gir tips og forslag til automasjoner. Leietaker godtar dette første gang. Alle svar vises her.</p>
+    <div class="form-grid">
+      <label class="lbl-col">Sparetips for leietaker<select class="input" data-field="adv.enabled"><option value="1" ${V.enabled ? 'selected' : ''}>På</option><option value="0" ${V.enabled ? '' : 'selected'}>Av</option></select></label>
+      <label class="lbl-col">Maks vurderinger per dag<select class="input" data-field="adv.per_day">${[1, 2, 3, 5, 10].map((n) => `<option value="${n}" ${V.per_day === n ? 'selected' : ''}>${n}</option>`).join('')}</select></label>
+    </div>
+    ${V.ai_entities.length > 1 ? `<label class="lbl-col">AI-modell<select class="input" data-field="adv.ai_entity"><option value="">Automatisk (${esc(V.ai_entity_used || '–')})</option>${V.ai_entities.map((x) => `<option value="${esc(x)}" ${V.ai_entity === x ? 'selected' : ''}>${esc(x)}</option>`).join('')}</select></label>` : ''}
+    ${!V.ai_entities.length ? '<p class="help ct-warn">Fant ingen AI-modell (AI Task) i Home Assistant. Sett opp f.eks. Claude-integrasjonen med en AI Task.</p>' : ''}
+    ${V.consent ? `<p class="help">Leietaker godtok ${esc(when(V.consent.at))}.</p>` : ''}
+    <div class="row-btns"><button class="sbtn" data-act="adv-test" ${A.advBusy ? 'disabled' : ''}>${A.advBusy ? 'Vurderer …' : 'Prøv selv (vises ikke for leietaker)'}</button></div>`;
+  if (hist.length) {
+    h += `<span class="help ct-h">Svar</span>`;
+    h += hist.map((x) => `<details class="adv-h"><summary>${esc(when(x.at))}${x.by === 'landlord' ? ' · din test' : ''}${x.error ? ' · feilet' : ` · ${x.tips.length} tips, ${x.automations.length} forslag`}${x.to_landlord ? ' · merknad til deg' : ''}</summary>
+      ${x.error ? `<p class="help">Feil: ${esc(x.error)}</p>` : ''}
+      ${x.to_landlord ? `<p class="adv-note"><strong>Til deg:</strong> ${esc(x.to_landlord)}</p>` : ''}
+      ${x.summary ? `<p>${esc(x.summary)}</p>` : ''}
+      ${x.tips.map((t) => `<p><strong>${esc(t.title)}</strong>${t.saving ? ` <span class="pill2 ok">${esc(t.saving)}</span>` : ''}<br>${esc(t.text)}</p>`).join('')}
+      ${x.automations.length ? `<p><strong>Forslag:</strong> ${x.automations.map((a) => `${esc(a.name)} – ${esc(a.reason)}`).join('<br>')}</p>` : ''}
+    </details>`).join('');
+  }
+  return h + `</section>`;
+}
+
 // Vedlikehold: gjentakende oppgaver med påminnelse.
 function maintPanel() {
   const list = A.st.extras.maintenance || [];
@@ -762,7 +791,7 @@ function render() {
   const focusId = document.activeElement?.id || (document.activeElement?.dataset?.field === 'q' ? '__q' : null);
   A.todo = todos();
   $('todo').innerHTML = todoBar();
-  $('main').innerHTML = `<div class="col-main">${reportsPanel()}${economyPanel()}${leasePanel()}${contractPanel()}${checklistPanel()}${entitiesPanel()}${scenesPanel()}${statsPanel()}${maintPanel()}${infoPanel()}</div><div class="col-side">${limitsPanel()}${alertsPanel()}${resetPanel()}</div>${photoOverlay()}`;
+  $('main').innerHTML = `<div class="col-main">${reportsPanel()}${economyPanel()}${leasePanel()}${contractPanel()}${checklistPanel()}${entitiesPanel()}${scenesPanel()}${statsPanel()}${advisorPanel()}${maintPanel()}${infoPanel()}</div><div class="col-side">${limitsPanel()}${alertsPanel()}${resetPanel()}</div>${photoOverlay()}`;
   if (focusId === '__q') {
     const q = document.querySelector('[data-field="q"]');
     if (q) { q.focus(); q.setSelectionRange(q.value.length, q.value.length); }
@@ -962,6 +991,15 @@ document.addEventListener('click', async (ev) => {
         A.st = r.state; A.confirmDel = null; A.ct = null;
         message(d.act === 'ct-send' ? 'Kontrakten er sendt. Leietaker har fått varsel.' : 'Du kan nå endre vilkårene og sende en ny versjon.');
       } catch (e) { message(esc(e.message), true); A.confirmDel = null; }
+      break;
+    }
+    case 'adv-test': {
+      A.advBusy = true; render();
+      try {
+        const r = await api('api/admin/advisor-test', { method: 'POST', body: '{}' });
+        if (r.ok) A.st = r.state; else message(esc(r.error), true);
+      } catch (e) { message(esc(e.message), true); }
+      A.advBusy = false;
       break;
     }
     case 'repl-go': {
@@ -1189,6 +1227,11 @@ document.addEventListener('input', (ev) => {
   else if (f === 'notify') { A.cfg.alerts.notify_service = el.value.trim(); setDirty(); }
   else if (f === 'offline-hours') { A.cfg.alerts.offline_hours = Number(el.value); setDirty(); }
   else if (f === 'q') { A.q = el.value; render(); }
+  else if (f.startsWith('adv.')) {
+    const k = f.slice(4);
+    const v = k === 'enabled' ? el.value === '1' : k === 'per_day' ? Number(el.value) : el.value;
+    api('api/admin/advisor', { method: 'POST', body: JSON.stringify({ [k]: v }) }).then((r) => { if (r.ok) { A.st = r.state; render(); } else message(esc(r.error), true); });
+  }
   else if (f.startsWith('ct.') && A.ct) {
     const k = f.slice(3);
     A.ct[k] = el.type === 'checkbox' ? el.checked : el.value;

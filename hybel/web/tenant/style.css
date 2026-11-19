@@ -439,3 +439,11 @@ a.inv-row { color: inherit; text-decoration: none; }
 .ct-read { display: flex; gap: 10px; align-items: flex-start; font-size: 15px; font-weight: 500; }
 .ct-read input { width: 22px; height: 22px; margin-top: 1px; accent-color: var(--btn); flex-shrink: 0; }
 .ct-card a.btn { display: flex; align-items: center; justify-content: center; text-decoration: none; color: inherit; }
+.adv-card { display: flex; flex-direction: column; gap: 10px; margin-top: 14px; }
+.adv-sum { margin: 0; font-size: 15px; }
+.adv-tip { display: flex; flex-direction: column; gap: 3px; background: var(--tint); border-radius: 14px; padding: 12px 14px; font-size: 14.5px; line-height: 1.45; }
+.adv-tip strong { font-size: 15px; }
+.adv-save { align-self: flex-start; margin-top: 4px; background: var(--green-soft); color: var(--green-ink); border-radius: 999px; padding: 3px 10px; font-size: 13px; font-weight: 600; }
+.adv-auto { display: flex; align-items: center; gap: 10px; border: 1px solid var(--line); border-radius: 14px; padding: 10px 12px; }
+.adv-auto .grow { display: flex; flex-direction: column; gap: 2px; font-size: 14px; }
+.adv-auto .grow span { color: var(--muted); font-size: 13px; }

@@ -1,0 +1,268 @@
+// Sparetips: appen lager et sammendrag av siste uke (temperaturer, innstillinger, strømforbruk,
+// ventilasjon, utetemperatur og automasjoner) og ber en AI-modell om konkrete tips og forslag
+// til automasjoner. Ingen navn, meldinger eller betalinger sendes. Svarene lagres også hos utleier.
+import { randomBytes } from 'node:crypto';
+import { log } from './log.js';
+import { keyOf } from './engine.js';
+
+const MAX_HISTORY = 30;
+const VENT = ['away', 'low', 'normal', 'high'];
+const str = (v, max) => String(v ?? '').replace(/[\u0000-\u0009\u000b-\u001f\u007f​-‏‪-‮⁦-⁩]/g, ' ').replace(/\s+\n/g, '\n').trim().slice(0, max);
+const r1 = (v) => (v == null || !Number.isFinite(v) ? null : Math.round(v * 10) / 10);
+const dayKey = (t = new Date()) => `${t.getFullYear()}-${String(t.getMonth() + 1).padStart(2, '0')}-${String(t.getDate()).padStart(2, '0')}`;
+const isTime = (s) => /^([01]\d|2[0-3]):[0-5]\d$/.test(String(s));
+
+export class Advisor {
+  constructor(engine) {
+    this.engine = engine;
+    this.busy = false;
+  }
+
+  get d() { return this.engine.data; }
+
+  get cfg() {
+    if (!this.d.advisor) this.d.advisor = { enabled: true, per_day: 3, ai_entity: '' };
+    return this.d.advisor;
+  }
+
+  get history() {
+    if (!Array.isArray(this.d.advice)) this.d.advice = [];
+    return this.d.advice;
+  }
+
+  aiEntities() {
+    return [...this.engine.ha.states.keys()].filter((id) => id.startsWith('ai_task.'));
+  }
+
+  aiEntity() {
+    const list = this.aiEntities();
+    if (this.cfg.ai_entity && list.includes(this.cfg.ai_entity)) return this.cfg.ai_entity;
+    return list.find((id) => /claude/.test(id) && /ai_task$|claude_ai/.test(id)) || list.find((id) => /claude/.test(id)) || list[0] || null;
+  }
+
+  usedToday() {
+    const today = dayKey();
+    return this.history.filter((h) => h.at && dayKey(new Date(h.at)) === today && !h.error && h.by !== 'landlord').length;
+  }
+
+  saveCfg(b = {}) {
+    const c = this.cfg;
+    if (b.enabled !== undefined) c.enabled = Boolean(b.enabled);
+    if (b.per_day !== undefined) { const n = Math.round(Number(b.per_day)); if (n >= 1 && n <= 10) c.per_day = n; }
+    if (b.ai_entity !== undefined) c.ai_entity = /^ai_task\.[a-z0-9_]+$/.test(String(b.ai_entity)) ? String(b.ai_entity) : '';
+  }
+
+  // Det leietaker ser.
+  tenantView() {
+    const c = this.cfg;
+    const last = [...this.history].reverse().find((h) => !h.error && h.by !== 'landlord') || null;
+    return {
+      enabled: Boolean(c.enabled && this.aiEntity()),
+      consent: Boolean(this.d.advice_consent),
+      left: Math.max(0, (c.per_day || 3) - this.usedToday()),
+      busy: this.busy,
+      last: last && { id: last.id, at: last.at, lang: last.lang, summary: last.summary, tips: last.tips, automations: last.automations.map((a) => ({ name: a.name, reason: a.reason, draft: a.draft })) }
+    };
+  }
+
+  adminView() {
+    return {
+      ...this.cfg,
+      ai_entities: this.aiEntities(),
+      ai_entity_used: this.aiEntity(),
+      consent: this.d.advice_consent || null,
+      history: [...this.history].reverse().slice(0, 15)
+    };
+  }
+
+  // ---------- data om hybelen ----------
+
+  async facts() {
+    const eng = this.engine;
+    const [week, day] = await Promise.all([eng.stats.get('7d'), eng.stats.get('24h')]);
+    const ents = eng.enabled().filter((e) => ['heat', 'climate', 'vent', 'light'].includes(e.kind));
+    const codes = new Map();
+    const devices = ents.map((e, i) => {
+      const code = `d${i + 1}`;
+      codes.set(code, e);
+      const st = eng.state(e);
+      const a = st?.attributes || {};
+      const base = { id: code, navn: e.label, type: { heat: 'varmeovn/termostat', climate: 'varmepumpe', vent: 'ventilasjon', light: 'lys' }[e.kind] };
+      if (e.kind === 'heat' || e.kind === 'climate') {
+        return { ...base, innstilt_nå: a.temperature ?? null, målt_nå: a.current_temperature ?? null, modus: st?.state, lovlig_min: eng.tempRange(e)[0], lovlig_maks: eng.tempRange(e)[1] };
+      }
+      if (e.kind === 'vent') return { ...base, nivå_nå: eng.currentValue(e), lovlige_nivåer: VENT.filter((v) => v !== 'away' || this.d.limits?.vent_allow_away) };
+      return { ...base, lysstyrke_nå: eng.currentValue(e) };
+    });
+
+    // Innstilt temperatur og ventilasjonsnivå per 2 timer siste uke.
+    const setpoints = await this.setpointHistory(ents.filter((e) => e.kind !== 'light'), codes);
+
+    const stepH = Math.round(week.bucket / 3600e3);
+    const series = week.series.map((s) => ({ hva: `${s.label}${s.sub ? ` (${s.sub})` : ''}`, enhet: s.unit, snitt: s.avg, min: r1(s.min), maks: r1(s.max), per_2t: s.points }));
+    const energyWeek = week.energy.map((en) => ({ hva: en.label, kwh_per_dag: en.points.map(r1), watt_nå: en.power, totalt_kwh: r1(en.total) }));
+    const energyDay = day.energy.map((en) => ({ hva: en.label, kwh_per_time_siste_døgn: en.points.map(r1) }));
+    const autos = (this.d.automations || []).filter((a) => a.enabled !== false).map((a) => eng.describeAutomation(a));
+    return {
+      codes,
+      payload: {
+        tidspunkt: new Date().toLocaleString('nb-NO', { timeZone: 'Europe/Oslo', dateStyle: 'full', timeStyle: 'short' }),
+        tidsserier_start: new Date(week.start).toISOString(),
+        tidsserier_steg_timer: stepH,
+        strømpris_kr_per_kwh: week.price,
+        enheter: devices,
+        innstillinger_per_2t: setpoints,
+        målinger_siste_uke: series,
+        strøm_siste_uke: energyWeek,
+        strøm_siste_døgn: energyDay,
+        aktive_automasjoner: autos
+      }
+    };
+  }
+
+  async setpointHistory(ents, codes) {
+    if (!ents.length) return [];
+    const end = Date.now();
+    const start = end - 7 * 24 * 3600e3;
+    let hist = {};
+    try {
+      hist = await this.engine.ha.send({
+        type: 'history/history_during_period', start_time: new Date(start).toISOString(), end_time: new Date(end).toISOString(),
+        entity_ids: ents.map((e) => e.entity_id), minimal_response: false, no_attributes: false, significant_changes_only: false
+      }, false, 30000);
+    } catch (err) {
+      log.warn('Sparetips: fikk ikke innstillingshistorikk:', err.message);
+      return [];
+    }
+    const code = (e) => [...codes.entries()].find(([, x]) => x === e)?.[0];
+    const step = 2 * 3600e3;
+    const n = Math.ceil((end - start) / step);
+    return ents.map((e) => {
+      const rows = (hist[e.entity_id] || []).map((r) => ({ t: (r.lu ?? r.lc ?? 0) * 1000 || Date.parse(r.last_updated || r.last_changed), s: r.s ?? r.state, a: r.a || r.attributes || {} })).sort((x, y) => x.t - y.t);
+      const out = [];
+      let i = 0, cur = null;
+      for (let b = 0; b < n; b++) {
+        const b1 = start + (b + 1) * step;
+        while (i < rows.length && rows[i].t < b1) { cur = rows[i]; i++; }
+        if (!cur) { out.push(null); continue; }
+        if (e.kind === 'vent') out.push(String(cur.a?.preset_mode || '').toLowerCase() === 'away' ? 'away' : cur.a?.fan_mode ?? cur.s);
+        else out.push(cur.s === 'off' ? 'av' : r1(Number(cur.a?.temperature)));
+      }
+      return { id: code(e), navn: e.label, verdi_per_2t: out };
+    });
+  }
+
+  prompt(payload, lang) {
+    const en = lang === 'en';
+    return `Du er en energirådgiver for en liten utleiehybel i Norge. Leietakeren betaler strøm etter forbruk og har trykket «Få sparetips» i hybel-appen.
+Under følger måledata fra siste uke (JSON). Tidsserier har én verdi per ${payload.tidsserier_steg_timer}. time fra tidsserier_start (UTC). null betyr ukjent.
+
+Oppgave:
+1. Finn de 2–4 tiltakene som gir størst besparelse eller bedre inneklima for akkurat denne hybelen, basert på tallene. Vær konkret og vis til tallene (f.eks. «stua har stått på 23 °C også om natta»). Estimer besparelsen forsiktig i kWh og kroner per måned med strømprisen som er oppgitt. Bruk tommelfingerregelen ca. 5 % per grad lavere temperatur for direkte elektrisk oppvarming, og si at det er et anslag.
+2. Foreslå 0–3 automasjoner som gjennomfører tiltakene. Ikke foreslå noe som allerede finnes i aktive_automasjoner. Hold deg innenfor lovlig_min/lovlig_maks og lovlige_nivåer. Ikke foreslå noe som går ut over komfort på en urimelig måte (ikke under 17 °C i oppholdsrom når leietakeren er hjemme).
+3. Hvis det er for lite data til å si noe sikkert, si det ærlig og gi heller generelle, korte tips.
+
+Regler for teksten: Skriv til leietakeren med «du». ${en ? 'Write all text in English.' : 'Skriv på norsk bokmål.'} Korte setninger, ingen markdown. Ikke nevn tekniske systemer, integrasjoner eller entity-id-er – bruk navnene på enhetene. Ikke gi råd om å endre utstyr eller ting som er utleiers ansvar; nevn dem i så fall i «til_utleier».
+
+Svar KUN med gyldig JSON på denne formen (ingen tekst før eller etter):
+{
+  "oppsummering": "1–2 setninger om hvordan hybelen brukes nå",
+  "tips": [{"tittel": "kort", "tekst": "2–3 setninger", "besparelse": "f.eks. ca. 15 kWh / 30 kr i måneden, eller tom streng"}],
+  "automasjoner": [{
+    "navn": "kort navn",
+    "hvorfor": "1 setning",
+    "når": {"type": "time", "at": "HH:MM"} eller {"type": "sunset" | "sunrise", "offset": minutter (-180..180)},
+    "dager": [1,2,3,4,5,6,7] (1 = mandag),
+    "sett": {"d1": 19, "d3": "low"}  (temperatur som tall for varme, nivå som tekst for ventilasjon, lysstyrke 0–100 for lys)
+  }],
+  "til_utleier": "kort merknad til utleier om noe bør sjekkes (fukt, feil, unormalt forbruk), ellers tom streng"
+}
+
+Data:
+${JSON.stringify(payload)}`;
+  }
+
+  // ---------- kjør ----------
+
+  async run(lang = 'no', consent = false, by = 'tenant') {
+    const c = this.cfg;
+    const landlord = by === 'landlord';
+    if (!c.enabled && !landlord) throw new Error('Sparetips er ikke slått på');
+    const ai = this.aiEntity();
+    if (!ai) throw new Error('Sparetips er ikke tilgjengelig akkurat nå');
+    if (!landlord && !this.d.advice_consent) {
+      if (!consent) throw new Error('Godta at måledata sendes til vurdering først');
+      this.d.advice_consent = { at: new Date().toISOString() };
+    }
+    if (!landlord && this.usedToday() >= (c.per_day || 3)) throw new Error('Du har brukt dagens vurderinger – prøv igjen i morgen');
+    if (this.busy) throw new Error('En vurdering pågår allerede');
+    this.busy = true;
+    this.engine.changed();
+    const entry = { id: randomBytes(5).toString('hex'), by, at: new Date().toISOString(), lang: lang === 'en' ? 'en' : 'no', summary: '', tips: [], automations: [], to_landlord: '' };
+    try {
+      const { codes, payload } = await this.facts();
+      const res = await this.engine.ha.send({
+        type: 'call_service', domain: 'ai_task', service: 'generate_data',
+        service_data: { task_name: 'Hybel sparetips', entity_id: ai, instructions: this.prompt(payload, entry.lang) },
+        return_response: true
+      }, false, 120000);
+      const text = res?.response?.data ?? res?.data ?? '';
+      const parsed = this.parse(typeof text === 'string' ? text : JSON.stringify(text));
+      entry.summary = str(parsed.oppsummering, 400);
+      entry.tips = (Array.isArray(parsed.tips) ? parsed.tips : []).slice(0, 4).map((t) => ({ title: str(t.tittel, 80), text: str(t.tekst, 500), saving: str(t.besparelse, 80) })).filter((t) => t.title && t.text);
+      entry.automations = (Array.isArray(parsed.automasjoner) ? parsed.automasjoner : []).slice(0, 3).map((a) => this.toDraft(a, codes)).filter(Boolean);
+      entry.to_landlord = str(parsed.til_utleier, 400);
+      if (!entry.tips.length && !entry.summary) throw new Error('Tomt svar');
+    } catch (err) {
+      log.warn('Sparetips feilet:', err.message);
+      entry.error = err.message;
+    } finally {
+      this.busy = false;
+    }
+    this.history.push(entry);
+    while (this.history.length > MAX_HISTORY) this.history.shift();
+    this.engine.store.save();
+    this.engine.changed();
+    if (entry.error) throw new Error('Fikk ikke laget tips akkurat nå. Prøv igjen litt senere.');
+    if (entry.to_landlord && !landlord) {
+      this.engine.notify(`Sparetips for hybelen: ${entry.to_landlord}`, { title: 'Hybel: merknad fra sparetips', untrusted: true }).catch(() => {});
+    }
+    return entry;
+  }
+
+  parse(text) {
+    const t = String(text).replace(/^```(?:json)?/m, '').replace(/```\s*$/m, '');
+    const a = t.indexOf('{');
+    const b = t.lastIndexOf('}');
+    if (a < 0 || b <= a) throw new Error('Svaret var ikke JSON');
+    return JSON.parse(t.slice(a, b + 1));
+  }
+
+  // Gjør AI-forslaget om til et utkast i appens format (verdier per enhetsnøkkel). Ugyldige forslag droppes.
+  toDraft(a, codes) {
+    try {
+      const w = a['når'] || a.naar || a.when || {};
+      let trigger;
+      if (w.type === 'time' && isTime(w.at)) trigger = { type: 'time', at: w.at, offset: 0 };
+      else if ((w.type === 'sunset' || w.type === 'sunrise') && Math.abs(Number(w.offset) || 0) <= 180) trigger = { type: w.type, offset: Math.round((Number(w.offset) || 0) / 15) * 15 };
+      else return null;
+      const days = [...new Set((Array.isArray(a.dager) ? a.dager : [1, 2, 3, 4, 5, 6, 7]).map(Number).filter((n) => n >= 1 && n <= 7))].sort();
+      const values = {};
+      for (const [code, v] of Object.entries(a.sett || {})) {
+        const e = codes.get(code);
+        if (!e) continue;
+        try {
+          if (e.kind === 'climate') values[keyOf(e.entity_id)] = this.engine.sanitize(e, typeof v === 'object' ? v : { mode: 'heat', temp: v }, true);
+          else values[keyOf(e.entity_id)] = this.engine.sanitize(e, v, true);
+        } catch { /* utenfor grensene – hopp over */ }
+      }
+      if (!Object.keys(values).length) return null;
+      const draft = { id: null, trigger, window: null, days: days.length ? days : [1, 2, 3, 4, 5, 6, 7], action: { type: 'set', values }, revert_after: 0 };
+      this.engine.validateAutomation({ ...draft, action: { type: 'set', values } });
+      return { name: str(a.navn, 60), reason: str(a.hvorfor, 200), draft };
+    } catch (err) {
+      log.debug('Sparetips: forkastet forslag:', err.message);
+      return null;
+    }
+  }
+}

@@ -2,6 +2,7 @@
 // Start: node tools/mock-ha.mjs  → ws://127.0.0.1:8123/api/websocket, token "dev"
 import http from 'node:http';
 import { createHash } from 'node:crypto';
+import { writeFileSync as mockWrite } from 'node:fs';
 
 const PORT = Number(process.env.MOCK_PORT || 8123);
 const now = () => new Date().toISOString();
@@ -30,7 +31,7 @@ const GJEST = [
     st('sensor.demo_temperatur', '20.4', { friendly_name: 'Demo temperatur', device_class: 'temperature', unit_of_measurement: '°C' }),
     st('media_player.demo_hoyttaler', 'idle', { friendly_name: 'Demo høyttaler', volume_level: 0.2 })
 ];
-const states = new Map((process.env.MOCK_SET === 'gjest' ? GJEST : HYBEL).map((s) => [s.entity_id, s]));
+const states = new Map([['ai_task.claude_ai_task', { entity_id: 'ai_task.claude_ai_task', state: 'unknown', attributes: { friendly_name: 'Claude AI Task' } }], ...(process.env.MOCK_SET === 'gjest' ? GJEST : HYBEL).map((s) => [s.entity_id, s])]);
 export const calls = [];
 
 const clients = new Set();
@@ -90,7 +91,14 @@ function handle(c, msg) {
     case 'get_states': return ok([...states.values()]);
     case 'subscribe_events': c.subId = msg.id; return ok();
     case 'fire_event': console.log('[mock] event', msg.event_type, JSON.stringify(msg.event_data)); return ok();
-    case 'call_service': if (msg.domain === 'persistent_notification' || msg.domain === 'notify') console.log('[mock]', msg.domain + '.' + msg.service, JSON.stringify(msg.service_data)); callService(msg.domain, msg.service, msg.service_data || {}); return ok({ context: {} });
+    case 'call_service': if (msg.domain === 'ai_task') {
+      const ins = String(msg.service_data?.instructions || '');
+      console.log('[mock] ai_task prompt', ins.length, 'tegn');
+      try { if (process.env.MOCK_PROMPT_FILE) mockWrite(process.env.MOCK_PROMPT_FILE, ins); } catch {}
+      const reply = { oppsummering: 'Varmen står jevnt på 22 °C hele døgnet, også om natta.', tips: [{ tittel: 'Senk temperaturen om natta', tekst: 'Badet holder 22 °C hele natta. Senker du til 19 °C mellom 23 og 06, sparer du strøm uten at det merkes.', besparelse: 'ca. 12 kWh / 25 kr i måneden' }, { tittel: 'Lavere ventilasjon om natta', tekst: 'Ventilasjonen står på normal hele døgnet. Lav om natta gir mindre varmetap.', besparelse: '' }], automasjoner: [{ navn: 'Nattsenking', hvorfor: 'Senker varmen når du sover.', 'når': { type: 'time', at: '23:00' }, dager: [1,2,3,4,5,6,7], sett: { d1: 19 } }, { navn: 'Ugyldig', hvorfor: 'utenfor grensen', 'når': { type: 'time', at: '06:00' }, sett: { d1: 40 } }], til_utleier: '' };
+      return setTimeout(() => ok({ context: {}, response: { conversation_id: null, data: '```json\n' + JSON.stringify(reply) + '\n```' } }), 800);
+    }
+    if (msg.domain === 'persistent_notification' || msg.domain === 'notify') console.log('[mock]', msg.domain + '.' + msg.service, JSON.stringify(msg.service_data)); callService(msg.domain, msg.service, msg.service_data || {}); return ok({ context: {} });
     case 'config/area_registry/list': return ok([{ area_id: 'hybel', name: 'Hybel' }, { area_id: 'kjokken', name: 'Kjøkken' }]);
     case 'config/device_registry/list': return ok([]);
     case 'config/entity_registry/list': return ok([...states.keys()].map((id) => ({ entity_id: id, device_id: id.includes('ventilasjon') ? 'dev-vent' : id.includes('gulvvarme') ? 'dev-bad' : null, area_id: id.includes('hovedhus') || id.includes('benk') ? 'kjokken' : 'hybel' })));

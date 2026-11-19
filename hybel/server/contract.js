@@ -178,7 +178,7 @@ export class Contract {
     if (o.app_clause) {
       add('Smarthus og Hybel-appen', [
         'Leietaker får tilgang til Hybel-appen for å styre lys, varme og ventilasjon, melde fra til utleier, lese av strøm og se fakturaer. Utleier kan sette grenser for temperatur og ventilasjon.',
-        'Målinger av temperatur, luftfuktighet og strømforbruk lagres i utleiers smarthussystem. De brukes bare til drift av boligen og avregning av strøm, og deles ikke med andre.',
+        'Målinger av temperatur, luftfuktighet og strømforbruk lagres i utleiers smarthussystem. De brukes bare til drift av boligen og avregning av strøm, og deles ikke med andre. Ber leietaker om sparetips i appen, sendes målingene fra siste uke – uten navn, meldinger eller betalinger – til en AI-modell for vurdering.',
         'Meldinger, sjekklister og betalinger i appen gjelder som skriftlig kommunikasjon mellom partene.'
       ]);
     }
