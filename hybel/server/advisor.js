@@ -273,7 +273,7 @@ Under følger måledata fra siste uke (JSON). Tidsserier har én verdi per ${pay
 
 Oppgave:
 1. Finn de 2–4 tiltakene som gir størst besparelse eller bedre inneklima for akkurat denne hybelen, basert på tallene. Vær konkret og vis til tallene (f.eks. «stua har stått på 23 °C også om natta»). Estimer besparelsen forsiktig i kWh og kroner per måned med strømprisen som er oppgitt (er den null, oppgi bare kWh uten å kommentere prisen). Bruk tommelfingerregelen ca. 5 % per grad lavere temperatur for direkte elektrisk oppvarming, og si at det er et anslag.
-2. Foreslå 0–3 automasjoner som gjennomfører tiltakene. Ikke foreslå noe som allerede finnes i aktive_automasjoner. Hold deg innenfor lovlig_min/lovlig_maks og lovlige_nivåer. Ikke foreslå noe som går ut over komfort på en urimelig måte (ikke under 17 °C i oppholdsrom når leietakeren er hjemme).
+2. Foreslå 0–3 automasjoner som gjennomfører tiltakene. Ikke foreslå noe som allerede finnes i aktive_automasjoner. Hold deg innenfor lovlig_min/lovlig_maks og lovlige_nivåer. Ikke foreslå noe som går ut over komfort på en urimelig måte (ikke under 17 °C i oppholdsrom når leietakeren er hjemme). Badet (gulvvarme) skal være minst 23 °C mellom kl. 06 og 23 – det er normal badtemperatur. Om natta (23–06) kan badet senkes litt, men ikke under 20 °C. Ikke gi tips om å senke badet under dette.
 3. Strømmålere med målt_fra senere enn uken startet er nye – 0 kWh før det tidspunktet betyr ingen data, ikke feil eller null forbruk.
 4. Ta med utetemperaturen: bruk ute.graddager_siste_uke og kwh_per_graddag til å vurdere om forbruket er rimelig for været, og sammenlign kalde og milde dager. Ikke kall forbruket høyt hvis det skyldes kulde. Ikke bruk ordet «graddager» eller tallet kWh per graddag i teksten – skriv i stedet med vanlige ord, f.eks. «selv om det var mildt» eller «fordi det var kaldere».
 5. Vurder ventilasjonsaggregatet med varmegjenvinning: gjenvinningsgrad, tilluft- mot avtrekkstemperatur, ettervarmer/tilluft_settpunkt, eco-modus og viftenivå. Med høy gjenvinningsgrad er varmetapet fra ventilasjonen lite, så ikke overdriv gevinsten av lavere viftenivå – men tørr luft om vinteren kan tale for lavere luftmengde. Leietakeren kan bare styre viftenivået. Nevn aldri ettervarmer, tilluftstemperatur, settpunkt, eco-modus eller varmegjenvinning i tips eller oppsummering – det kan leietakeren ikke gjøre noe med. Er noe av dette tydelig unormalt, kan det bare stå kort i til_utleier.
@@ -358,6 +358,15 @@ ${JSON.stringify(payload)}`;
   }
 
   // Gjør AI-forslaget om til et utkast i appens format (verdier per enhetsnøkkel). Ugyldige forslag droppes.
+  // Badet: minst 23 °C kl. 06–23, minst 20 °C om natta.
+  bathTooCold(e, v, at) {
+    if (!/\bbad|bath/i.test(e.label) || (e.kind !== 'heat' && e.kind !== 'climate')) return false;
+    const t = typeof v === 'object' ? (v.mode === 'off' ? 0 : v.temp) : v;
+    if (t == null) return false;
+    const h = Number(String(at || '12:00').slice(0, 2));
+    return t < (h >= 6 && h < 23 ? 23 : 20);
+  }
+
   toDraft(a, codes) {
     try {
       const w = a['når'] || a.naar || a.when || {};
@@ -376,6 +385,8 @@ ${JSON.stringify(payload)}`;
         } catch { /* utenfor grensene – hopp over */ }
       }
       if (!Object.keys(values).length) return null;
+      const at0 = trigger.type === 'time' ? trigger.at : trigger.type === 'sunrise' ? '07:00' : '17:00';
+      for (const [code, e] of codes) if (values[keyOf(e.entity_id)] != null && this.bathTooCold(e, values[keyOf(e.entity_id)], at0)) return null;
       const steps = [];
       for (const st of (Array.isArray(a.deretter) ? a.deretter : []).slice(0, 3)) {
         if (!isTime(st?.at)) continue;
@@ -387,6 +398,7 @@ ${JSON.stringify(payload)}`;
           if (!e || v == null) { sv[k] = values[k]; continue; }
           try { sv[k] = e.kind === 'climate' ? this.engine.sanitize(e, typeof v === 'object' ? v : { mode: 'heat', temp: v }, true) : this.engine.sanitize(e, v, true); } catch { sv[k] = values[k]; }
         }
+        for (const [, e] of codes) if (sv[keyOf(e.entity_id)] != null && this.bathTooCold(e, sv[keyOf(e.entity_id)], st.at)) return null;
         steps.push({ trigger: { type: 'time', at: st.at }, action: { type: 'set', values: sv } });
       }
       const draft = { id: null, trigger, window: null, days: days.length ? days : [1, 2, 3, 4, 5, 6, 7], action: { type: 'set', values }, revert_after: 0, steps };

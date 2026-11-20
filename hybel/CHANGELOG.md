@@ -1,5 +1,9 @@
 # Endringslogg
 
+## 0.21.2
+
+- Sparetips: badet foreslås aldri under 23 °C mellom kl. 06 og 23, og ikke under 20 °C om natta. Forslag som bryter dette forkastes.
+
 ## 0.21.1
 
 - Sparetips: bruker ikke ordet «graddager» i teksten, og nevner ikke ettervarmer, tilluftstemperatur eller andre aggregatinnstillinger som leietaker ikke kan styre (kun som merknad til utleier hvis noe er unormalt).
