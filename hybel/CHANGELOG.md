@@ -1,5 +1,9 @@
 # Endringslogg
 
+## 0.21.1
+
+- Sparetips: bruker ikke ordet «graddager» i teksten, og nevner ikke ettervarmer, tilluftstemperatur eller andre aggregatinnstillinger som leietaker ikke kan styre (kun som merknad til utleier hvis noe er unormalt).
+
 ## 0.21.0
 
 - Flere tidspunkt i samme automasjon: når en automasjon styrer enheter til en fast tid (eller ved sol opp/ned), kan du trykke «Legg til et tidspunkt til» og sette nye verdier for de samme enhetene senere – f.eks. bad 20° kl. 23 og 23° kl. 06.30. Inntil seks tidspunkt per automasjon. Listen viser «også 06:30».
