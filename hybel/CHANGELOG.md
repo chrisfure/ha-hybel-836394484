@@ -1,5 +1,9 @@
 # Endringslogg
 
+## 0.21.3
+
+- Sparetips: forslag med ugyldige verdier forkastes i stedet for å bli rettet stille, og tidspunkt som ikke endrer noe tas bort.
+
 ## 0.21.2
 
 - Sparetips: badet foreslås aldri under 23 °C mellom kl. 06 og 23, og ikke under 20 °C om natta. Forslag som bryter dette forkastes.

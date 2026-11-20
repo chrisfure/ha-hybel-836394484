@@ -358,6 +358,12 @@ ${JSON.stringify(payload)}`;
   }
 
   // Gjør AI-forslaget om til et utkast i appens format (verdier per enhetsnøkkel). Ugyldige forslag droppes.
+  cleanVal(e, v) {
+    if (e.kind === 'vent') v = { medium: 'normal', middels: 'normal', lav: 'low', høy: 'high', hoy: 'high', borte: 'away' }[String(v).toLowerCase()] || String(v).toLowerCase();
+    if (e.kind === 'climate') return this.engine.sanitize(e, typeof v === 'object' ? v : { mode: 'heat', temp: v }, true);
+    return this.engine.sanitize(e, v, true);
+  }
+
   // Badet: minst 23 °C kl. 06–23, minst 20 °C om natta.
   bathTooCold(e, v, at) {
     if (!/\bbad|bath/i.test(e.label) || (e.kind !== 'heat' && e.kind !== 'climate')) return false;
@@ -379,10 +385,7 @@ ${JSON.stringify(payload)}`;
       for (const [code, v] of Object.entries(a.sett || {})) {
         const e = codes.get(code);
         if (!e) continue;
-        try {
-          if (e.kind === 'climate') values[keyOf(e.entity_id)] = this.engine.sanitize(e, typeof v === 'object' ? v : { mode: 'heat', temp: v }, true);
-          else values[keyOf(e.entity_id)] = this.engine.sanitize(e, v, true);
-        } catch { /* utenfor grensene – hopp over */ }
+        try { values[keyOf(e.entity_id)] = this.cleanVal(e, v); } catch { /* utenfor grensene – hopp over */ }
       }
       if (!Object.keys(values).length) return null;
       const at0 = trigger.type === 'time' ? trigger.at : trigger.type === 'sunrise' ? '07:00' : '17:00';
@@ -396,8 +399,9 @@ ${JSON.stringify(payload)}`;
           const e = codes.get(code);
           const v = st.sett?.[code];
           if (!e || v == null) { sv[k] = values[k]; continue; }
-          try { sv[k] = e.kind === 'climate' ? this.engine.sanitize(e, typeof v === 'object' ? v : { mode: 'heat', temp: v }, true) : this.engine.sanitize(e, v, true); } catch { sv[k] = values[k]; }
+          sv[k] = this.cleanVal(e, v); // kaster ved ugyldig verdi – da forkastes hele forslaget
         }
+        if (JSON.stringify(sv) === JSON.stringify(values)) continue; // samme som før – ingen vits
         for (const [, e] of codes) if (sv[keyOf(e.entity_id)] != null && this.bathTooCold(e, sv[keyOf(e.entity_id)], st.at)) return null;
         steps.push({ trigger: { type: 'time', at: st.at }, action: { type: 'set', values: sv } });
       }
