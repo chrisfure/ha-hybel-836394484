@@ -291,7 +291,8 @@ Svar KUN med gyldig JSON på denne formen (ingen tekst før eller etter):
     "hvorfor": "1 setning",
     "når": {"type": "time", "at": "HH:MM"} eller {"type": "sunset" | "sunrise", "offset": minutter (-180..180)},
     "dager": [1,2,3,4,5,6,7] (1 = mandag),
-    "sett": {"d1": 19, "d3": "low"}  (temperatur som tall for varme, nivå som tekst for ventilasjon, lysstyrke 0–100 for lys)
+    "sett": {"d1": 19, "d3": "low"}  (temperatur som tall for varme, nivå som tekst for ventilasjon, lysstyrke 0–100 for lys),
+    "deretter": [{"at": "HH:MM", "sett": {"d1": 21}}]  (valgfritt, maks 3: samme enheter settes til nye verdier senere, f.eks. senk kl. 23 og opp igjen kl. 06.30 i én automasjon)
   }],
   "til_utleier": "kort merknad til utleier om noe bør sjekkes (fukt, feil, unormalt forbruk), ellers tom streng"
 }
@@ -375,8 +376,21 @@ ${JSON.stringify(payload)}`;
         } catch { /* utenfor grensene – hopp over */ }
       }
       if (!Object.keys(values).length) return null;
-      const draft = { id: null, trigger, window: null, days: days.length ? days : [1, 2, 3, 4, 5, 6, 7], action: { type: 'set', values }, revert_after: 0 };
-      this.engine.validateAutomation({ ...draft, action: { type: 'set', values } });
+      const steps = [];
+      for (const st of (Array.isArray(a.deretter) ? a.deretter : []).slice(0, 3)) {
+        if (!isTime(st?.at)) continue;
+        const sv = {};
+        for (const k of Object.keys(values)) {
+          const code = [...codes.entries()].find(([, e]) => keyOf(e.entity_id) === k)?.[0];
+          const e = codes.get(code);
+          const v = st.sett?.[code];
+          if (!e || v == null) { sv[k] = values[k]; continue; }
+          try { sv[k] = e.kind === 'climate' ? this.engine.sanitize(e, typeof v === 'object' ? v : { mode: 'heat', temp: v }, true) : this.engine.sanitize(e, v, true); } catch { sv[k] = values[k]; }
+        }
+        steps.push({ trigger: { type: 'time', at: st.at }, action: { type: 'set', values: sv } });
+      }
+      const draft = { id: null, trigger, window: null, days: days.length ? days : [1, 2, 3, 4, 5, 6, 7], action: { type: 'set', values }, revert_after: 0, steps };
+      this.engine.validateAutomation(draft);
       return { name: str(a.navn, 60), reason: str(a.hvorfor, 200), draft };
     } catch (err) {
       log.debug('Sparetips: forkastet forslag:', err.message);

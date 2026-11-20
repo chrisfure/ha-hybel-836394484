@@ -1,5 +1,10 @@
 # Endringslogg
 
+## 0.21.0
+
+- Flere tidspunkt i samme automasjon: når en automasjon styrer enheter til en fast tid (eller ved sol opp/ned), kan du trykke «Legg til et tidspunkt til» og sette nye verdier for de samme enhetene senere – f.eks. bad 20° kl. 23 og 23° kl. 06.30. Inntil seks tidspunkt per automasjon. Listen viser «også 06:30».
+- Sparetips kan foreslå slike automasjoner med flere tidspunkt.
+
 ## 0.20.1
 
 - Sparetips: nye strømmålere uten historikk tolkes ikke lenger som feil eller null forbruk.

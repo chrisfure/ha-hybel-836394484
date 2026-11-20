@@ -29,6 +29,7 @@ export const ICONS = ['home', 'pot', 'drop', 'sofa', 'book', 'moon', 'door', 'su
 export const CLIMATE_MODES = ['off', 'heat', 'cool', 'heat_cool', 'auto', 'dry', 'fan_only'];
 const MAX_SCENES = 16;
 const MAX_AUTOMATIONS = 30;
+const MAX_STEPS = 5; // ekstra tidspunkt per automasjon
 const RUN_WINDOW_MS = 10 * 60000;
 const STATE_COOLDOWN_MS = 10 * 60000;
 const REVERT_OPTIONS = [0, 5, 10, 15, 30, 60, 120, 240];
@@ -534,7 +535,23 @@ export class Engine extends EventEmitter {
 
     const revert = Math.round(Number(input.revert_after) || 0);
     if (!REVERT_OPTIONS.includes(revert)) throw new Error('Ugyldig tid for å gjøre om');
-    return { trigger, window, days, action, revert_after: revert };
+
+    // Flere tidspunkt i samme automasjon (f.eks. bad 20° kl. 23 og 23° kl. 06.30).
+    let steps = [];
+    if (Array.isArray(input.steps) && input.steps.length) {
+      if (!['time', 'sunset', 'sunrise'].includes(trigger.type) || action.type !== 'set') throw new Error('Flere tidspunkt krever tid/sol og «Velg enheter selv»');
+      if (input.steps.length > MAX_STEPS) throw new Error(`Maks ${MAX_STEPS + 1} tidspunkt i én automasjon`);
+      const seen = new Set([trigger.type === 'time' ? trigger.at : trigger.type]);
+      steps = input.steps.map((st) => {
+        if (!isTime(st?.trigger?.at)) throw new Error('Ugyldig klokkeslett');
+        if (seen.has(st.trigger.at)) throw new Error('To tidspunkt kan ikke være like');
+        seen.add(st.trigger.at);
+        const values = this.valuesFromKeys(st.action?.values);
+        if (!Object.keys(values).length) throw new Error('Velg verdier for hvert tidspunkt');
+        return { trigger: { type: 'time', at: st.trigger.at }, action: { type: 'set', values } };
+      });
+    }
+    return { trigger, window, days, action, revert_after: steps.length ? 0 : revert, steps };
   }
 
   // Faste automasjoner for en lysknapp, satt opp av utleier: opp = på, ned = av, hold = dim.
@@ -577,12 +594,22 @@ export class Engine extends EventEmitter {
     this.store.save();
   }
 
+  // Hvert tidspunkt i en automasjon som egen «enhet» med egen kjørelogg (id, id#1, id#2 …).
+  units(auto) {
+    const base = [{ ...auto, steps: undefined }];
+    for (const [i, st] of (auto.steps || []).entries()) base.push({ ...auto, id: `${auto.id}#${i + 1}`, trigger: st.trigger, action: st.action, revert_after: 0, steps: undefined, parent: auto.id });
+    return base;
+  }
+
   // Ikke kjør med en gang hvis tidspunktet i dag allerede har passert.
   markIfPassed(auto) {
     const d = this.data;
-    const due = this.dueToday(auto, new Date());
-    if (due && due <= Date.now()) d.auto_runs[auto.id] = dateKey(new Date());
-    else delete d.auto_runs[auto.id];
+    for (const k of Object.keys(d.auto_runs)) if (k.startsWith(`${auto.id}#`)) delete d.auto_runs[k];
+    for (const u of this.units(auto)) {
+      const due = this.dueToday(u, new Date());
+      if (due && due <= Date.now()) d.auto_runs[u.id] = dateKey(new Date());
+      else delete d.auto_runs[u.id];
+    }
   }
 
   recordSun() {
@@ -681,7 +708,9 @@ export class Engine extends EventEmitter {
       : a.type === 'light_on' ? `slå på ${a.entities.map(label).join(', ')}`
       : a.type === 'light_off' ? `slå av ${a.entities.map(label).join(', ')}`
       : `varme ${a.value}°`;
-    return `${when}: ${what}${auto.revert_after ? ` (gjør om etter ${auto.revert_after} min)` : ''}`;
+    const more = (auto.steps || []).map((st) => `, kl. ${st.trigger.at}: styr ${Object.entries(st.action.values).map(([id, v]) => `${label(id)} ${typeof v === 'object' ? `${v.mode} ${v.temp ?? ''}` : v}`).join(', ')}`).join('');
+    const vals = a.type === 'set' && auto.steps?.length ? ` (${Object.values(a.values).map((v) => (typeof v === 'object' ? `${v.mode} ${v.temp ?? ''}` : v)).join(', ')})` : '';
+    return `${when}: ${what}${vals}${more}${auto.revert_after ? ` (gjør om etter ${auto.revert_after} min)` : ''}`;
   }
 
   // Ett dimmetrinn for hvert lys. Holdes knappen inne, gjentas trinnet til knappen slippes (maks 8 sek).
@@ -743,11 +772,14 @@ export class Engine extends EventEmitter {
     const now = new Date();
     const today = dateKey(now);
     for (const auto of this.allAutomations()) {
-      if (!auto.enabled || !auto.days.includes(isoDay(now)) || d.auto_runs[auto.id] === today) continue;
-      const due = this.dueToday(auto, now);
-      if (due == null || now.getTime() < due || now.getTime() - due > RUN_WINDOW_MS) continue;
-      d.auto_runs[auto.id] = today;
-      await this.fire(auto, 'tid');
+      if (!auto.enabled || !auto.days.includes(isoDay(now))) continue;
+      for (const u of this.units(auto)) {
+        if (d.auto_runs[u.id] === today) continue;
+        const due = this.dueToday(u, now);
+        if (due == null || now.getTime() < due || now.getTime() - due > RUN_WINDOW_MS) continue;
+        d.auto_runs[u.id] = today;
+        await this.fire(u, 'tid');
+      }
     }
   }
 
@@ -900,7 +932,8 @@ export class Engine extends EventEmitter {
       : a.action.type === 'set' ? { type: 'set', values: this.toKeys(a.action.values) } : a.action.type === 'heat'
       ? { type: 'set', values: this.toKeys(Object.fromEntries(this.actionEntities(a.action).map((id) => [id, a.action.value]))) }
       : { ...a.action };
-    return { id: a.id, enabled: a.enabled, fixed: Boolean(a.fixed), trigger: t, window: a.window || null, days: a.days, action, revert_after: a.revert_after || 0 };
+    const steps = (a.steps || []).map((st) => ({ trigger: { ...st.trigger }, action: { type: 'set', values: this.toKeys(st.action.values) } }));
+    return { id: a.id, enabled: a.enabled, fixed: Boolean(a.fixed), trigger: t, window: a.window || null, days: a.days, action, revert_after: a.revert_after || 0, steps };
   }
 
   tenantView() {

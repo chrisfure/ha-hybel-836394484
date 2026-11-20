@@ -447,3 +447,8 @@ a.inv-row { color: inherit; text-decoration: none; }
 .adv-auto { display: flex; align-items: center; gap: 10px; border: 1px solid var(--line); border-radius: 14px; padding: 10px 12px; }
 .adv-auto .grow { display: flex; flex-direction: column; gap: 2px; font-size: 14px; }
 .adv-auto .grow span { color: var(--muted); font-size: 13px; }
+.step-card { border-left: 4px solid var(--amber); }
+.step-time { display: flex; align-items: center; gap: 8px; }
+.step-dev { display: flex; flex-direction: column; gap: 6px; padding-top: 6px; border-top: 1px solid var(--line); }
+.step-dev:first-of-type { border-top: 0; }
+.step-hint { margin: -4px 4px 8px; }

@@ -211,7 +211,7 @@ function valueOf(ent) {
 }
 const entity = (key) => S.m.entities.find((e) => e.key === key);
 const sceneById = (id) => S.m.scenes.find((s) => s.id === id);
-const target = () => (S.view === 'scene' ? S.draft : S.adraft?.set);
+const target = () => (S.view === 'scene' ? S.draft : S.curStep ? S.adraft?.steps?.[S.curStep - 1]?.set : S.adraft?.set);
 
 let toastTimer;
 function showToast(msg, error = false) {
@@ -589,7 +589,7 @@ function autoTab() {
   const m = S.m;
   let h = '';
   if (!m.automations.length) h += `<p class="intro">${L('Automasjoner gjør ting av seg selv – f.eks. «Kos 30 min før solnedgang» eller «Slå av lyset kl. 23».', 'Automations do things on their own – e.g. “Cosy 30 min before sunset” or “Turn off the lights at 23:00”.')}</p>`;
-  const extra = (a) => [a.window ? `${a.window.from}–${a.window.to}` : '', a.days.length !== 7 ? autoDays(a.days) : '', a.revert_after ? `${L('tilbake etter', 'revert after')} ${revertLabel(a.revert_after)}` : ''].filter(Boolean).join(' · ');
+  const extra = (a) => [(a.steps || []).length ? `${L('også', 'also')} ${a.steps.map((st) => st.trigger.at).join(', ')}` : '', a.window ? `${a.window.from}–${a.window.to}` : '', a.days.length !== 7 ? autoDays(a.days) : '', a.revert_after ? `${L('tilbake etter', 'revert after')} ${revertLabel(a.revert_after)}` : ''].filter(Boolean).join(' · ');
 
   // 1. Knapper – én gruppe per knapp, sortert på knappenummer og retning.
   const buttons = m.automations.filter((a) => a.trigger.type === 'button');
@@ -1641,6 +1641,25 @@ function autoEditorHTML() {
       <span class="row-ic">${svg(UI.spark, 20)}</span><span class="grow"><span class="t">${L('Velg enheter selv', 'Choose devices yourself')}</span><span class="s">${L('Lys, varme, luft – akkurat det du vil', 'Lights, heating, air – exactly what you want')}</span></span><span class="radio"></span></button>`;
   html += `</div></section>`;
   if (act.type === 'set') html += pickerHTML(a.set);
+  // Flere tidspunkt: samme enheter, nye verdier til andre klokkeslett.
+  const canSteps = act.type === 'set' && ['time', 'sunset', 'sunrise'].includes(t.type);
+  if (canSteps) {
+    const inc = S.m.entities.filter((e) => a.set.include[e.key] && e.kind !== 'button');
+    (a.steps || []).forEach((st, i) => {
+      html += `<section class="card form step-card" data-step="${i + 1}">
+        <div class="row between"><span class="field-label">${L('Deretter kl.', 'Then at')}</span>
+          <span class="step-time"><input class="input time sm" type="time" value="${esc(st.at)}" data-field="step-at" data-i="${i}" aria-label="${L('Klokkeslett', 'Time')}">
+          <button class="tool-btn" data-act="step-del" data-i="${i}" aria-label="${L('Fjern tidspunkt', 'Remove time')}">${svg(UI.close || 'M6 6l12 12M18 6L6 18', 18, 2)}</button></span></div>
+        ${inc.length ? inc.map((e) => {
+          const v = st.set.values[e.key] ?? a.set.values[e.key];
+          const ctl = e.kind === 'light' ? lightRow(e, v ?? 0, 'draft') : e.kind === 'heat' ? `<div class="draft-heat"><span class="status">${esc(e.label)}</span>${stepper(e, v, 'draft')}</div>` : e.kind === 'vent' ? `<span class="status">${esc(e.label)}</span>${ventButtons(e, v, 'draft')}` : `<span class="status">${esc(e.label)}</span>${climateControls(e, v, 'draft')}`;
+          return `<div class="step-dev">${ctl}</div>`;
+        }).join('') : `<span class="note">${L('Velg enheter over først.', 'Choose devices above first.')}</span>`}
+      </section>`;
+    });
+    if ((a.steps || []).length < 5) html += `<button class="btn ghost scene-add" data-act="step-add">${svg(UI.plus, 18, 2)} ${L('Legg til et tidspunkt til', 'Add another time')}</button>
+      ${!(a.steps || []).length ? `<p class="note step-hint">${L('F.eks. bad 20° kl. 23 og 23° kl. 06.30 i samme automasjon.', 'E.g. bathroom 20° at 23:00 and 23° at 06:30 in the same automation.')}</p>` : ''}`;
+  }
   if (act.type === 'dim') {
     html += `<section class="card form"><span class="field-label">${L('Hvilke lys', 'Which lights')}</span>
       <div class="chips">${lights.filter((e) => e.dimmable).map((e) => `<button class="chip" aria-pressed="${(act.entities || []).includes(e.key)}" data-act="dim-light" data-key="${e.key}">${esc(e.label)}</button>`).join('')}</div>
@@ -1657,7 +1676,7 @@ function autoEditorHTML() {
     </section>`;
   }
 
-  html += `<section class="card form"><span class="field-label">${L('Gjør om etter', 'Undo after')}</span>
+  if (!(canSteps && (a.steps || []).length)) html += `<section class="card form"><span class="field-label">${L('Gjør om etter', 'Undo after')}</span>
     <div class="seg" style="grid-template-columns: repeat(4, minmax(0, 1fr))">
       ${m.revert_options.map((o) => `<button aria-pressed="${a.revert_after === o}" data-act="revert" data-v="${o}">${revertLabel(o)}</button>`).join('')}
     </div>
@@ -1752,6 +1771,7 @@ function openAuto(id) {
     S.adraft = { id: null, trigger: { type: 'time', at: '22:00', offset: 0 }, window: null, days: [1, 2, 3, 4, 5, 6, 7], action: firstScene ? { type: 'scene', scene_id: firstScene.id } : { type: 'lights_off' }, revert_after: 0 };
   }
   S.adraft.set = newSet(S.adraft.action.type === 'set' ? S.adraft.action.values : null);
+  S.adraft.steps = (a?.steps || []).map((st) => ({ at: st.trigger.at, set: newSet(st.action.values) }));
   go('auto');
 }
 
@@ -2003,6 +2023,7 @@ function act(a, ds) {
       if (!a) return;
       S.adraft = JSON.parse(JSON.stringify(a.draft));
       S.adraft.set = newSet(S.adraft.action.values);
+      S.adraft.steps = (S.adraft.steps || []).map((st) => ({ at: st.trigger.at, set: newSet(st.action.values) }));
       go('auto');
       return;
     }
@@ -2096,7 +2117,11 @@ function act(a, ds) {
       const action = ad.action.type === 'set'
         ? { type: 'set', values: Object.fromEntries(Object.keys(ad.set.include).filter((k) => ad.set.include[k]).map((k) => [k, ad.set.values[k]])) }
         : ad.action;
-      cmd({ type: 'auto_save', automation: { id: ad.id, trigger, window: ad.window, days: ad.days, action, revert_after: ad.revert_after } }).then((r) => {
+      const keys = action.type === 'set' ? Object.keys(action.values) : [];
+      const steps = action.type === 'set' && ['time', 'sunset', 'sunrise'].includes(t.type)
+        ? (ad.steps || []).map((st) => ({ trigger: { type: 'time', at: st.at }, action: { type: 'set', values: Object.fromEntries(keys.map((k) => [k, st.set.values[k] ?? action.values[k]])) } }))
+        : [];
+      cmd({ type: 'auto_save', automation: { id: ad.id, trigger, window: ad.window, days: ad.days, action, revert_after: steps.length ? 0 : ad.revert_after, steps } }).then((r) => {
         if (!r.ok) return;
         S.adraft = null;
         S.tab = 'auto';
@@ -2105,6 +2130,16 @@ function act(a, ds) {
       });
       return;
     }
+    case 'step-add': {
+      const ad = S.adraft;
+      ad.steps = ad.steps || [];
+      const lastAt = ad.steps.length ? ad.steps[ad.steps.length - 1].at : ad.trigger.type === 'time' ? ad.trigger.at : '22:00';
+      const [h, mm] = lastAt.split(':').map(Number);
+      const next = `${String((h + 8) % 24).padStart(2, '0')}:${String(mm).padStart(2, '0')}`;
+      ad.steps.push({ at: next, set: { include: { ...ad.set.include }, values: { ...ad.set.values } } });
+      return render();
+    }
+    case 'step-del': S.adraft.steps.splice(Number(ds.i), 1); return render();
     case 'auto-run':
       cmd({ type: 'auto_run', id: S.adraft.id }).then((r) => r.ok && showToast(L('Automasjonen kjørte', 'Automation ran')));
       return;
@@ -2174,6 +2209,7 @@ function act(a, ds) {
 $app.addEventListener('click', (ev) => {
   const b = ev.target.closest('[data-act]');
   if (!b || b.disabled || (!S.m && b.dataset.act !== 'relogin')) return;
+  S.curStep = Number(b.closest('[data-step]')?.dataset.step) || 0;
   act(b.dataset.act, b.dataset);
 });
 
@@ -2199,6 +2235,7 @@ $app.addEventListener('input', (ev) => {
   if (f === 'ct-read') { S.ctRead = t.checked; const b = $app.querySelector('[data-act="ct-accept"]'); if (b) b.disabled = !t.checked; return; }
   if (f === 'end-reason' && S.endForm) { S.endForm.reason = t.value; return; }
   if (f === 'auto-time') { S.adraft.trigger.at = t.value; return; }
+  if (f === 'step-at') { S.adraft.steps[Number(t.dataset.i)].at = t.value; return; }
   if (f === 'win-from') { S.adraft.window.from = t.value; return; }
   if (f === 'win-to') { S.adraft.window.to = t.value; return; }
   const r = t.closest('input.range[data-key]');
@@ -2209,12 +2246,13 @@ $app.addEventListener('input', (ev) => {
   clearTimeout(dragTimer);
   dragTimer = setTimeout(endDrag, 1500);
   S.lastBri[key] = v;
+  S.curStep = Number(r.closest('[data-step]')?.dataset.step) || 0;
   if (r.dataset.mode === 'draft') target().values[key] = v;
   else {
     setPending(key, v);
     sendSet(key, v);
   }
-  const st = $app.querySelector(`[data-status="${CSS.escape(key)}"]`);
+  const st = (r.closest('section') || $app).querySelector(`[data-status="${CSS.escape(key)}"]`);
   if (st) st.textContent = `${L('På', 'On')} · ${v} %`;
 });
 
